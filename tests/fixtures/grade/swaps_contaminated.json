@@ -1,0 +1,51 @@
+{
+  "note": "CCC receives inventory by transfer between the buy and the sell, so its cost basis is unknowable and the episode must be excluded. DDD is clean and is the only thing that may reach a grade.",
+  "wallet": "CJF7MNqb9xv1XrTs5St1Du5JuQXLsfFBB137vmYRKpnb",
+  "swaps": [
+    {
+      "chain": "sol",
+      "ts_ms": 1000000,
+      "token": "CCC",
+      "side": "buy",
+      "amount_token": "1000000000",
+      "amount_native": "1000000000",
+      "usd_value": "200.00"
+    },
+    {
+      "chain": "sol",
+      "ts_ms": 1100000,
+      "token": "CCC",
+      "side": "transfer_in",
+      "amount_token": "500000000",
+      "amount_native": null,
+      "usd_value": null
+    },
+    {
+      "chain": "sol",
+      "ts_ms": 1200000,
+      "token": "CCC",
+      "side": "sell",
+      "amount_token": "1500000000",
+      "amount_native": "3000000000",
+      "usd_value": "600.00"
+    },
+    {
+      "chain": "sol",
+      "ts_ms": 1300000,
+      "token": "DDD",
+      "side": "buy",
+      "amount_token": "1000000000",
+      "amount_native": "1000000000",
+      "usd_value": "200.00"
+    },
+    {
+      "chain": "sol",
+      "ts_ms": 1400000,
+      "token": "DDD",
+      "side": "sell",
+      "amount_token": "1000000000",
+      "amount_native": "1500000000",
+      "usd_value": "300.00"
+    }
+  ]
+}

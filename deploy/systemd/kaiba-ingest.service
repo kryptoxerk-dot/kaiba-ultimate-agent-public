@@ -1,0 +1,88 @@
+[Unit]
+# The listener runner: PumpPortal WS, Helius/Alchemy webhook inbox, GMGN feed poller,
+# DexScreener, Telethon. One process, one supervised connection per source.
+Description=Kaiba ingestion (listeners and feed pollers)
+Documentation=file:///opt/kaiba/current/docs/runbooks/deploy.md
+Wants=network-online.target
+After=network-online.target
+PartOf=kaiba.target
+StartLimitIntervalSec=300
+StartLimitBurst=10
+
+[Service]
+Type=exec
+User=kaiba-core
+Group=kaiba-core
+SupplementaryGroups=kaiba kaiba-state
+WorkingDirectory=/opt/kaiba/current
+
+# Credentials are handed in by PID 1, which reads this file as root. The service user
+# never needs read permission on it.
+EnvironmentFile=/etc/kaiba/core.env
+Environment=HOME=/var/lib/kaiba
+Environment=KAIBA_CONFIG_DIR=/etc/kaiba
+Environment=KAIBA_DATA_DIR=/var/lib/kaiba
+Environment=KAIBA_DB_PATH=/var/lib/kaiba/db/kaiba.db
+Environment=KAIBA_RISK_PATH=/etc/kaiba/config/risk.yaml
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PYTHONUNBUFFERED=1
+
+# Ingestion needs provider keys. It must never see wallet, signer or operator secrets.
+UnsetEnvironment=GMGN_PRIVATE_KEY KAIBA_SIGNER_PASSPHRASE KAIBA_SIGNER_KEYSTORE
+UnsetEnvironment=KAIBA_DASHBOARD_PASSWORD AGE_IDENTITY_FILE RCLONE_CONFIG_PASS
+UnsetEnvironment=ANTHROPIC_API_KEY OPENROUTER_API_KEY
+UnsetEnvironment=PYTHONHOME PYTHONPATH PYTHONSTARTUP PYTHONINSPECT PYTHONOPTIMIZE
+
+ExecStart=/opt/kaiba/venv/bin/python -I -B -m kaiba.cli.main ingest run --listeners all
+Restart=always
+RestartSec=5
+TimeoutStopSec=30
+KillMode=mixed
+
+# /run/kaiba and its subdirectories come from /etc/tmpfiles.d/kaiba.conf, written by
+# deploy/bootstrap.sh. RuntimeDirectory= is deliberately not used here: it would create
+# the /run/kaiba parent owned by this unit's user and fight the tmpfiles ownership.
+
+# ---- hardening baseline (identical across every kaiba unit) -------------------------
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+PrivateMounts=yes
+ProtectHostname=yes
+ProtectClock=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectProc=invisible
+ProcSubset=pid
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+# NOTE: V8 needs W+X. If this unit ever shells out to the node-based gmgn-cli in-process,
+# apply deploy/systemd/dropins/allow-node-jit.conf to THIS unit only. See deploy/install.sh.
+MemoryDenyWriteExecute=yes
+RemoveIPC=yes
+KeyringMode=private
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+CapabilityBoundingSet=
+AmbientCapabilities=
+UMask=0077
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+# ---- explicit write surface ---------------------------------------------------------
+ReadWritePaths=/var/lib/kaiba/db /var/lib/kaiba/cache /var/lib/kaiba/logs /var/lib/kaiba/reports
+ReadOnlyPaths=/opt/kaiba/current /opt/kaiba/venv /etc/kaiba/policy
+InaccessiblePaths=/etc/kaiba/signer /var/lib/kaiba/signer /var/lib/kaiba/backups /var/lib/kaiba/hermes
+
+MemoryMax=768M
+CPUQuota=150%
+TasksMax=128
+
+[Install]
+WantedBy=multi-user.target

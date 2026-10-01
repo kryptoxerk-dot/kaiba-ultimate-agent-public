@@ -1,0 +1,27 @@
+# Drop-in TEMPLATE: the signer's RPC allow list.
+#
+# deploy/install.sh renders this into
+#   /etc/systemd/system/kaiba-signer.service.d/10-rpc-allow.conf
+# substituting @RPC_ALLOW_LINES@ with one `IPAddressAllow=` line per entry in
+# KAIBA_RPC_ALLOW_CIDRS (set in /etc/kaiba/deploy.env, space or comma separated).
+#
+# Why a template and not a literal: the RPC endpoints are deployment data. Hardcoding a
+# provider's address range in the repository makes the unit wrong for anyone else's box
+# and stale the moment the provider re-IPs.
+#
+# How to find the ranges: resolve each RPC hostname you actually configured
+# (SOLANA_RPC_URL, ROBINHOOD_RPC_URL, BSC_RPC_URL, BASE_RPC_URL, ETH_RPC_URL) and use the
+# provider's published egress ranges where they publish them. Prefer a /32 you verified
+# over a wide CIDR you guessed.
+#
+# Caveat worth knowing before you rely on this: IPAddressAllow is an eBPF cgroup filter
+# on addresses, so a provider behind a large CDN range effectively needs that whole
+# range allowed. If the list you end up with is broad enough to be meaningless, switch
+# the signer to sign-only mode (PrivateNetwork=yes, see the comments in
+# kaiba-signer.service) and let the engine do the network work. That is the stronger
+# posture and it needs no allow list at all.
+
+[Service]
+IPAddressDeny=any
+IPAddressAllow=localhost
+@RPC_ALLOW_LINES@

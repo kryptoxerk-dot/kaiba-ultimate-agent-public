@@ -1,0 +1,745 @@
+{
+ "note": "Live recording, not hand-built. goplus is the per-address entry already unwrapped from GoPlus's result map; rugcheck holds one key per route.",
+ "recorded_at_ms": 1789897029818,
+ "token": {
+  "label": "PYUSD",
+  "address": "2b1kV6DkPAnxd5ixfnxCpjxmKwqjjaYmCZfHsFu24GXo",
+  "chain": "sol",
+  "why": "Token-2022 with a permanent delegate, a mint close authority and a transfer-hook slot whose program is unset. The only reference token where balance_mutable is genuinely true, and the test of whether a provider distinguishes a hook slot from an installed hook."
+ },
+ "chain": {
+  "data": {
+   "parsed": {
+    "info": {
+     "decimals": 6,
+     "extensions": [
+      {
+       "extension": "mintCloseAuthority",
+       "state": {
+        "closeAuthority": "2apBGMsS6ti9RyF5TwQTDswXBWskiJP2LD4cUEDqYJjk"
+       }
+      },
+      {
+       "extension": "permanentDelegate",
+       "state": {
+        "delegate": "2apBGMsS6ti9RyF5TwQTDswXBWskiJP2LD4cUEDqYJjk"
+       }
+      },
+      {
+       "extension": "transferFeeConfig",
+       "state": {
+        "newerTransferFee": {
+         "epoch": 605,
+         "maximumFee": 0,
+         "transferFeeBasisPoints": 0
+        },
+        "olderTransferFee": {
+         "epoch": 605,
+         "maximumFee": 0,
+         "transferFeeBasisPoints": 0
+        },
+        "transferFeeConfigAuthority": "2apBGMsS6ti9RyF5TwQTDswXBWskiJP2LD4cUEDqYJjk",
+        "withdrawWithheldAuthority": "2apBGMsS6ti9RyF5TwQTDswXBWskiJP2LD4cUEDqYJjk",
+        "withheldAmount": 0
+       }
+      },
+      {
+       "extension": "confidentialTransferMint",
+       "state": {
+        "auditorElgamalPubkey": null,
+        "authority": "2apBGMsS6ti9RyF5TwQTDswXBWskiJP2LD4cUEDqYJjk",
+        "autoApproveNewAccounts": false
+       }
+      },
+      {
+       "extension": "confidentialTransferFeeConfig",
+       "state": {
+        "authority": "2apBGMsS6ti9RyF5TwQTDswXBWskiJP2LD4cUEDqYJjk",
+        "harvestToMintEnabled": true,
+        "withdrawWithheldAuthorityElgamalPubkey": "HDfmQztzBN2Cc3rkDZuL88SfWw5sSajVMyiz5QaQHFc=",
+        "withheldAmount": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
+       }
+      },
+      {
+       "extension": "transferHook",
+       "state": {
+        "authority": "2apBGMsS6ti9RyF5TwQTDswXBWskiJP2LD4cUEDqYJjk",
+        "programId": null
+       }
+      },
+      {
+       "extension": "metadataPointer",
+       "state": {
+        "authority": "2apBGMsS6ti9RyF5TwQTDswXBWskiJP2LD4cUEDqYJjk",
+        "metadataAddress": "2b1kV6DkPAnxd5ixfnxCpjxmKwqjjaYmCZfHsFu24GXo"
+       }
+      },
+      {
+       "extension": "tokenMetadata",
+       "state": {
+        "additionalMetadata": [],
+        "mint": "2b1kV6DkPAnxd5ixfnxCpjxmKwqjjaYmCZfHsFu24GXo",
+        "name": "PayPal USD",
+        "symbol": "PYUSD",
+        "updateAuthority": "2apBGMsS6ti9RyF5TwQTDswXBWskiJP2LD4cUEDqYJjk",
+        "uri": "https://token-metadata.paxos.com/pyusd_metadata/prod/solana/pyusd_metadata.json"
+       }
+      }
+     ],
+     "freezeAuthority": "2apBGMsS6ti9RyF5TwQTDswXBWskiJP2LD4cUEDqYJjk",
+     "isInitialized": true,
+     "mintAuthority": "8Jornc27vtAYPkwDzsZVgLQchAYyC8nD7aCNPCDV8Qk2",
+     "supply": "733436489451596"
+    },
+    "type": "mint"
+   },
+   "program": "spl-token-2022",
+   "space": 866
+  },
+  "executable": false,
+  "lamports": 2078412093,
+  "owner": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+  "rentEpoch": 18446744073709551615,
+  "space": 866
+ },
+ "chain_dev_pct": "0",
+ "goplus": {
+  "balance_mutable_authority": {
+   "authority": [
+    {
+     "address": "2apBGMsS6ti9RyF5TwQTDswXBWskiJP2LD4cUEDqYJjk",
+     "malicious_address": 0
+    }
+   ],
+   "status": "1"
+  },
+  "closable": {
+   "authority": [
+    {
+     "address": "2apBGMsS6ti9RyF5TwQTDswXBWskiJP2LD4cUEDqYJjk",
+     "malicious_address": 0
+    }
+   ],
+   "status": "1"
+  },
+  "creators": [],
+  "default_account_state": "1",
+  "default_account_state_upgradable": {
+   "authority": [
+    {
+     "address": "2apBGMsS6ti9RyF5TwQTDswXBWskiJP2LD4cUEDqYJjk",
+     "malicious_address": 0
+    }
+   ],
+   "status": "1"
+  },
+  "dex": [
+   {
+    "burn_percent": null,
+    "day": {
+     "price_max": "-1",
+     "price_min": "-1",
+     "volume": "275080.467478503000"
+    },
+    "dex_name": "orca",
+    "fee_rate": "0.0001",
+    "id": "9tXiuRRw7kbejLhZXtxDxYs2REe43uH2e7k1kocgdM9B",
+    "lp_amount": null,
+    "month": {
+     "price_max": "-1",
+     "price_min": "-1",
+     "volume": "38484913.99152750"
+    },
+    "open_time": "0",
+    "price": "1.00010223389662824208",
+    "tvl": "18985174.02",
+    "type": "Concentrated",
+    "week": {
+     "price_max": "-1",
+     "price_min": "-1",
+     "volume": "10416597.68571620"
+    }
+   },
+   {
+    "burn_percent": null,
+    "day": {
+     "price_max": "-1",
+     "price_min": "-1",
+     "volume": "497552.865383186000"
+    },
+    "dex_name": "orca",
+    "fee_rate": "0.0004",
+    "id": "9Vh6fqJjDkqSTZ8bDXseVxGb2yQEMkEhhtte2anQCHSf",
+    "lp_amount": null,
+    "month": {
+     "price_max": "-1",
+     "price_min": "-1",
+     "volume": "9845995.29794016"
+    },
+    "open_time": "0",
+    "price": "110.80134569309609588000",
+    "tvl": "53325.03",
+    "type": "Concentrated",
+    "week": {
+     "price_max": "-1",
+     "price_min": "-1",
+     "volume": "2855083.17442682"
+    }
+   },
+   {
+    "burn_percent": 0,
+    "day": {
+     "price_max": "1.0003108319623402",
+     "price_min": "0.9999303333333334",
+     "volume": "8398.189690320203"
+    },
+    "dex_name": "raydium",
+    "fee_rate": "0.0001",
+    "id": "H6fxtvWLFYSJ66mPJqoz7cg6tk32Pcgc9vXrywu4LEWk",
+    "lp_amount": null,
+    "month": {
+     "price_max": "1.00171467751408",
+     "price_min": "0.9996863637142858",
+     "volume": "369679.63844798424"
+    },
+    "open_time": "1719442196",
+    "price": "1.0000640100776848",
+    "tvl": "10433.38",
+    "type": "Concentrated",
+    "week": {
+     "price_max": "1.0003995885287342",
+     "price_min": "0.9996863637142858",
+     "volume": "113962.34719049916"
+    }
+   },
+   {
+    "burn_percent": null,
+    "day": {
+     "price_max": "-1",
+     "price_min": "-1",
+     "volume": "1387.546892382960"
+    },
+    "dex_name": "orca",
+    "fee_rate": "0.0005",
+    "id": "EYMwW3Y7k37G9e3Hfks7KCFv8r5Sict7fBCYLz3vvusQ",
+    "lp_amount": null,
+    "month": {
+     "price_max": "-1",
+     "price_min": "-1",
+     "volume": "62623.964367528100"
+    },
+    "open_time": "0",
+    "price": "0.00693516980104255300",
+    "tvl": "6087.28",
+    "type": "Concentrated",
+    "week": {
+     "price_max": "-1",
+     "price_min": "-1",
+     "volume": "10977.808527567100"
+    }
+   },
+   {
+    "burn_percent": null,
+    "day": {
+     "price_max": "-1",
+     "price_min": "-1",
+     "volume": "880.127904311328"
+    },
+    "dex_name": "orca",
+    "fee_rate": "0.003",
+    "id": "E2o6LYAvhUDD5RkTs2uKoRLnf9qYmzipBniUTzMAAQGi",
+    "lp_amount": null,
+    "month": {
+     "price_max": "-1",
+     "price_min": "-1",
+     "volume": "25073.480578608000"
+    },
+    "open_time": "0",
+    "price": "110.8070442771156433",
+    "tvl": "3572.81",
+    "type": "Concentrated",
+    "week": {
+     "price_max": "-1",
+     "price_min": "-1",
+     "volume": "4484.000255158480"
+    }
+   },
+   {
+    "burn_percent": null,
+    "day": {
+     "price_max": "-1",
+     "price_min": "-1",
+     "volume": "16.7375763533126000"
+    },
+    "dex_name": "orca",
+    "fee_rate": "0.0016",
+    "id": "6Wfzz7Xczn4pciH4LnvF79r34htiWpTXNPCFz4jWZpi3",
+    "lp_amount": null,
+    "month": {
+     "price_max": "-1",
+     "price_min": "-1",
+     "volume": "982.120391636910"
+    },
+    "open_time": "0",
+    "price": "111.0105483648254824",
+    "tvl": "1857.56",
+    "type": "Concentrated",
+    "week": {
+     "price_max": "-1",
+     "price_min": "-1",
+     "volume": "147.143454885155"
+    }
+   },
+   {
+    "burn_percent": null,
+    "day": {
+     "price_max": "-1",
+     "price_min": "-1",
+     "volume": "528.274805103542"
+    },
+    "dex_name": "orca",
+    "fee_rate": "0.0001",
+    "id": "39GrsozbzM9Sg1U7EDnEtQ69fsVF3pmVtmV2DGDAQQJ5",
+    "lp_amount": null,
+    "month": {
+     "price_max": "-1",
+     "price_min": "-1",
+     "volume": "106951.629075642000"
+    },
+    "open_time": "0",
+    "price": "1.00024241616646729320",
+    "tvl": "864.42",
+    "type": "Concentrated",
+    "week": {
+     "price_max": "-1",
+     "price_min": "-1",
+     "volume": "8853.564908611820"
+    }
+   },
+   {
+    "burn_percent": 0,
+    "day": {
+     "price_max": "1.0003726155194363",
+     "price_min": "0.9994677910894586",
+     "volume": "1114.74639386604"
+    },
+    "dex_name": "raydium",
+    "fee_rate": "0.0001",
+    "id": "E1m2emUUjz3AQEVKfwzohFqyxyJeXDG2ybimsuhNQnmx",
+    "lp_amount": null,
+    "month": {
+     "price_max": "1.0714285714285714",
+     "price_min": "0.9980544747081712",
+     "volume": "33359.62231423272"
+    },
+    "open_time": "1724998033",
+    "price": "1.0001942345995756",
+    "tvl": "354.6",
+    "type": "Concentrated",
+    "week": {
+     "price_max": "1.0098039215686274",
+     "price_min": "0.9994677910894586",
+     "volume": "1996.2265099722313"
+    }
+   },
+   {
+    "burn_percent": null,
+    "day": {
+     "price_max": "-1",
+     "price_min": "-1",
+     "volume": "5.3406495655979000"
+    },
+    "dex_name": "orca",
+    "fee_rate": "0.01",
+    "id": "A1ohDjzqPa8aXa15TkFi49yAnpuTn5UPUwocQcm6yBmn",
+    "lp_amount": null,
+    "month": {
+     "price_max": "-1",
+     "price_min": "-1",
+     "volume": "133.510272695984"
+    },
+    "open_time": "0",
+    "price": "122.14127760468690543000",
+    "tvl": "103.64",
+    "type": "Concentrated",
+    "week": {
+     "price_max": "-1",
+     "price_min": "-1",
+     "volume": "48.5314393233435000"
+    }
+   },
+   {
+    "burn_percent": 0,
+    "day": {
+     "price_max": "-1",
+     "price_min": "-1",
+     "volume": "0"
+    },
+    "dex_name": "raydium",
+    "fee_rate": "0.0005",
+    "id": "D3QdKFidXPDiG9bEjJz6YCH9WDDSwkxznUustZeeC4HF",
+    "lp_amount": null,
+    "month": {
+     "price_max": "1.0006058213427402",
+     "price_min": "0.9993957345971564",
+     "volume": "8.323437809133939"
+    },
+    "open_time": "1719442420",
+    "price": "1.0001922885231764",
+    "tvl": "56.01",
+    "type": "Concentrated",
+    "week": {
+     "price_max": "1.000538167641262",
+     "price_min": "1.000538167641262",
+     "volume": "2.4445306818670205"
+    }
+   }
+  ],
+  "freezable": {
+   "authority": [
+    {
+     "address": "2apBGMsS6ti9RyF5TwQTDswXBWskiJP2LD4cUEDqYJjk",
+     "malicious_address": 0
+    }
+   ],
+   "status": "1"
+  },
+  "holder_count": "57313",
+  "holders": [
+   {
+    "account": "5gUuDFHswKi2QMA1qJHf6FEVhNCrHnyAdfWniMaUUPE4",
+    "balance": "393571704.253643",
+    "is_locked": 0,
+    "locked_detail": [],
+    "percent": "0.5409",
+    "tag": "",
+    "token_account": "47od2TPRvqJipfPVWZdyenLEngPw8hC36nDxiLyvGsEP"
+   },
+   {
+    "account": "4AK83Vf82d1Q1zNsho5RSqHvBgkU7UvrKJCSz2bjdV3m",
+    "balance": "50226424.813",
+    "is_locked": 0,
+    "locked_detail": [],
+    "percent": "0.0690",
+    "tag": "",
+    "token_account": "8DTDRUuohMeKMabZpciHVDV1gwfd3Y74EGta3hY1ckdN"
+   },
+   {
+    "account": "6m68XVvBR4oLCgM7YFgH1VqzzV5vk9UimvmVUvyKw6c2",
+    "balance": "25000101.028307",
+    "is_locked": 0,
+    "locked_detail": [],
+    "percent": "0.0344",
+    "tag": "",
+    "token_account": "7RCBfgRgm3pMv42ZzvQNuXydThVatpRcYbcWUNvyMCJN"
+   },
+   {
+    "account": "FCQSFKkw2JPhpG4M18nvGfiNAK6N3gFBmp8pkn4CxYGs",
+    "balance": "24993500.0",
+    "is_locked": 0,
+    "locked_detail": [],
+    "percent": "0.0344",
+    "tag": "",
+    "token_account": "9u3nrtuwpWNaM7z1PSSbwW55jMt89QN2SAmMTYq2KM2o"
+   },
+   {
+    "account": "AMohT4QVc7ZrqVVznTFCzmujc4eewapGYYeP5bDMSmDY",
+    "balance": "21496640.926887",
+    "is_locked": 0,
+    "locked_detail": [],
+    "percent": "0.0295",
+    "tag": "",
+    "token_account": "73dD1aFEaEWvDrtAWUUBjRKjgzk3ZUtAYAQt9HE2sau"
+   },
+   {
+    "account": "AdB5E9PCHYTuo8BdQcwkVPfWPDrZss6s1nGU7WLxxL38",
+    "balance": "20000000.0",
+    "is_locked": 0,
+    "locked_detail": [],
+    "percent": "0.0275",
+    "tag": "",
+    "token_account": "GRqBwhFqUkb3HzS2wyF7aHmKtVWitdZUzXbEsdYn4w1C"
+   },
+   {
+    "account": "HwDX5eJkzPAJ7y7ENrH23HaDGUgB4nXPxG8UsB4cEMGE",
+    "balance": "19999999.89",
+    "is_locked": 0,
+    "locked_detail": [],
+    "percent": "0.0275",
+    "tag": "",
+    "token_account": "3fSaBEsRAqS8926VcPth7wGGNN2Wz2ZUssDW4dBVyndP"
+   },
+   {
+    "account": "HgTWrWU195u6s4v3JiEjJFCb6J6wxtQh8DAYV63tCx6Q",
+    "balance": "19999999.767889",
+    "is_locked": 0,
+    "locked_detail": [],
+    "percent": "0.0275",
+    "tag": "",
+    "token_account": "6nHCEpGbpFso86gFbackQGJuoJGmHCbxi4JWFqQbTmGH"
+   },
+   {
+    "account": "5stwKMsakQkH3uzN5eQx9LKzq6N8q3DBjXzkHyvudFde",
+    "balance": "19943398.302725",
+    "is_locked": 0,
+    "locked_detail": [],
+    "percent": "0.0274",
+    "tag": "",
+    "token_account": "96qKK86dMuyGRYmoAGjvcBtF1e5TUJWy2UuUnzmA6ERK"
+   },
+   {
+    "account": "5SybwTvGno6SBApbGinXyLqhnPzs47aaBG4PShyPT8ey",
+    "balance": "15593387.002736",
+    "is_locked": 0,
+    "locked_detail": [],
+    "percent": "0.0214",
+    "tag": "",
+    "token_account": "BACKYv2xKnd8zCnzFpMTDKvCD3LMWdT8YamSmxtmakfa"
+   }
+  ],
+  "lp_holders": [],
+  "metadata": {
+   "description": "PayPal USD is designed to contribute to the opportunity stablecoins offer for payments and is 100% backed by U.S. dollar deposits, short-term U.S Treasuries and similar cash equivalents. PayPal USD is redeemable 1:1 for U.S. dollars and is issued by Paxos Trust Company.",
+   "name": "PayPal USD",
+   "symbol": "PYUSD",
+   "uri": "https://token-metadata.paxos.com/pyusd_metadata/prod/solana/pyusd_metadata.json"
+  },
+  "metadata_mutable": {
+   "metadata_upgrade_authority": [
+    {
+     "address": "2apBGMsS6ti9RyF5TwQTDswXBWskiJP2LD4cUEDqYJjk",
+     "malicious_address": 0
+    }
+   ],
+   "status": "1"
+  },
+  "mintable": {
+   "authority": [
+    {
+     "address": "8Jornc27vtAYPkwDzsZVgLQchAYyC8nD7aCNPCDV8Qk2",
+     "malicious_address": 0
+    }
+   ],
+   "status": "1"
+  },
+  "non_transferable": "0",
+  "total_supply": "733436489.451596",
+  "transfer_fee": {
+   "current_fee_rate": {
+    "fee_rate": "0",
+    "maximum_fee": "0"
+   },
+   "scheduled_fee_rate": [
+    {
+     "epoch": "605",
+     "fee_rate": "0",
+     "maximum_fee": "0"
+    }
+   ]
+  },
+  "transfer_fee_upgradable": {
+   "authority": [
+    {
+     "address": "2apBGMsS6ti9RyF5TwQTDswXBWskiJP2LD4cUEDqYJjk",
+     "malicious_address": 0
+    }
+   ],
+   "status": "1"
+  },
+  "transfer_hook": [],
+  "transfer_hook_upgradable": {
+   "authority": [
+    {
+     "address": "2apBGMsS6ti9RyF5TwQTDswXBWskiJP2LD4cUEDqYJjk",
+     "malicious_address": 0
+    }
+   ],
+   "status": "1"
+  },
+  "trusted_token": 1
+ },
+ "rugcheck": {
+  "summary": {
+   "tokenProgram": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "tokenType": "",
+   "risks": [],
+   "score": 1,
+   "score_normalised": 1,
+   "lpLockedPct": 0
+  },
+  "report": {
+   "mint": "2b1kV6DkPAnxd5ixfnxCpjxmKwqjjaYmCZfHsFu24GXo",
+   "tokenProgram": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "creator": "5gUuDFHswKi2QMA1qJHf6FEVhNCrHnyAdfWniMaUUPE4",
+   "creatorBalance": 0,
+   "token": {
+    "mintAuthority": "8Jornc27vtAYPkwDzsZVgLQchAYyC8nD7aCNPCDV8Qk2",
+    "supply": 733436489451596,
+    "decimals": 6,
+    "isInitialized": true,
+    "freezeAuthority": "2apBGMsS6ti9RyF5TwQTDswXBWskiJP2LD4cUEDqYJjk"
+   },
+   "token_extensions": {
+    "nonTransferable": false,
+    "transferFeeConfig": {
+     "transferFeeConfigAuthority": "2apBGMsS6ti9RyF5TwQTDswXBWskiJP2LD4cUEDqYJjk",
+     "withdrawWithheldAuthority": "2apBGMsS6ti9RyF5TwQTDswXBWskiJP2LD4cUEDqYJjk",
+     "withheldAmount": 0,
+     "olderTransferFee": {
+      "epoch": 605,
+      "maximumFee": 0,
+      "transferFeeBasisPoints": 0
+     },
+     "newerTransferFee": {
+      "epoch": 605,
+      "maximumFee": 0,
+      "transferFeeBasisPoints": 0
+     }
+    },
+    "defaultAccountState": null,
+    "permanentDelegate": {
+     "delegate": "2apBGMsS6ti9RyF5TwQTDswXBWskiJP2LD4cUEDqYJjk"
+    },
+    "metadataPointer": {
+     "authority": "2apBGMsS6ti9RyF5TwQTDswXBWskiJP2LD4cUEDqYJjk",
+     "metadataAddress": "2b1kV6DkPAnxd5ixfnxCpjxmKwqjjaYmCZfHsFu24GXo"
+    },
+    "groupPointer": null,
+    "groupMemberPointer": null,
+    "tokenMetadata": {
+     "authority": "2apBGMsS6ti9RyF5TwQTDswXBWskiJP2LD4cUEDqYJjk",
+     "mint": "2b1kV6DkPAnxd5ixfnxCpjxmKwqjjaYmCZfHsFu24GXo",
+     "name": "PayPal USD",
+     "symbol": "PYUSD",
+     "uri": "https://token-metadata.paxos.com/pyusd_metadata/prod/solana/pyusd_metadata.json",
+     "additionalMetadata": {}
+    },
+    "mintCloseAuthority": {
+     "closeAuthority": "2apBGMsS6ti9RyF5TwQTDswXBWskiJP2LD4cUEDqYJjk"
+    },
+    "confidentialTransferMint": {
+     "authority": "2apBGMsS6ti9RyF5TwQTDswXBWskiJP2LD4cUEDqYJjk",
+     "autoApproveNewAccounts": false,
+     "auditorElgamalPubkey": null
+    },
+    "interestBearingConfig": null,
+    "transferHook": {
+     "authority": "2apBGMsS6ti9RyF5TwQTDswXBWskiJP2LD4cUEDqYJjk",
+     "programId": null
+    },
+    "confidentialTransferFeeConfig": {
+     "authority": "2apBGMsS6ti9RyF5TwQTDswXBWskiJP2LD4cUEDqYJjk",
+     "withdrawWithheldAuthorityElgamalPubkey": "HDfmQztzBN2Cc3rkDZuL88SfWw5sSajVMyiz5QaQHFc=",
+     "harvestToMintEnabled": true,
+     "withheldAmount": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
+    },
+    "tokenGroup": null,
+    "tokenGroupMember": null,
+    "scaledUiAmountConfig": null,
+    "pausableConfig": null
+   },
+   "tokenMeta": {
+    "name": "PayPal USD",
+    "symbol": "PYUSD",
+    "uri": "https://token-metadata.paxos.com/pyusd_metadata/prod/solana/pyusd_metadata.json",
+    "mutable": true,
+    "updateAuthority": "11111111111111111111111111111111"
+   },
+   "topHolders": null,
+   "freezeAuthority": {
+    "lamports": 148333363,
+    "owner": "11111111111111111111111111111111",
+    "data": [
+     "",
+     "base64"
+    ],
+    "executable": false,
+    "rentEpoch": 18446744073709551615,
+    "space": 0
+   },
+   "mintAuthority": {
+    "lamports": 3452330,
+    "owner": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+    "data": [
+     "AQQBF4UyYe9quFMqZ/BThlqtMSk/zwfPEgq1uaFXBlSNwCsjwfxOSRzU9jIfFn4AGEKSPf280QgPAQIx8Az5Ab/kUJ5yuSpBXtTy01awwaV2oDJLAaK7i5AMANAwEsZpjMNTkyucCQxDwLWxwvI6aB20Sg3YYpChjShcGWmgi7EWTcoAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+     "base64"
+    ],
+    "executable": false,
+    "rentEpoch": 18446744073709551615,
+    "space": 355
+   },
+   "risks": [],
+   "score": 1,
+   "score_normalised": 1,
+   "fileMeta": {
+    "description": "",
+    "name": "PayPal USD",
+    "symbol": "PYUSD",
+    "image": ""
+   },
+   "lockerOwners": {},
+   "lockers": {},
+   "lockerScanStatus": "none",
+   "markets": null,
+   "totalMarketLiquidity": 0,
+   "totalStableLiquidity": 0,
+   "totalLPProviders": 0,
+   "totalHolders": 0,
+   "price": 0,
+   "rugged": false,
+   "tokenType": "",
+   "transferFee": {
+    "pct": 0,
+    "maxAmount": 0,
+    "authority": "11111111111111111111111111111111"
+   },
+   "knownAccounts": {
+    "5gUuDFHswKi2QMA1qJHf6FEVhNCrHnyAdfWniMaUUPE4": {
+     "name": "Creator",
+     "type": "CREATOR"
+    }
+   },
+   "events": [
+    {
+     "event": 0,
+     "oldValue": "22mKJkKjGEQ3rampp5YKaSsaYZ52BUkcnUN6evXGsXzz",
+     "newValue": "8Jornc27vtAYPkwDzsZVgLQchAYyC8nD7aCNPCDV8Qk2",
+     "createdAt": "2026-04-15T13:23:18.810552122Z"
+    },
+    {
+     "event": 0,
+     "oldValue": "5gUuDFHswKi2QMA1qJHf6FEVhNCrHnyAdfWniMaUUPE4",
+     "newValue": "22mKJkKjGEQ3rampp5YKaSsaYZ52BUkcnUN6evXGsXzz",
+     "createdAt": "2024-11-12T03:11:37.791010044Z"
+    },
+    {
+     "event": 2,
+     "oldValue": "5000293020000",
+     "newValue": "45000293020000",
+     "createdAt": "2024-05-31T05:10:34.305202625Z"
+    }
+   ],
+   "verification": {
+    "mint": "2b1kV6DkPAnxd5ixfnxCpjxmKwqjjaYmCZfHsFu24GXo",
+    "payer": "",
+    "name": "PayPal USD",
+    "symbol": "pyusd",
+    "description": "",
+    "jup_verified": true,
+    "jup_strict": true,
+    "validated": false,
+    "links": []
+   },
+   "validation": {
+    "validated": false
+   },
+   "graphInsidersDetected": 0,
+   "insiderNetworks": null,
+   "detectedAt": "2024-05-29T13:55:39.553474617Z",
+   "creatorTokens": null,
+   "launchpad": null,
+   "deployPlatform": ""
+  },
+  "insiders": []
+ }
+}

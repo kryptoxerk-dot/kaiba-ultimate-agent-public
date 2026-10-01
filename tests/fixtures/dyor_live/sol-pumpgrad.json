@@ -1,0 +1,337 @@
+{
+ "note": "Live recording, not hand-built. goplus is the per-address entry already unwrapped from GoPlus's result map; rugcheck holds one key per route.",
+ "recorded_at_ms": 1789897057100,
+ "token": {
+  "label": "PUMPGRAD",
+  "address": "BQnxyUvZAn6gg2wHwRipNzojhxgGJCJQ9QWdWxkdpump",
+  "chain": "sol",
+  "why": "Graduated to the pump.fun AMM. Our dossier graded this A."
+ },
+ "chain": {
+  "data": {
+   "parsed": {
+    "info": {
+     "decimals": 6,
+     "extensions": [
+      {
+       "extension": "metadataPointer",
+       "state": {
+        "authority": null,
+        "metadataAddress": "BQnxyUvZAn6gg2wHwRipNzojhxgGJCJQ9QWdWxkdpump"
+       }
+      },
+      {
+       "extension": "tokenMetadata",
+       "state": {
+        "additionalMetadata": [],
+        "mint": "BQnxyUvZAn6gg2wHwRipNzojhxgGJCJQ9QWdWxkdpump",
+        "name": "Jean Coin",
+        "symbol": "JEAN",
+        "updateAuthority": null,
+        "uri": "https://ipfs.io/ipfs/bafkreibuglqegf7oe5vm3dl2vpvat6i3nqft6khcyhbzypqtzghquxcayy"
+       }
+      }
+     ],
+     "freezeAuthority": null,
+     "isInitialized": true,
+     "mintAuthority": null,
+     "supply": "970672778465864"
+    },
+    "type": "mint"
+   },
+   "program": "spl-token-2022",
+   "space": 411
+  },
+  "executable": false,
+  "lamports": 2738120,
+  "owner": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+  "rentEpoch": 18446744073709551615,
+  "space": 411
+ },
+ "chain_dev_pct": "0",
+ "goplus": {
+  "balance_mutable_authority": {
+   "authority": [],
+   "status": "0"
+  },
+  "closable": {
+   "authority": [],
+   "status": "0"
+  },
+  "creators": [],
+  "default_account_state": "1",
+  "default_account_state_upgradable": {
+   "authority": [],
+   "status": "0"
+  },
+  "freezable": {
+   "authority": [],
+   "status": "0"
+  },
+  "metadata": {
+   "description": "The golden gentleman of the coin.",
+   "name": "Jean Coin",
+   "symbol": "JEAN",
+   "uri": "https://ipfs.io/ipfs/bafkreibuglqegf7oe5vm3dl2vpvat6i3nqft6khcyhbzypqtzghquxcayy"
+  },
+  "metadata_mutable": {
+   "metadata_upgrade_authority": [],
+   "status": "0"
+  },
+  "mintable": {
+   "authority": [],
+   "status": "0"
+  },
+  "non_transferable": "0",
+  "total_supply": "970672788.465864",
+  "transfer_fee": {},
+  "transfer_fee_upgradable": {
+   "authority": [],
+   "status": "0"
+  },
+  "transfer_hook": [],
+  "transfer_hook_upgradable": {
+   "authority": [],
+   "status": "0"
+  },
+  "trusted_token": 0
+ },
+ "rugcheck": {
+  "summary": {
+   "tokenProgram": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "tokenType": "",
+   "risks": [
+    {
+     "name": "High market cap per holder",
+     "value": "",
+     "description": "The token's market cap is very high relative to its number of holders",
+     "score": 10000,
+     "level": "warn"
+    },
+    {
+     "name": "Low Liquidity",
+     "value": "$260.79",
+     "description": "Low amount of liquidity in the token pool",
+     "score": 2739,
+     "level": "danger"
+    }
+   ],
+   "score": 12740,
+   "score_normalised": 53,
+   "lpLockedPct": 0
+  },
+  "report": {
+   "mint": "BQnxyUvZAn6gg2wHwRipNzojhxgGJCJQ9QWdWxkdpump",
+   "tokenProgram": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "creator": "DTwNxWe7kgZZ3vSuPN8rA4heYQdqC695paf2cryqW6db",
+   "creatorBalance": 0,
+   "token": {
+    "mintAuthority": null,
+    "supply": 970672778465864,
+    "decimals": 6,
+    "isInitialized": true,
+    "freezeAuthority": null
+   },
+   "token_extensions": {
+    "nonTransferable": false,
+    "transferFeeConfig": null,
+    "defaultAccountState": null,
+    "permanentDelegate": null,
+    "metadataPointer": {
+     "authority": null,
+     "metadataAddress": "BQnxyUvZAn6gg2wHwRipNzojhxgGJCJQ9QWdWxkdpump"
+    },
+    "groupPointer": null,
+    "groupMemberPointer": null,
+    "tokenMetadata": {
+     "authority": null,
+     "mint": "BQnxyUvZAn6gg2wHwRipNzojhxgGJCJQ9QWdWxkdpump",
+     "name": "Jean Coin",
+     "symbol": "JEAN",
+     "uri": "https://ipfs.io/ipfs/bafkreibuglqegf7oe5vm3dl2vpvat6i3nqft6khcyhbzypqtzghquxcayy",
+     "additionalMetadata": {}
+    },
+    "mintCloseAuthority": null,
+    "confidentialTransferMint": null,
+    "interestBearingConfig": null,
+    "transferHook": null,
+    "confidentialTransferFeeConfig": null,
+    "tokenGroup": null,
+    "tokenGroupMember": null,
+    "scaledUiAmountConfig": null,
+    "pausableConfig": null
+   },
+   "tokenMeta": {
+    "name": "Jean Coin",
+    "symbol": "JEAN",
+    "uri": "https://ipfs.io/ipfs/bafkreibuglqegf7oe5vm3dl2vpvat6i3nqft6khcyhbzypqtzghquxcayy",
+    "mutable": false,
+    "updateAuthority": "11111111111111111111111111111111"
+   },
+   "topHolders": [],
+   "freezeAuthority": null,
+   "mintAuthority": null,
+   "risks": [
+    {
+     "name": "High market cap per holder",
+     "value": "",
+     "description": "The token's market cap is very high relative to its number of holders",
+     "score": 10000,
+     "level": "warn"
+    },
+    {
+     "name": "Low Liquidity",
+     "value": "$260.79",
+     "description": "Low amount of liquidity in the token pool",
+     "score": 2739,
+     "level": "danger"
+    }
+   ],
+   "score": 12740,
+   "score_normalised": 53,
+   "fileMeta": {
+    "description": "",
+    "name": "Jean Coin",
+    "symbol": "JEAN",
+    "image": ""
+   },
+   "lockerOwners": {},
+   "lockers": {},
+   "lockerScanStatus": "none",
+   "markets": [
+    {
+     "pubkey": "HbGxyqaQDZeD2g7h3vVHhL1TabnmMRDjR5xnt1T6srjw",
+     "marketType": "pump_fun_amm",
+     "mintA": "BQnxyUvZAn6gg2wHwRipNzojhxgGJCJQ9QWdWxkdpump",
+     "mintB": "So11111111111111111111111111111111111111112",
+     "mintLP": "FoToFzJaovVKutAmZZz3nvbMnUKviMQE8P756gEing1z",
+     "liquidityA": "gjftg9xQAZAcaQcax1cT2u1VvaghEyEKTYx3xCvmFkc",
+     "liquidityB": "4KrRDDzWcxxRAmvfmEuXnFwWZUZ4GPbSqi1qjjaTUEsH",
+     "mintAAccount": {
+      "mintAuthority": null,
+      "supply": 970672778465864,
+      "decimals": 6,
+      "isInitialized": true,
+      "freezeAuthority": null
+     },
+     "mintBAccount": {
+      "mintAuthority": null,
+      "supply": 0,
+      "decimals": 9,
+      "isInitialized": true,
+      "freezeAuthority": null
+     },
+     "mintLPAccount": {
+      "mintAuthority": "HbGxyqaQDZeD2g7h3vVHhL1TabnmMRDjR5xnt1T6srjw",
+      "supply": 0,
+      "decimals": 9,
+      "isInitialized": true,
+      "freezeAuthority": null
+     },
+     "liquidityAAccount": {
+      "mint": "BQnxyUvZAn6gg2wHwRipNzojhxgGJCJQ9QWdWxkdpump",
+      "owner": "HbGxyqaQDZeD2g7h3vVHhL1TabnmMRDjR5xnt1T6srjw",
+      "amount": 945298848863074,
+      "delegate": null,
+      "state": 1,
+      "delegatedAmount": 0,
+      "closeAuthority": null
+     },
+     "liquidityBAccount": {
+      "mint": "So11111111111111111111111111111111111111112",
+      "owner": "HbGxyqaQDZeD2g7h3vVHhL1TabnmMRDjR5xnt1T6srjw",
+      "amount": 2402888850,
+      "delegate": null,
+      "state": 1,
+      "delegatedAmount": 0,
+      "closeAuthority": null
+     },
+     "lp": {
+      "baseMint": "BQnxyUvZAn6gg2wHwRipNzojhxgGJCJQ9QWdWxkdpump",
+      "quoteMint": "So11111111111111111111111111111111111111112",
+      "lpMint": "FoToFzJaovVKutAmZZz3nvbMnUKviMQE8P756gEing1z",
+      "quotePrice": "108.53144292689205",
+      "basePrice": "0.000002261368551367189",
+      "base": "945298848.863074",
+      "quote": "2.40288885",
+      "reserveSupply": 4193388282729,
+      "currentSupply": 0,
+      "quoteUSD": "260.7889940834403",
+      "baseUSD": "2137.6690884625605",
+      "pctReserve": 0,
+      "pctSupply": 0,
+      "holders": null,
+      "totalTokensUnlocked": 0,
+      "tokenSupply": 0,
+      "lpLocked": 4193388282729,
+      "lpUnlocked": 0,
+      "lpLockedPct": 100,
+      "lpLockedUSD": "2398.4580825460007",
+      "lpMaxSupply": 0,
+      "lpCurrentSupply": 0,
+      "lpTotalSupply": 4193388282729
+     }
+    }
+   ],
+   "totalMarketLiquidity": "2398.4580825460007",
+   "totalStableLiquidity": "260.7889940834403",
+   "totalLPProviders": 0,
+   "totalHolders": 0,
+   "price": "0.000002261368551367189",
+   "rugged": false,
+   "tokenType": "",
+   "transferFee": {
+    "pct": 0,
+    "maxAmount": 0,
+    "authority": "11111111111111111111111111111111"
+   },
+   "knownAccounts": {
+    "4KrRDDzWcxxRAmvfmEuXnFwWZUZ4GPbSqi1qjjaTUEsH": {
+     "name": "Pump Fun AMM",
+     "type": "AMM"
+    },
+    "8RLrhrxJKS7Uc2JPV9SxvL7zv7H4hz3paw3jfKqS7Msd": {
+     "name": "Pump Fun",
+     "type": "AMM"
+    },
+    "CVeDsGTwPwvF1yYcEydHoZuuNxHta1GanqoY1dkug7Ee": {
+     "name": "Printr Stake Pool",
+     "type": "LOCKER"
+    },
+    "DTwNxWe7kgZZ3vSuPN8rA4heYQdqC695paf2cryqW6db": {
+     "name": "Creator",
+     "type": "CREATOR"
+    },
+    "F2hZRr622h464MjDmrHJ6a2JBfmtLUEKPifVtWyGBp6s": {
+     "name": "Pump Fun AMM",
+     "type": "AMM"
+    },
+    "Ghv2RG1hQCEQ2o5QY7Bdz6Jj18SNRQgxQXkQrBxvrb9H": {
+     "name": "Pump Fun",
+     "type": "AMM"
+    },
+    "HbGxyqaQDZeD2g7h3vVHhL1TabnmMRDjR5xnt1T6srjw": {
+     "name": "Pump Fun AMM",
+     "type": "AMM"
+    }
+   },
+   "events": [],
+   "verification": null,
+   "validation": {
+    "validated": false
+   },
+   "graphInsidersDetected": 0,
+   "insiderNetworks": null,
+   "detectedAt": "2026-09-20T07:22:28.514063683Z",
+   "creatorTokens": null,
+   "launchpad": {
+    "name": "Pump.Fun",
+    "logo": "https://api.rugcheck.xyz/public/logos/pump_fun.png",
+    "url": "https://x.com/pumpfun",
+    "platform": "pump_fun"
+   },
+   "deployPlatform": "unknown"
+  },
+  "insiders": []
+ }
+}

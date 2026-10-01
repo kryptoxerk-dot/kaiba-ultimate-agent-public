@@ -1,0 +1,52 @@
+{
+  "jsonrpc": "2.0",
+  "id": "kaiba-getTransactionsForAddress",
+  "result": {
+    "data": [
+      {
+        "transaction": {
+          "signatures": [
+            "4qKyJk1Y8v7fGzbHrqvZCb5xLgJJERFPZgKDg7PsNHa9ysFVeukE9zwLYk6Rfvk2NBYrNFmT2w66tKFbaL712T6K"
+          ],
+          "message": {
+            "header": {
+              "numRequiredSignatures": 1,
+              "numReadonlySignedAccounts": 0,
+              "numReadonlyUnsignedAccounts": 3
+            },
+            "accountKeys": [
+              "5tzFkiKscXHK5ZXCGbXZxdw7gTjjD1mBwuoFbhUvuAi9",
+              "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263"
+            ]
+          }
+        },
+        "meta": {"err": null, "fee": 5001, "preBalances": [1200000000, 0], "postBalances": [1100000000, 99000000]},
+        "version": 0,
+        "slot": 448602597,
+        "transactionIndex": 67,
+        "blockTime": 1789872951
+      },
+      {
+        "transaction": {
+          "signatures": [
+            "3TE3bW4Hh4Re4z7g3j7pQ9rS2tU4vW6xY8zA1bC3dE5fG7hJ9kL2mN4pQ6rS8tU1vW3xY5zA7bC9dE2fG4h"
+          ],
+          "message": {
+            "header": {
+              "numRequiredSignatures": 1,
+              "numReadonlySignedAccounts": 0,
+              "numReadonlyUnsignedAccounts": 2
+            },
+            "accountKeys": ["5tzFkiKscXHK5ZXCGbXZxdw7gTjjD1mBwuoFbhUvuAi9"]
+          }
+        },
+        "meta": {"err": null, "fee": 5000},
+        "version": "legacy",
+        "slot": 448602590,
+        "transactionIndex": 12,
+        "blockTime": 1789872900
+      }
+    ],
+    "paginationToken": "448602641:31"
+  }
+}

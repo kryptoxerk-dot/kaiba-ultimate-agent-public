@@ -1,0 +1,77 @@
+[Unit]
+# Nightly encrypted snapshot. Runs as root, because the backup destination is
+# root-only by design: a compromised service user must not be able to read or destroy
+# the history of what it did.
+Description=Kaiba nightly encrypted backup
+Documentation=file:///opt/kaiba/current/docs/runbooks/deploy.md
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+WorkingDirectory=/opt/kaiba/current
+
+# Holds AGE_RECIPIENTS / GPG_RECIPIENT, RCLONE_REMOTE and the retention window. Never a
+# private key: the backup encrypts to a public recipient, so this host cannot decrypt
+# its own archives. Restoring needs the identity file you keep off the box.
+EnvironmentFile=/etc/kaiba/deploy.env
+Environment=KAIBA_STATE=/var/lib/kaiba
+Environment=KAIBA_CONF=/etc/kaiba
+Environment=KAIBA_PREFIX=/opt/kaiba
+# ProtectHome=yes hides /root, so rclone cannot find ~/.config/rclone/rclone.conf.
+# Keep the remote's configuration in /etc/kaiba instead, 0600 root:root.
+Environment=RCLONE_CONFIG=/etc/kaiba/rclone.conf
+Environment=HOME=/var/lib/kaiba/backups
+
+ExecStart=/opt/kaiba/current/deploy/backup.sh
+TimeoutStartSec=1800
+Restart=no
+Nice=10
+IOSchedulingClass=idle
+
+# ---- hardening baseline -------------------------------------------------------------
+# Runs as root, so the sandbox matters more here, not less. The two capabilities it does
+# NOT drop are none: backup.sh only reads files and writes to /var/lib/kaiba/backups.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+PrivateMounts=yes
+ProtectHostname=yes
+ProtectClock=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectProc=invisible
+ProcSubset=pid
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RemoveIPC=yes
+KeyringMode=private
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+CapabilityBoundingSet=
+AmbientCapabilities=
+UMask=0077
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+# ---- explicit write surface ---------------------------------------------------------
+# Reads the database and the config; writes only into the backup directory.
+ReadWritePaths=/var/lib/kaiba/backups /var/lib/kaiba/logs
+ReadOnlyPaths=/var/lib/kaiba/db /var/lib/kaiba/hermes /etc/kaiba /opt/kaiba/current /opt/kaiba/venv
+# The whole signer directory, not just the keystore: nothing about wallet key material
+# belongs in an archive that gets pushed to object storage. backup.sh also excludes it,
+# and this makes the exclusion true even if the script is changed.
+InaccessiblePaths=/etc/kaiba/signer
+
+MemoryMax=512M
+CPUQuota=50%
+TasksMax=32

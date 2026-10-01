@@ -1,0 +1,6 @@
+{
+  "source": "https://alphadrops.net/points-programs (table layout)",
+  "kind": "html",
+  "body": "<!DOCTYPE html><html><body><table class=\"programs\">\n<tr><th>Name</th><th>Chain</th><th>Status</th></tr>\n<tr><td><a href=\"https://backpack.exchange\">Backpack</a></td><td>Solana</td><td>Season 4</td></tr>\n<tr><td><a href=\"https://app.kraken.com/ink\">Kraken Ink</a></td><td>Ink</td><td>Live</td></tr>\n</table></body></html>\n",
+  "note": "Hand-built to match the documented/observed layout of the source, NOT a live capture. Shapes follow docs/research/06-hunters-airdrops-nft.md. Regenerate by hand if a provider's real layout is captured later."
+}

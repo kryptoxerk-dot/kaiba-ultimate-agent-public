@@ -1,0 +1,49 @@
+<div class="metric mode-card">
+  <span>Mode</span>
+  <strong class="badge badge-{{ overview.mode }}">{{ overview.mode|upper }}</strong>
+  <small>
+    {% if overview.kill_switch %}kill switch engaged{% elif overview.entries_paused %}entries paused{% elif overview.reduce_only %}reduce-only{% else %}entries allowed{% endif %}
+  </small>
+</div>
+
+<div class="metric">
+  <span>Open positions</span>
+  <strong>{{ overview.open_positions }}</strong>
+  <small>
+    {% if overview.open_positions_by_mode %}
+      {% for mode, n in overview.open_positions_by_mode.items() %}{{ mode }} {{ n }}{% if not loop.last %} · {% endif %}{% endfor %}
+    {% else %}none open{% endif %}
+  </small>
+</div>
+
+<div class="metric">
+  <span>PnL today (realized)</span>
+  {% if overview.pnl_today.available %}
+  <strong class="{% if overview.pnl_today.by_chain and overview.pnl_today.by_chain[0].pnl_base_units < 0 %}neg{% else %}pos{% endif %}">
+    {% for row in overview.pnl_today.by_chain %}{{ row.pnl_native|num(6) }} {{ row.symbol }}{% if not loop.last %} / {% endif %}{% endfor %}
+  </strong>
+  <small>{{ overview.pnl_today.trades }} closed trade{{ '' if overview.pnl_today.trades == 1 else 's' }}</small>
+  {% else %}
+  <strong class="nodata">—</strong>
+  <small>{{ overview.pnl_today.reason }}</small>
+  {% endif %}
+</div>
+
+<div class="metric">
+  <span>Alerts today</span>
+  <strong class="{% if overview.alerts_today %}warnv{% endif %}">{{ overview.alerts_today }}</strong>
+  <small>{{ overview.events_today }} events on the bus today</small>
+</div>
+
+<div class="metric">
+  <span>Provider health</span>
+  {% if overview.providers.available %}
+  <strong class="{% if overview.providers.healthy < overview.providers.total %}warnv{% else %}pos{% endif %}">
+    {{ overview.providers.healthy }}/{{ overview.providers.total }}
+  </strong>
+  <small>healthy / metered</small>
+  {% else %}
+  <strong class="nodata">—</strong>
+  <small>{{ overview.providers.reason }}</small>
+  {% endif %}
+</div>

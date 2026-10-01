@@ -1,0 +1,60 @@
+{
+  "note": "One wallet, two tokens. AAA is a partial exit followed by a rebuy and a full exit (one episode, two buys, two sells). BBB is a clean 10x round trip that clears the 6x big-win bar.",
+  "wallet": "CJF7MNqb9xv1XrTs5St1Du5JuQXLsfFBB137vmYRKpnb",
+  "swaps": [
+    {
+      "chain": "sol",
+      "ts_ms": 1000000,
+      "token": "AAA",
+      "side": "buy",
+      "amount_token": "1000000000",
+      "amount_native": "2000000000",
+      "usd_value": "400.00"
+    },
+    {
+      "chain": "sol",
+      "ts_ms": 1060000,
+      "token": "AAA",
+      "side": "sell",
+      "amount_token": "400000000",
+      "amount_native": "1200000000",
+      "usd_value": "240.00"
+    },
+    {
+      "chain": "sol",
+      "ts_ms": 1120000,
+      "token": "AAA",
+      "side": "buy",
+      "amount_token": "500000000",
+      "amount_native": "1500000000",
+      "usd_value": "300.00"
+    },
+    {
+      "chain": "sol",
+      "ts_ms": 1300000,
+      "token": "AAA",
+      "side": "sell",
+      "amount_token": "1100000000",
+      "amount_native": "7200000000",
+      "usd_value": "1440.00"
+    },
+    {
+      "chain": "sol",
+      "ts_ms": 2000000,
+      "token": "BBB",
+      "side": "buy",
+      "amount_token": "1000000000",
+      "amount_native": "100000000",
+      "usd_value": "20.00"
+    },
+    {
+      "chain": "sol",
+      "ts_ms": 2500000,
+      "token": "BBB",
+      "side": "sell",
+      "amount_token": "1000000000",
+      "amount_native": "1000000000",
+      "usd_value": "200.00"
+    }
+  ]
+}

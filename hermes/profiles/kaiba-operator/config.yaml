@@ -1,0 +1,132 @@
+# Hermes profile: kaiba-operator (Telegram + CLI)
+# Codex coordination edit (P7-1n, 2026-09-21): the narrow fallback-readiness slice pins
+# the Codex fallback's effort; Claude retains the primary-provider and gateway design.
+#
+# Install to ~/.hermes/profiles/kaiba-operator/config.yaml (see deploy/install-hermes.sh).
+# Claude is primary; Codex is the fallback, because the Codex quota was exhausted on
+# 2026-09-18 and Anthropic OAuth is the credential we can refresh unattended.
+#
+# Note on Anthropic OAuth: this path requires a Claude Max plan with purchased usage
+# credits. Hermes bills against the extra-usage credits, never the base Max allowance.
+
+model:
+  provider: anthropic
+  default: claude-opus-5
+
+fallback_providers:
+  - provider: openai-codex
+    model: gpt-6-astra
+
+agent:
+  # `max`, the top of Hermes' scale (none/minimal/low/medium/high/xhigh/max),
+  # confirmed against the installed source rather than assumed -- writing an
+  # unrecognised value silently falls back to a lower tier. Operator's choice
+  # 2026-09-21: Opus 5 at max effort as the standing default.
+  reasoning_effort: max
+  # Keep Claude's operator default at max while making the Codex fallback deterministic.
+  # Hermes re-resolves this override when it switches providers mid-turn.
+  reasoning_overrides:
+    gpt-6-astra: high
+  max_turns: 40
+  gateway_auto_continue_on_startup: false
+
+auxiliary:
+  vision:
+    provider: anthropic
+    model: claude-haiku-4-5
+  compression:
+    provider: anthropic
+    model: claude-haiku-4-5
+
+# Tools. The agent needs real capability here: it researches, edits its own skills and
+# schedules its own work. Terminal is scoped to the workspace by the systemd unit, and no
+# credential is readable from this profile's user.
+toolsets:
+  enabled:
+    - kaiba            # our MCP server
+    - memory
+    - skills
+    - skill_management
+    - cronjob
+    - delegation
+    - todo
+    - web
+    - x_search
+    - browser
+    - file
+    - terminal
+    - session_search
+    - code_execution
+  disabled:
+    - image_gen
+    - video_gen
+    - tts
+    - homeassistant
+    - spotify
+    - kanban
+
+mcp_servers:
+  kaiba:
+    command: "{{PYTHON}}"
+    # Hermes remains a stdio MCP host; the client shim forwards that stream to the
+    # core-owned Unix socket. The systemd unit supplies KAIBA_MCP_SOCKET.
+    args: ["-m", "kaiba.mcp.socket_bridge", "client"]
+    cwd: "{{KAIBA_ROOT}}"
+    env:
+      KAIBA_ENV: "prod"
+      KAIBA_MCP_SOCKET: "/run/kaiba/mcp/kaiba.sock"
+    timeout: 20
+    # Must be a MAPPING, not a bool. Hermes does `config.get("sampling", {})` then
+    # `.get("enabled", True)` on the result (tools/mcp_tool_server_run.py:270), so a bare
+    # `false` raises AttributeError inside an async task that nothing awaits -- the MCP
+    # connection then fails and retries roughly every 60s, forever, filling the journal.
+    # Found 2026-09-21 from the gateway log on the VPS.
+    sampling:
+      enabled: false
+
+skills:
+  external_dirs:
+    - "{{KAIBA_ROOT}}/skills"
+    # GMGN's own skill pack, installed by `npx skills add GMGNAI/gmgn-skills` into
+    # .agents/skills. Referenced in place rather than copied into skills/ so that
+    # re-running the installer updates them without a merge, and so ours and theirs stay
+    # visibly separate -- theirs are vendored and we do not edit them.
+    #
+    # Two of the fourteen (gmgn-swap, gmgn-token-buy) are FINANCIAL EXECUTION skills that
+    # call GMGN directly. That bypasses the whole execution stack: RiskGate.check_entry,
+    # the viability sizing band, the paper broker, shadow mode, the limiter and the signer
+    # policy. They cannot act today because GMGN_PRIVATE_KEY is unset. When it is set,
+    # route real trades through kaiba's executor instead, so they inherit the gates and
+    # land in the same `trades` table every measurement reads.
+    - "{{KAIBA_ROOT}}/.agents/skills"
+
+memory:
+  enabled: true
+  memory_char_limit: 2600
+
+delegation:
+  max_children: 3
+  max_depth: 2
+  child_timeout_s: 300
+  subagent_auto_approve: true      # the agent has authority; do not stall research on approval
+  inherit_mcp_toolsets: false
+
+cron:
+  max_parallel_jobs: 2
+  output_retention: 48
+  model: claude-haiku-4-5          # cheap default; heavy jobs pin their own model
+  model_provider: anthropic
+
+gateway:
+  platforms:
+    telegram:
+      enabled: true
+      require_mention: false
+      unauthorized_dm_behavior: ignore
+      status_indicator: true
+  stt:
+    enabled: false
+  multiplex_profiles: false
+
+hooks:
+  outbound: []

@@ -1,0 +1,19 @@
+{
+  "_note": "Three callers on the same token shape: one measured-positive (follow), one measured-negative (fade), one we have not judged (observe, the default posture).",
+  "chain": "sol",
+  "token": "Ka11edTokenAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+  "buys": [],
+  "dossier": {
+    "built_age_s": 6,
+    "grade": "C",
+    "price_usd": "0.00045",
+    "liquidity_usd": "30000"
+  },
+  "token_meta": {"symbol": "KOL", "decimals": 6, "created_age_s": 1200},
+  "callers": [
+    {"platform": "telegram", "caller_id": "alpha_caller", "display_name": "Alpha", "calls": 42, "wins": 25, "losses": 17, "expectancy": 0.31, "mode": "follow", "call_age_s": 45},
+    {"platform": "telegram", "caller_id": "exit_liquidity", "display_name": "Exit Liquidity", "calls": 61, "wins": 6, "losses": 55, "expectancy": -0.44, "mode": "fade", "call_age_s": 30},
+    {"platform": "x", "caller_id": "unknown_caller", "display_name": "Unknown", "calls": 3, "wins": 1, "losses": 2, "expectancy": null, "mode": "observe", "call_age_s": 20},
+    {"platform": "telegram", "caller_id": "thin_record", "display_name": "Thin Record", "calls": 4, "wins": 3, "losses": 1, "expectancy": 0.5, "mode": "follow", "call_age_s": 15}
+  ]
+}

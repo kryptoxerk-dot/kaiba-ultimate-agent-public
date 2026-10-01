@@ -1,0 +1,20 @@
+{
+  "_note": "A pump.fun token that graduated 30s ago. MemeTrans: 73% of migrations trade below 40% of the migration price within 20 minutes.",
+  "chain": "sol",
+  "token": "MigrateTokenAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+  "buys": [],
+  "dossier": {
+    "built_age_s": 5,
+    "grade": "C",
+    "price_usd": "0.00012",
+    "liquidity_usd": "85000"
+  },
+  "token_meta": {
+    "symbol": "MIGR",
+    "decimals": 6,
+    "created_age_s": 5400,
+    "migrated_age_s": 30,
+    "launchpad": "pump.fun",
+    "pool": "pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA"
+  }
+}

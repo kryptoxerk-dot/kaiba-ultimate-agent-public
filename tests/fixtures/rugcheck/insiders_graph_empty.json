@@ -1,0 +1,4 @@
+{
+  "note": "Hand-built. RugCheck found no insider networks for this mint. An empty list is a measured zero, which is why the merge is allowed to record cluster_pct = 0 here and must record 'unknown' when the route is unreachable instead.",
+  "body": []
+}

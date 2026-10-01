@@ -1,0 +1,63 @@
+{
+  "_source": "Solana mainnet, read from the public RPC getTransaction on 2026-09-20. Not synthetic.",
+  "_why": "The swaps table records only the curve leg of a trade - it reconciles exactly with the bonding curve's real_sol_reserves delta - so it cannot verify the platform fee, which is transferred separately and never touches the reserves. These are the raw lamport balance deltas of three real pump.fun buys of the same mint. They are what pins CURVE_PROTOCOL_FEE_BPS=95, CURVE_CREATOR_FEE_BPS=30 and the convention that the fee is charged ON TOP of the curve leg rather than taken out of it.",
+  "token": "3GzeyKuMi3QNuQbSWcxASLx3kxmgiYxxYZyFS2SXpump",
+  "curve_vault": "BVmmL636rL4cGxHHnvBJgNtdt7fPUYHoq4NiKdGLWqWQ",
+  "transactions": [
+    {
+      "signature": "5m6xp6cfLyy7F7pfEvdPccKEQRD7BNohdRFxJqvsukjFAqGpXLmktPssnDheHdkoaJJQdbtQbHuogRe1DXhUZMmF",
+      "slot": 448677363,
+      "block_time": 1789892857,
+      "curve_leg_lamports": 118062636,
+      "tokens_out_atoms": 3053623026541,
+      "network_fee_lamports": 15000,
+      "lamport_deltas": {
+        "FHpcNSe6tb2n15bAdq4BkeYWGyZKFD7yLYrH92ng7wCT": -3027280,
+        "9yHUrvKgwGVvBkHqQzB6Wj2xePsirupGUDa6V2st6Stf": 1488440,
+        "4ACfpUFoaSD9bfPdeu6DBt89gB6ENTeHBXCAi87NhDEE": 10000,
+        "5vpAhcPBPT5RpjGVa31qCcxpe7rCQPyNFn8TYDD49r2j": 354188,
+        "BVmmL636rL4cGxHHnvBJgNtdt7fPUYHoq4NiKdGLWqWQ": 118062636,
+        "EiaJTWYronpM19t5pjeBAuimpFVXLhjX5GAPRgEvMiWG": 1513840,
+        "5eHhjP8JaYkz83CWwvGU2uMUXefd3AazWGx4gpcuEEYD": 560798,
+        "DQyrAcCrDXQ7NeoqGgDCZwBvWDcYmFCjSb9JtteuvPpz": -119538420,
+        "FWsW1xNtWscwNmKv6wVsU1iTzRN6wmmk3MjxRP5tT7hz": 560798
+      }
+    },
+    {
+      "signature": "5wBP7t4MUsNeD8e6E2AsjcZLx4wccJBbT2q7voYbiK46mrjZssShCK3kyMvtsD4ybpDeyQXWRo9Qz5hetEydaoVP",
+      "slot": 448677354,
+      "block_time": 1789892855,
+      "curve_leg_lamports": 49382715,
+      "tokens_out_atoms": 1283336930297,
+      "network_fee_lamports": 106806,
+      "lamport_deltas": {
+        "AYF5u6Yw28cBYmNvRxrdRSdWjuUShXrFrJSbyxSnwjcc": -54466846,
+        "3Gp6ZmYcjAV5gkf9dr48iiN5SAvpkNkoP8jVFCQTXD55": 1346200,
+        "5vpAhcPBPT5RpjGVa31qCcxpe7rCQPyNFn8TYDD49r2j": 148149,
+        "5YxQFdt3Tr9zJLvkFccqXVUwhdTWJQc1fFg2YPbxvxeD": 234568,
+        "7VtfL8fvgNfhz17qKRMjzQEXgbdpnHHHQRh54R9jP2RJ": 234568,
+        "BVmmL636rL4cGxHHnvBJgNtdt7fPUYHoq4NiKdGLWqWQ": 49382715,
+        "CwcqCTXKpYscgVa4KHTujwr1CTUPNdbvfTDf49JSn7vw": 1513840,
+        "DXfkEGoo6WFsdL7x6gLZ7r6Hw2S6HrtrAQVPWYx2A1s9": 500000,
+        "gmgniQix2Fa9HX5giNoKPmNtxL4o2NTCavq5gZKjqN6": 1000000
+      }
+    },
+    {
+      "signature": "2ghpbLnF1TaLgbtWFSgs8WBN2pZ1CocZqu6xagK7xsu66CRMUBP9Ro5GYjzS6U9FnFt5ueAptvT2SuDUgJH1bPpu",
+      "slot": 448677354,
+      "block_time": 1789892855,
+      "curve_leg_lamports": 90000000,
+      "tokens_out_atoms": 2348174627945,
+      "network_fee_lamports": 59886,
+      "lamport_deltas": {
+        "nya666pQkP3PzWxi7JngU3rRMHuc7zbLK8c8wxQ4qpT": -93698726,
+        "8MWSNFH6Xc4sQp9o9cgJg5mTMHmfywHMTcdbB24D1MAd": 1513840,
+        "BVmmL636rL4cGxHHnvBJgNtdt7fPUYHoq4NiKdGLWqWQ": 90000000,
+        "5vpAhcPBPT5RpjGVa31qCcxpe7rCQPyNFn8TYDD49r2j": 270000,
+        "Fa1con1RDwVwM9VrJ53CwVefD3VU9c58EMpDawV7fLMi": 1000000,
+        "62qc2CNXwrYqQScmEdiZFFAnJR262PxWEuNQtxfafNgV": 427500,
+        "5YxQFdt3Tr9zJLvkFccqXVUwhdTWJQc1fFg2YPbxvxeD": 427500
+      }
+    }
+  ]
+}

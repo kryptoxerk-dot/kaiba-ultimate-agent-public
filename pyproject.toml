@@ -1,0 +1,72 @@
+[project]
+name = "kaiba"
+version = "0.1.0"
+description = "Kaiba Ultimate Agent — autonomous crypto intelligence, wallet graphing and execution"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+  "httpx>=0.28",
+  "pydantic>=2.9",
+  "pydantic-settings>=2.6",
+  "typer>=0.15",
+  "rich>=13.9",
+  "python-dotenv>=1.0",
+  "websockets>=13.1",
+  "fastapi>=0.115",
+  "uvicorn>=0.32",
+  "sse-starlette>=2.1",
+  "jinja2>=3.1",
+  "python-multipart>=0.0.12",
+  "base58>=2.1",
+  "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.3", "pytest-asyncio>=0.24", "ruff>=0.8", "respx>=0.21"]
+telegram = ["telethon>=1.37"]
+# Upper bound is load-bearing. `mcp` 2.x renamed FastMCP -> MCPServer and changed other
+# APIs; `kaiba/mcp/server.py` imports `mcp.server.fastmcp.FastMCP`, so an unbounded
+# `mcp>=1.2` resolves to 2.x on a fresh machine and the server dies at import with
+# ModuleNotFoundError. Hit for real on the VPS 2026-09-21. Remove the cap only
+# together with the v2 migration.
+mcp = ["mcp>=1.2,<2"]
+signer = ["solders>=0.21", "eth-account>=0.13"]
+# The production systemd profile enables all three boundaries: Telegram ingestion,
+# the FastMCP server, and the isolated signer.  Keep the focused extras above for local
+# development, but give the installer one audited target that cannot silently omit a
+# runtime dependency.
+production = [
+  "telethon>=1.37",
+  "mcp>=1.2,<2",   # see the note on the `mcp` extra above
+  "solders>=0.21",
+  "eth-account>=0.13",
+]
+
+[project.scripts]
+kaiba = "kaiba.cli.main:app"
+
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["kaiba*", "dashboard*", "deploy*"]
+
+[tool.setuptools.package-data]
+kaiba = ["core/migrations/*.sql", "config/*.yaml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = ["live: hits a real provider; skipped unless KAIBA_LIVE_TESTS=1"]
+# cache_dir deliberately left at pytest's default (.pytest_cache, gitignored).
+# Pointing it at data/pytest-cache produced a directory whose ACL cannot be read or
+# removed on this host, and every run then warned it could not write its cache.
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["E501", "B008"]

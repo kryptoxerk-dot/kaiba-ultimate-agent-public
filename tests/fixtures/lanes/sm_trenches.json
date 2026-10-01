@@ -1,0 +1,87 @@
+{
+  "_note": "GMGN trenches smart-money preset: three tagged smart wallets buying, rug ratio 0.12. launchpad added 2026-09-23: the live lane now requires one, and a token without a launchpad is a MANUAL deploy needing manual_min_smart_degen (5) rather than min_smart_degen (3). These cases seed three smart wallets and are about rug_ratio and strength, not deploy provenance, so the fixture says where the token came from. The policy has its own tests in tests/test_launchpad_policy.py.",
+  "chain": "sol",
+  "token": "TrenchTokenAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+  "wallets": [
+    {
+      "address": "smWa11etAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA1",
+      "cohort": "tracked",
+      "tags": [
+        "smart_money"
+      ]
+    },
+    {
+      "address": "smWa11etBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB2",
+      "cohort": "tracked",
+      "tags": [
+        "pump_smart"
+      ]
+    },
+    {
+      "address": "smWa11etCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC3",
+      "cohort": "tracked",
+      "tags": [
+        "smart_money",
+        "top_trader"
+      ]
+    },
+    {
+      "address": "noiseWa11etDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD4",
+      "cohort": "tracked",
+      "tags": [
+        "fomo"
+      ]
+    }
+  ],
+  "buys": [
+    {
+      "wallet": "smWa11etAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA1",
+      "side": "buy",
+      "age_s": 120,
+      "usd_value": "800",
+      "amount_native": 4000000000,
+      "price_usd": "0.002",
+      "tx": "tx-sm-a"
+    },
+    {
+      "wallet": "smWa11etBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB2",
+      "side": "buy",
+      "age_s": 95,
+      "usd_value": "640",
+      "amount_native": 3200000000,
+      "price_usd": "0.0021",
+      "tx": "tx-sm-b"
+    },
+    {
+      "wallet": "smWa11etCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC3",
+      "side": "buy",
+      "age_s": 40,
+      "usd_value": "1200",
+      "amount_native": 6000000000,
+      "price_usd": "0.0022",
+      "tx": "tx-sm-c"
+    },
+    {
+      "wallet": "noiseWa11etDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD4",
+      "side": "buy",
+      "age_s": 30,
+      "usd_value": "70",
+      "amount_native": 350000000,
+      "price_usd": "0.0022",
+      "tx": "tx-sm-d"
+    }
+  ],
+  "dossier": {
+    "built_age_s": 8,
+    "grade": "B",
+    "price_usd": "0.0022",
+    "liquidity_usd": "90000",
+    "rug_ratio": "0.12"
+  },
+  "token_meta": {
+    "symbol": "TRENCH",
+    "decimals": 6,
+    "created_age_s": 7200,
+    "launchpad": "pump.fun"
+  }
+}

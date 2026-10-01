@@ -1,0 +1,31 @@
+{
+  "source": "https://www.binance.com/bapi/composite/v1/public/cms/article/list/query",
+  "kind": "json",
+  "body": {
+    "code": "000000",
+    "message": null,
+    "data": {
+      "catalogs": [
+        {
+          "catalogId": 48,
+          "catalogName": "New Cryptocurrency Listing",
+          "articles": [
+            {
+              "id": 1,
+              "code": "a1b2c3d4",
+              "title": "Binance Will List Ondo (ONDO) in the Innovation Zone",
+              "releaseDate": 1789819200000
+            },
+            {
+              "id": 2,
+              "code": "e5f6g7h8",
+              "title": "Notice on System Upgrade",
+              "releaseDate": 1789815600000
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "note": "Hand-built to match the documented/observed layout of the source, NOT a live capture. Shapes follow docs/research/06-hunters-airdrops-nft.md. Regenerate by hand if a provider's real layout is captured later."
+}

@@ -1,0 +1,15 @@
+{
+  "args": [
+    "portfolio",
+    "holdings",
+    "--chain",
+    "sol",
+    "--wallet",
+    "EnQdeYsyhacWWDuWfFJvtyk1ehD1cB511ujxJpUtiiWA",
+    "--limit",
+    "3"
+  ],
+  "returncode": 3221226505,
+  "stdout": "",
+  "stderr": "[gmgn-cli] GET /v1/user/wallet_holdings failed: HTTP 401 code=401 error=AUTH_SIGNATURE_INVALID message=signature invalid\nAssertion failed: !(handle->flags & UV_HANDLE_CLOSING), file src\\win\\async.c, line 94\n"
+}

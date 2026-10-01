@@ -1,0 +1,135 @@
+{
+ "note": "Live recording, not hand-built. goplus is the per-address entry already unwrapped from GoPlus's result map; rugcheck holds one key per route.",
+ "recorded_at_ms": 1789897126867,
+ "token": {
+  "label": "BSCUSD",
+  "address": "0x55d398326f99059ff775485246999027b3197955",
+  "chain": "bsc",
+  "why": "Binance-Peg USDT: mintable by a live owner, and GoPlus reports holder_count=0 for a token with millions of holders."
+ },
+ "chain": {
+  "owner": "0x000000000000000000000000f68a4b64162906eff0ff6ae34e2bb1cd42fef62d",
+  "decimals": "0x0000000000000000000000000000000000000000000000000000000000000012",
+  "totalSupply": "0x00000000000000000000000000000000000000001dada5ae6d274383688beb57"
+ },
+ "chain_dev_pct": null,
+ "goplus": {
+  "anti_whale_modifiable": "0",
+  "buy_tax": "0",
+  "can_take_back_ownership": "0",
+  "creator_address": "0x970609ba2c160a1b491b90867681918bdc9773af",
+  "creator_balance": "11228.304730136147970439",
+  "creator_percent": "0.000001",
+  "external_call": "0",
+  "hidden_owner": "0",
+  "holder_count": "0",
+  "holders": [
+   {
+    "address": "0xf977814e90da44bfa03b6295a0616a897441acec",
+    "tag": "",
+    "is_contract": 0,
+    "balance": "400000043.521857702971145809",
+    "percent": "0.043549308440623726",
+    "is_locked": 0
+   },
+   {
+    "address": "0x8894e0a0c962cb723c1976a4421c95949be2d4e3",
+    "tag": "",
+    "is_contract": 0,
+    "balance": "358289756.489333457709879808",
+    "percent": "0.039008173546904426",
+    "is_locked": 0
+   },
+   {
+    "address": "0x092fe28430bade62c7c044b9c77d0aaa06241319",
+    "tag": "",
+    "is_contract": 1,
+    "balance": "134046330.368400539968190901",
+    "percent": "0.014594060878466453",
+    "is_locked": 0
+   },
+   {
+    "address": "0x128463a60784c4d3f46c23af3f65ed859ba87974",
+    "tag": "",
+    "is_contract": 1,
+    "balance": "114344821.744635205724415369",
+    "percent": "0.012449093422343962",
+    "is_locked": 0
+   },
+   {
+    "address": "0xef3aeff9a5f61c6dda33069c58c1434006e13b20",
+    "tag": "",
+    "is_contract": 0,
+    "balance": "113964065.57654004933944741",
+    "percent": "0.012407639257341753",
+    "is_locked": 0
+   },
+   {
+    "address": "0x8932fe7726c1ee743f662f485c3e5a5d1d595f71",
+    "tag": "",
+    "is_contract": 1,
+    "balance": "96401237.8361173",
+    "percent": "0.010495516959496507",
+    "is_locked": 0
+   },
+   {
+    "address": "0x0d0707963952f2fba59dd06f2b425ace40b492fe",
+    "tag": "",
+    "is_contract": 0,
+    "balance": "74819435.351672546935761693",
+    "percent": "0.008145835782403471",
+    "is_locked": 0
+   },
+   {
+    "address": "0x18e226459ccf0eec276514a4fd3b226d8961e4d1",
+    "tag": "",
+    "is_contract": 0,
+    "balance": "73955192.404000518709890667",
+    "percent": "0.008051742835901713",
+    "is_locked": 0
+   },
+   {
+    "address": "0x3ce02596ca6982662e3d9b66c73e42a7b9d90e8e",
+    "tag": "",
+    "is_contract": 1,
+    "balance": "69809500.0000000004576803",
+    "percent": "0.007600387792006815",
+    "is_locked": 0
+   },
+   {
+    "address": "0x3136ed252d6ec340c7d2fb1285c15add1fd4e0fa",
+    "tag": "",
+    "is_contract": 0,
+    "balance": "60254780.638971709999",
+    "percent": "0.006560134353898669",
+    "is_locked": 0
+   }
+  ],
+  "honeypot_with_same_creator": "0",
+  "is_anti_whale": "0",
+  "is_blacklisted": "0",
+  "is_honeypot": "0",
+  "is_in_dex": "1",
+  "is_mintable": "1",
+  "is_open_source": "1",
+  "is_proxy": "0",
+  "is_whitelisted": "0",
+  "owner_address": "0xf68a4b64162906eff0ff6ae34e2bb1cd42fef62d",
+  "owner_balance": "1502.0092659182822",
+  "owner_change_balance": "0",
+  "owner_percent": "0.0",
+  "personal_slippage_modifiable": "0",
+  "selfdestruct": "0",
+  "sell_tax": "0",
+  "slippage_modifiable": "0",
+  "token_name": "Tether USD",
+  "token_symbol": "USDT",
+  "total_supply": "9184991859.680809663064697687",
+  "trading_cooldown": "0",
+  "transfer_pausable": "0",
+  "transfer_tax": "",
+  "cannot_buy": "0",
+  "trust_list": "1"
+ },
+ "rugcheck": null
+}

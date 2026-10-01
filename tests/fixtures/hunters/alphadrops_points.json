@@ -1,0 +1,6 @@
+{
+  "source": "https://alphadrops.net/points-programs",
+  "kind": "html",
+  "body": "<!DOCTYPE html><html><body><div id=\"__next\">…</div>\n<script id=\"__NEXT_DATA__\" type=\"application/json\">{\"props\":{\"pageProps\":{\"programs\":[\n{\"name\":\"Aster\",\"chain\":\"BNB Chain\",\"status\":\"Confirmed\",\"points\":\"Rh points\",\"url\":\"https://asterdex.com\"},\n{\"name\":\"Meteora S2\",\"chain\":\"Solana\",\"status\":\"Live\",\"points\":\"MET points\",\"url\":\"https://meteora.ag\"},\n{\"name\":\"Variational\",\"chain\":\"Arbitrum\",\"status\":\"Live\",\"points\":\"VAR points\",\"url\":\"https://variational.io\",\"capital_usd\":\"500\",\"end_date\":\"2026-12-31T00:00:00+00:00\"}\n]}},\"page\":\"/points-programs\"}</script></body></html>\n",
+  "note": "Hand-built to match the documented/observed layout of the source, NOT a live capture. Shapes follow docs/research/06-hunters-airdrops-nft.md. Regenerate by hand if a provider's real layout is captured later."
+}

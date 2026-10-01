@@ -1,0 +1,5 @@
+{% if events %}
+  {% for event in events %}{% include "partials/feed_row.html" %}{% endfor %}
+{% else %}
+<p class="nodata">No events on the bus yet. Nothing has been ingested, decided or traded.</p>
+{% endif %}

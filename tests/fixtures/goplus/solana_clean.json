@@ -1,0 +1,45 @@
+{
+  "note": "Hand-built to GoPlus's documented /api/v1/solana/token_security shape (beta). Not a live capture. A clean SPL mint: both authorities revoked, no Token-2022 extensions, LP fully burned, flat top-10.",
+  "body": {
+    "code": 1,
+    "message": "OK",
+    "result": {
+      "So11111111111111111111111111111111111111112": {
+        "mintable": {"status": "0", "authority": []},
+        "freezable": {"status": "0", "authority": []},
+        "closable": {"status": "0", "authority": []},
+        "balance_mutable_authority": {"status": "0", "authority": []},
+        "default_account_state": "0",
+        "non_transferable": "0",
+        "transfer_hook": [],
+        "transfer_hook_upgradable": {"status": "0", "authority": []},
+        "transfer_fee": {},
+        "transfer_fee_upgradable": {"status": "0", "authority": []},
+        "metadata_mutable": {"status": "0", "metadata_upgrade_authority": []},
+        "metadata": {"name": "Clean Coin", "symbol": "CLEAN", "uri": "https://example.invalid/clean.json"},
+        "trusted_token": 0,
+        "holder_count": "1200",
+        "total_supply": "1000000000",
+        "creators": [{"address": "CreAtor11111111111111111111111111111111111", "malicious_address": 0}],
+        "holders": [
+          {"account": "Hd1111111111111111111111111111111111111111", "balance": "40000000", "percent": "0.04", "is_locked": 0, "tag": ""},
+          {"account": "Hd2222222222222222222222222222222222222222", "balance": "30000000", "percent": "0.03", "is_locked": 0, "tag": ""},
+          {"account": "Hd3333333333333333333333333333333333333333", "balance": "25000000", "percent": "0.025", "is_locked": 0, "tag": ""},
+          {"account": "Hd4444444444444444444444444444444444444444", "balance": "20000000", "percent": "0.02", "is_locked": 0, "tag": ""},
+          {"account": "Hd5555555555555555555555555555555555555555", "balance": "15000000", "percent": "0.015", "is_locked": 0, "tag": ""},
+          {"account": "Hd6666666666666666666666666666666666666666", "balance": "10000000", "percent": "0.01", "is_locked": 0, "tag": ""},
+          {"account": "Hd7777777777777777777777777777777777777777", "balance": "10000000", "percent": "0.01", "is_locked": 0, "tag": ""},
+          {"account": "Hd8888888888888888888888888888888888888888", "balance": "10000000", "percent": "0.01", "is_locked": 0, "tag": ""},
+          {"account": "Hd9999999999999999999999999999999999999999", "balance": "10000000", "percent": "0.01", "is_locked": 0, "tag": ""},
+          {"account": "HdAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "balance": "10000000", "percent": "0.01", "is_locked": 0, "tag": ""}
+        ],
+        "lp_holders": [
+          {"account": "1nc1nerator11111111111111111111111111111111", "balance": "500000", "percent": "1.0", "is_locked": 1, "tag": "burn"}
+        ],
+        "dex": [
+          {"dex_name": "raydium", "type": "standard", "liquidity": "300000", "price": "0.00031"}
+        ]
+      }
+    }
+  }
+}

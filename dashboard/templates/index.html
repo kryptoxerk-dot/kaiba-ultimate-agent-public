@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+{% block title %}Kaiba Command Centre{% endblock %}
+{% block body_attrs %}hx-ext="sse" sse-connect="/events/stream"{% endblock %}
+{% block body %}
+<div class="shell">
+
+  <aside class="rail">
+    <div class="brand">
+      <span class="brand-mark">◎</span>
+      <span class="brand-word">KAIBA</span>
+    </div>
+    <nav aria-label="Sections">
+      {% for slug, label, glyph in nav %}
+      <a class="nav-item{% if loop.first %} active{% endif %}" href="#{{ slug }}">
+        <span aria-hidden="true">{{ glyph }}</span><b>{{ label }}</b>
+      </a>
+      {% endfor %}
+    </nav>
+    <div class="rail-bottom">
+      <i class="mode-dot mode-{{ overview.mode }}"></i>
+      <span>{{ overview.mode|upper }}</span>
+      {% if auth_on %}
+      <form method="post" action="/logout"><button class="text-button" type="submit">sign out</button></form>
+      {% endif %}
+    </div>
+  </aside>
+
+  <main class="main">
+
+    <header class="topbar">
+      <div>
+        <p class="eyebrow cyan">AUTONOMOUS CRYPTO AGENT</p>
+        <h1>Command Centre</h1>
+      </div>
+      <div class="top-actions">
+        <span class="status" id="stream-status" data-state="connecting"><i></i> stream connecting</span>
+        <a class="button" href="/api/overview" target="_blank" rel="noopener">JSON</a>
+      </div>
+    </header>
+
+    {% if not auth_on %}
+    <p class="banner warn" role="status">
+      <b>Auth is off.</b> No <code>KAIBA_DASHBOARD_PASSWORD</code> is configured, so this console
+      is served to loopback clients only and anyone on this machine can use the controls.
+      Set the password and restart before exposing it.
+    </p>
+    {% endif %}
+
+    <p class="banner flat" role="note">
+      <b>No withdraw control exists.</b> {{ NO_WITHDRAW_COPY }}
+    </p>
+
+    <section id="overview" class="metric-strip"
+             hx-get="/partials/metrics" hx-trigger="sse:metrics, every 20s" hx-swap="innerHTML">
+      {% include "partials/metrics.html" %}
+    </section>
+
+    <div class="grid-main">
+
+      <section id="agent" class="panel panel-tall panel-feed">
+        <div class="panel-head">
+          <div><h3>Agent stream</h3><small>thought · tool · decision · order, newest first</small></div>
+          <span class="live-tag">LIVE</span>
+        </div>
+        <div class="feed" id="feed" sse-swap="feed" hx-swap="afterbegin" data-max-rows="200">
+          {% include "partials/feed.html" %}
+        </div>
+      </section>
+
+      <section id="signals" class="panel"
+               hx-get="/partials/signals" hx-trigger="sse:signals, every 30s" hx-swap="innerHTML">
+        {% include "partials/signals.html" %}
+      </section>
+
+      <section id="positions" class="panel panel-wide"
+               hx-get="/partials/positions" hx-trigger="sse:positions, every 20s" hx-swap="innerHTML">
+        {% include "partials/positions.html" %}
+      </section>
+
+      <section id="wallets" class="panel panel-wide">
+        <div class="panel-head">
+          <div><h3>Wallet intelligence</h3><small>top graded wallets and the entity graph</small></div>
+        </div>
+        <div class="split">
+          <div class="split-a" hx-get="/partials/wallets" hx-trigger="sse:wallets, every 60s"
+               hx-swap="innerHTML">
+            {% include "partials/wallets.html" %}
+          </div>
+          <div class="split-b" id="entity-graph-host">
+            {% include "partials/entities.html" %}
+          </div>
+        </div>
+      </section>
+
+      <section id="risk" class="panel"
+               hx-get="/partials/risk" hx-trigger="sse:risk, every 30s" hx-swap="innerHTML">
+        {% include "partials/risk.html" %}
+      </section>
+
+      <section id="providers" class="panel"
+               hx-get="/partials/providers" hx-trigger="sse:providers, every 15s" hx-swap="innerHTML">
+        {% include "partials/providers.html" %}
+      </section>
+
+      <section id="tokens" class="panel">
+        {% include "partials/tokens.html" %}
+      </section>
+
+      <section class="panel"
+               hx-get="/partials/decisions" hx-trigger="sse:decisions, every 30s" hx-swap="innerHTML">
+        {% include "partials/decisions.html" %}
+      </section>
+
+      <section class="panel"
+               hx-get="/partials/journal" hx-trigger="sse:journal, every 120s" hx-swap="innerHTML">
+        {% include "partials/journal.html" %}
+      </section>
+
+    </div>
+
+    <footer class="foot">
+      <span>Kaiba operator console · read-only except pause / resume / reduce-only / kill / risk dial.</span>
+      <span>{{ NO_WITHDRAW_COPY }}</span>
+    </footer>
+
+  </main>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/htmx.org@2.0.4/dist/htmx.min.js" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/htmx-ext-sse@2.2.2/sse.js" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/cytoscape@3.30.2/dist/cytoscape.min.js" defer></script>
+{% endblock %}

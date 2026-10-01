@@ -1,0 +1,61 @@
+{
+  "note": "Hand-built to RugCheck's documented /v1/tokens/{mint}/report shape. Not a live capture. Agrees with goplus/solana_clean.json on every overlapping property, so the merge must not raise PROVIDER_CONFLICT.",
+  "body": {
+    "mint": "So11111111111111111111111111111111111111112",
+    "tokenProgram": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+    "tokenType": "spl-token",
+    "creator": "CreAtor11111111111111111111111111111111111",
+    "creatorBalance": 0,
+    "token": {
+      "mintAuthority": null,
+      "freezeAuthority": null,
+      "supply": 1000000000000000,
+      "decimals": 6
+    },
+    "tokenMeta": {
+      "name": "Clean Coin",
+      "symbol": "CLEAN",
+      "uri": "https://example.invalid/clean.json",
+      "mutable": false,
+      "updateAuthority": ""
+    },
+    "rugged": false,
+    "score": 20,
+    "score_normalised": 4,
+    "risks": [],
+    "price": 0.00031,
+    "totalHolders": 1210,
+    "totalMarketLiquidity": 305000,
+    "totalLPProviders": 61,
+    "graphInsidersDetected": 0,
+    "topHolders": [
+      {"address": "Hd1111111111111111111111111111111111111111", "owner": "Ow111111111111111111111111111111111111111", "pct": 4.0, "insider": false},
+      {"address": "Hd2222222222222222222222222222222222222222", "owner": "Ow222222222222222222222222222222222222222", "pct": 3.0, "insider": false},
+      {"address": "Hd3333333333333333333333333333333333333333", "owner": "Ow333333333333333333333333333333333333333", "pct": 2.5, "insider": false},
+      {"address": "Hd4444444444444444444444444444444444444444", "owner": "Ow444444444444444444444444444444444444444", "pct": 2.0, "insider": false},
+      {"address": "Hd5555555555555555555555555555555555555555", "owner": "Ow555555555555555555555555555555555555555", "pct": 1.5, "insider": false},
+      {"address": "Hd6666666666666666666666666666666666666666", "owner": "Ow666666666666666666666666666666666666666", "pct": 1.0, "insider": false},
+      {"address": "Hd7777777777777777777777777777777777777777", "owner": "Ow777777777777777777777777777777777777777", "pct": 1.0, "insider": false},
+      {"address": "Hd8888888888888888888888888888888888888888", "owner": "Ow888888888888888888888888888888888888888", "pct": 1.0, "insider": false},
+      {"address": "Hd9999999999999999999999999999999999999999", "owner": "Ow999999999999999999999999999999999999999", "pct": 1.0, "insider": false},
+      {"address": "HdAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "owner": "OwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "pct": 1.0, "insider": false},
+      {"address": "PoolAccount1111111111111111111111111111111", "owner": "PoolAccount1111111111111111111111111111111", "pct": 55.0, "insider": false}
+    ],
+    "markets": [
+      {
+        "pubkey": "Mkt11111111111111111111111111111111111111",
+        "marketType": "raydium",
+        "liquidityA": "PoolAccount1111111111111111111111111111111",
+        "liquidityB": "PoolQuote111111111111111111111111111111111",
+        "lp": {
+          "lpLocked": 500000,
+          "lpLockedPct": 100.0,
+          "lpTotalSupply": 500000,
+          "lpLockedUSD": 305000,
+          "baseUSD": 152500,
+          "quoteUSD": 152500
+        }
+      }
+    ]
+  }
+}

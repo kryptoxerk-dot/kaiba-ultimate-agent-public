@@ -1,0 +1,50 @@
+{
+  "address": "CJF7MNqb9xv1XrTs5St1Du5JuQXLsfFBB137vmYRKpnb",
+  "chain": "sol",
+  "tags": ["smart_money"],
+  "pnl": {
+    "closed_episodes": 24,
+    "open_episodes": 3,
+    "contaminated_episodes": 1,
+    "distinct_tokens": 40,
+    "wins": 14,
+    "win_rate": 0.55,
+    "realized_pnl_native": 1200000000000,
+    "realized_pnl_usd": "500000",
+    "roi": "1.2",
+    "big_wins": 6,
+    "big_win_rate": 0.25,
+    "median_hold_s": 5400,
+    "avg_hold_s": 7200,
+    "sell_to_buy_ratio": 0.5,
+    "buys": 80,
+    "sells": 40,
+    "cost_native": 1000000000000,
+    "proceeds_native": 2200000000000,
+    "first_trade_ms": 1750000000000,
+    "last_trade_ms": 1758000000000
+  },
+  "provider_stats": {
+    "realized_profit_usd": "480000",
+    "win_rate": 0.53,
+    "token_num": 41,
+    "avg_hold_s": 7000,
+    "buy_count": 80,
+    "sell_count": 40
+  },
+  "early_metrics": {
+    "validated_early_tokens": 20,
+    "sniper_tokens": 10,
+    "insider_tokens": 5,
+    "best_entry_rank": 3
+  },
+  "seed_confluence": 3,
+  "reputation": {
+    "twitter": "kaibawhale",
+    "followers": 20000,
+    "verified": false,
+    "kol": false
+  },
+  "created_token_count": 0,
+  "sample_capped": false
+}

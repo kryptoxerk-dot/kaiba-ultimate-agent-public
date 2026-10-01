@@ -1,0 +1,28 @@
+<h4>Entity graph <small>nodes = wallets, edges = cluster edges, colour = archetype</small></h4>
+{% if graph.available %}
+<div id="entity-graph" class="graph"
+     data-graph='{{ {"nodes": graph.nodes, "edges": graph.edges}|tojson }}'
+     role="img" aria-label="wallet entity graph"></div>
+<p class="graph-caption">
+  <strong>{{ graph.nodes|length }}</strong><span>wallets</span>
+  <strong>{{ graph.edges|length }}</strong><span>edges</span>
+  <strong>{{ graph.entity_count }}</strong><span>entities</span>
+</p>
+<noscript><p class="nodata">JavaScript is off — the table below is the same data.</p></noscript>
+<details class="graph-fallback" id="entity-graph-fallback">
+  <summary>Table view (used automatically if Cytoscape fails to load)</summary>
+  <div class="table">
+    <div class="table-row header"><span>Wallet</span><span>Archetype</span><span>Entity</span><span>Grade</span></div>
+    {% for n in graph.nodes %}
+    <div class="table-row">
+      <span><button class="addr" type="button" data-copy="{{ n.address }}" title="{{ n.address }}">{{ n.label }}<span class="copy-glyph" aria-hidden="true">⧉</span></button></span>
+      <span class="queue">{{ n.archetype }}</span>
+      <span class="muted">{{ n.entity_label or n.entity_id or '—' }}</span>
+      <span>{{ n.grade or '—' }}</span>
+    </div>
+    {% endfor %}
+  </div>
+</details>
+{% else %}
+<p class="nodata">{{ graph.reason }}</p>
+{% endif %}

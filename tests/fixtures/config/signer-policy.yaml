@@ -1,0 +1,167 @@
+# TEST FIXTURE ONLY (fake owned addresses). See tests/conftest.py.
+# Kaiba signer policy — the withdrawal gate.
+#
+# THIS FILE IS OPERATOR-OWNED AND LOADED READ-ONLY. On the VPS it lives under root and is
+# readable, not writable, by `kaiba-agent` and `kaiba-core` (deploy/ enforces that). Hermes
+# may read it to explain a refusal; it may not edit it.
+#
+# What this file can do: NARROW what the signer will sign. It selects a subset of the
+# programs, tip accounts and function selectors that `kaiba/execution/policy.py` knows how
+# to decode, and it declares which addresses are ours.
+#
+# What this file cannot do: WIDEN anything.
+#   * `solana.allowed_programs` is intersected with the code-level program registry. A
+#     program the decoder does not understand can never be allowlisted here, because a
+#     program we cannot decode is a program whose transfers we cannot see.
+#   * `solana.jito_tip_accounts` is intersected with the eight canonical Jito tip accounts
+#     that are compiled into the module. Adding an address here does nothing.
+#   * `solana.max_tip_lamports` and `solana.max_compute_unit_price_micro_lamports` are
+#     capped by absolute ceilings in code.
+#   * `evm.allowed_selectors` is intersected with the known-function table, minus the
+#     hard-denied set (transfer, transferFrom, bridge deposits, approvals-for-all, ...).
+#     Listing `transfer` here does nothing.
+#   * There is no key that enables a withdrawal. There is no code path that signs one.
+#
+# The two entries that DO grant trust are `owned_addresses` and `evm.routers`: declaring an
+# address here says "this is ours" / "this is a DEX router". That is the operator's call and
+# nothing else in the system may write them. Even then the hard-denied operations stay
+# denied — an ERC-20 `transfer` is refused no matter whose address the recipient is.
+#
+# VERIFY BEFORE ARMING: every program id and router address below must be checked against a
+# block explorer. They are transcribed from research, not fetched.
+
+version: v1
+
+# Our own wallets and, on Solana, their associated token accounts. Base58 is
+# case-sensitive; EVM entries are compared case-insensitively. Empty = nothing is ours yet,
+# which means every transfer is refused. That is the correct state before funding.
+owned_addresses:
+  # Declared by the operator 2026-09-21 to arm live trading. This is the signer's
+  # definition of "ours": value may settle HERE and nowhere else. Adding an address is
+  # the one thing in this file that grants trust, and no code may write it.
+  sol:
+    - "62EbtFbmJATT94Y6Uguf6a1kdaJuZWAu8ycqbg3xKfQg"
+  # Declared by the operator 2026-09-21 ("Go on robinhood and bnb chain as well").
+  # ONE EVM key covers both chains -- `gmgn-cli portfolio info` reports the same address
+  # bound on bsc and robinhood, so this is a single custodial wallet reachable on two
+  # networks, not two wallets. Read from the provider, not transcribed from a note.
+  #
+  # Declaring it says "value may settle HERE". It does NOT widen anything else: an
+  # ERC-20 `transfer`/`transferFrom` stays hard-denied no matter whose address receives
+  # it, which is re-proved in tests/test_policy.py after every change to this file.
+  robinhood:
+    - "0x72430877378522d1b759ac721561aa9eb9e25c2b"
+  bsc:
+    - "0x72430877378522d1b759ac721561aa9eb9e25c2b"
+  base: []
+
+solana:
+  # Program ids the signer will sign an instruction for. Anything else is `unknown program`.
+  allowed_programs:
+    - "11111111111111111111111111111111"              # System (restricted: see policy.py)
+    - "ComputeBudget111111111111111111111111111111"   # ComputeBudget
+    - "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"   # SPL Token
+    - "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"   # SPL Token-2022
+    - "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"  # Associated Token Account
+    - "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr"   # Memo
+    - "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4"   # Jupiter aggregator v6
+    - "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8"  # Raydium AMM v4
+    - "CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C"  # Raydium CPMM
+    - "CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK"  # Raydium CLMM
+    - "LanMV9sAd7wArD4vJFi2qDdfnVhFxYSUg6eADduJ3uj"   # Raydium LaunchLab
+    - "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P"   # pump.fun bonding curve
+    - "pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA"   # PumpSwap AMM
+    - "dbcij3LWUppWqq96dh6gJWwBifmcGfLSB5D4DuSMaqN"   # Meteora DBC
+    - "Eo7WjKq67rjJQSZxS6z3YkapzY3eMj6Xy8X5EQVn5UaB"  # Meteora DAMM v1
+    - "cpamdpZCGKUy5JxQXB4dcpGPiikHawvSWAd6mEn1sGG"   # Meteora DAMM v2
+    - "LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo"   # Meteora DLMM
+    - "whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc"   # Orca Whirlpool
+
+  # The eight Jito tip accounts. A SystemProgram.transfer to one of these is the only
+  # transfer to a non-owned address the signer will ever sign, and only under the cap below.
+  jito_tip_accounts:
+    - "96gYZGLnJYVFmbjzopPSU6QiEV5fGqZNyN9nmNhvrZU5"
+    - "HFqU5x63VTqvQss8hp11i4wVV8bD44PvwucfZ2bU7gRe"
+    - "Cw8CFyM9FkoMi7K7Crf6HNQqf4uEMzpKw6QNghXLvLkY"
+    - "ADaUMid9yfUytqMBgopwjb2DTLSokTSzL1zt6iGPaS49"
+    - "DfXygSm4jCyNCybVYYK6DwvWqjKee8pbDmJGcLWNDXjh"
+    - "ADuUkR4vqLUMWXxW9gh6D6L8pMSawimctcNZ5pGwDcEt"
+    - "DttWaMuVvTiduZRnguLF7jNxTgiMBZ1hyAumKUiL2KRL"
+    - "3AVi9Tg9Uo68tJfuvoKvqKNWKkC5wPdSSdeBnizKZ6jT"
+
+  max_tip_lamports: 10000000                     # 0.01 SOL; code ceiling 0.1 SOL
+  max_compute_unit_price_micro_lamports: 5000000 # priority fee is a value leak, so it is capped
+
+evm:
+  # DEX routers per chain. `to` must be one of these (the one exception is `approve`, which
+  # is sent to the token contract and is checked on its spender instead).
+  routers:
+    # Robinhood Chain 4663. Identified by Claude on 2026-09-20 directly from the chain,
+    # because no published source lists it. This matters: Pons on Robinhood Chain is now
+    # the world's largest launchpad by fees ($131M/30d, 2.8x pump.fun), and an empty list
+    # here refused every transaction on that chain by construction.
+    #
+    # Evidence, reproducible against https://rpc.mainnet.chain.robinhood.com (chain id
+    # 0x1237 = 4663):
+    #   * sampled 12 recent blocks; this address was called with 0x3593564c and
+    #     0x24856bc3, the two Uniswap Universal Router `execute` selectors
+    #   * eth_getCode returns 24,546 bytes, consistent with a Universal Router
+    #   * two successful transactions to it (status 0x1) emit
+    #     0x40e9cecb…7112f = Uniswap V4 Swap, plus ERC-20 Transfers
+    #   * this matches the documented Pons behaviour of graduating to Uniswap v4
+    #
+    # Falsifiable: if this address stops emitting V4 Swap events, or a block explorer
+    # shows verified source for a different Universal Router, replace it. Confirm on an
+    # explorer before moving size; the lane is in shadow until you do.
+    robinhood:
+      # VERIFIED on chain 2026-09-21: 24,546 bytes, carries both UniversalRouter execute
+      # selectors (0x3593564c, 0x24856bc3). It is a real UniversalRouter.
+      #
+      # OPEN QUESTION, and do not resolve it by guessing. There are at least THREE
+      # UniversalRouters on chain 4663, all verified live on the same day:
+      #     0x8876789976decbfcbbbe364623c63652db8c0904  24,546b  <- this one
+      #     0x06afba43fd06227fa663b0daecf536f6eaa6bf99  24,546b
+      #     0x204faca1764b154221e35c0d20abb3c525710498  24,380b  (a different build)
+      # Uniswap's own v3 and v4 doc pages contradict each other about which is current,
+      # and a 400-swap sample found the docs-recommended one taking ZERO flow. One older
+      # build ships a placeholder Across SpokePool, so Across commands silently fail.
+      #
+      # We cannot settle it from our own data: all 390,795 Robinhood swaps we have
+      # ingested went through `pons-curve`, so we have never observed post-graduation
+      # router flow. Before arming this chain, determine the live router empirically
+      # from real swaps -- a matching byte size is not identity. Robinhood is not a
+      # trading target today (docs/TRADING-METHOD.md: both latency edges are closed by
+      # contract design) and owned_addresses.robinhood is empty, so nothing can settle
+      # there regardless.
+      - "0x8876789976decbfcbbbe364623c63652db8c0904"  # Uniswap UniversalRouter (Robinhood 4663)
+    bsc:
+      - "0x10ed43c718714eb63d5aa57b78b54704e256024e"  # PancakeSwap V2 router
+      - "0x13f4ea83d0bd40e75c8222255bc855a974568dd4"  # PancakeSwap Smart Router v3
+      - "0xb971ef87ede563556b2ed4b1c0b0019111dd85d2"  # Uniswap SwapRouter02 (BSC)
+      - "0x1a0a18ac4becddbd6389559687d1a73d8927e416"  # Uniswap UniversalRouter (BSC)
+      - "0x000000000022d473030f116ddee9f6b43ac78ba3"  # Permit2
+    base:
+      - "0x2626664c2603336e57b271c5c0b26f421741e481"  # Uniswap SwapRouter02 (Base)
+      - "0x4752ba5dbc23f44d87826276bf6fd6b1c372ad24"  # Uniswap V2 router (Base)
+      - "0x6ff5693b99212da76ad316178a184ab56d299b43"  # Uniswap UniversalRouter (Base)
+      - "0x000000000022d473030f116ddee9f6b43ac78ba3"  # Permit2
+
+  # Function names from the known-function table in policy.py. A name that is not in that
+  # table, or that is in the hard-denied set, is ignored — listing it grants nothing.
+  allowed_selectors:
+    - exactInputSingle
+    - exactInputSingleWithDeadline
+    - exactInput
+    - swapExactETHForTokens
+    - swapExactETHForTokensSupportingFeeOnTransferTokens
+    - swapExactTokensForETH
+    - swapExactTokensForETHSupportingFeeOnTransferTokens
+    - swapExactTokensForTokens
+    - swapExactTokensForTokensSupportingFeeOnTransferTokens
+    - unwrapWETH9
+    - approve
+    - execute
+
+  # `approve` to an allowlisted spender above this value is still signed, but it is flagged.
+  # null keeps the Permit2 / infinite-approval pattern working.
+  max_approval_wei: null

@@ -1,0 +1,29 @@
+<div class="panel-head">
+  <div><h3>Provider meters</h3><small>credit · inflight · cooldowns, from the shared limiter</small></div>
+  <a class="text-button" href="/api/providers" target="_blank" rel="noopener">json</a>
+</div>
+{% if providers.available %}
+<div class="meters">
+  {% for p in providers.providers %}
+  <div class="meter {% if not p.healthy %}bad{% endif %}">
+    <div class="meter-top">
+      <b>{{ p.provider }}</b>
+      <span>{{ p.credit|num(1) }} / {{ p.capacity }}</span>
+    </div>
+    <div class="bar"><i style="width: {{ p.credit_pct if p.credit_pct is not none else 0 }}%"></i></div>
+    <div class="meter-foot">
+      <span>inflight {{ p.inflight }}</span>
+      <span>penalty {{ p.penalty_level }}</span>
+      <span>{{ p.calls_today }} calls today{% if p.errors_today %}, {{ p.errors_today }} bad{% endif %}</span>
+      {% if p.daily_cap %}<span>{{ p.spent_today }}/{{ p.daily_cap }} credits</span>{% endif %}
+    </div>
+    {% if p.banned %}<p class="warn">provider cooling down</p>{% endif %}
+    {% for b in p.family_bans %}
+    <p class="warn">family <code>{{ b.family }}</code> cooling down until {{ b.banned_until_ms|ts }}</p>
+    {% endfor %}
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<p class="nodata">{{ providers.reason }}</p>
+{% endif %}

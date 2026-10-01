@@ -1,0 +1,41 @@
+{
+  "code": 0,
+  "msg": "success",
+  "data": {
+    "signals": [
+      {
+        "signal_id": "sol-8821743",
+        "signal_type": 5,
+        "signal_name": "Smart Money Net Buy",
+        "chain": "sol",
+        "token_address": "Gp32UJ3xavL1sHSH9QKRygZPiQXhcoxazE4G48fu4QcA",
+        "symbol": "TRENCH",
+        "timestamp": 1758355500,
+        "market_cap": "184200.55",
+        "liquidity": "42100.10",
+        "price": "0.00002741",
+        "description": "6 smart money wallets net bought in the last 5 minutes"
+      },
+      {
+        "signal_id": "sol-8821811",
+        "signal_type": 12,
+        "signal_name": "Dev Sold",
+        "chain": "sol",
+        "token_address": "dtJE8cubw8DtYioNypaj5MwTEEWcEeYq3G4jzfULZdd",
+        "symbol": "RUGGY",
+        "timestamp": 1758355530,
+        "market_cap": "61200.00",
+        "liquidity": "9800.00",
+        "price": "0.00000612",
+        "description": "Creator sold 100% of holdings"
+      },
+      {
+        "signal_type": 3,
+        "chain": "sol",
+        "symbol": "NOADDR",
+        "timestamp": 1758355540,
+        "description": "row with no token address must be dropped"
+      }
+    ]
+  }
+}

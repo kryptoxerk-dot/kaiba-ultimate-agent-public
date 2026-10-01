@@ -1,0 +1,10 @@
+{
+  "note": "Hand-built to the documented /report/summary shape. Not a live capture. An empty risks list. The merge must NOT read this as 'the mint authority is revoked' — a summary can only ever say what is wrong.",
+  "body": {
+    "tokenProgram": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+    "tokenType": "spl-token",
+    "risks": [],
+    "score": 20,
+    "score_normalised": 4
+  }
+}

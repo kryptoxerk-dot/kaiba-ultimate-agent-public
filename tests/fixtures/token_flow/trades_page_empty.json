@@ -1,0 +1,9 @@
+{
+ "trades": [],
+ "aggregates": {
+  "buys": 0,
+  "sells": 0
+ },
+ "cursor": null,
+ "source": "indexed"
+}

@@ -1,0 +1,104 @@
+# Hermes profile: kaiba-research (cron only, no gateway)
+# Codex coordination edit (P7-1n, 2026-09-21): the narrow fallback-readiness slice pins
+# the Codex fallback's effort; Claude retains the primary-provider and cron design.
+#
+# Cheap by default: Sonnet for scheduled research, Haiku for compression. Only the
+# reflection profile runs on Opus. Per-job pins override this.
+
+model:
+  provider: anthropic
+  # Was `claude-sonnet-4-6`, which is not a current model id -- that profile would have
+  # failed on its first call. Sonnet 5 rather than Opus 5 on purpose: research is the
+  # high-volume profile and runs on a schedule, so the operator's "Opus 5 at max" default
+  # is set on kaiba-operator (the interactive/primary one) and kaiba-reflect. Raise this
+  # if research quality matters more than the bill.
+  default: claude-sonnet-5
+
+fallback_providers:
+  - provider: openai-codex
+    model: gpt-6-astra
+
+agent:
+  reasoning_effort: medium
+  # Research stays medium on Claude; Astra is explicitly high when it takes over.
+  reasoning_overrides:
+    gpt-6-astra: high
+  max_turns: 24
+
+auxiliary:
+  compression:
+    provider: anthropic
+    model: claude-haiku-4-5
+
+toolsets:
+  enabled:
+    - kaiba
+    - web
+    - x_search
+    - browser
+    - file
+    - code_execution
+    - skills
+    - memory
+    - delegation
+  disabled:
+    - terminal          # research does not need a shell
+    - cronjob           # cannot schedule more of itself
+    - image_gen
+    - video_gen
+    - tts
+    - messaging
+
+mcp_servers:
+  kaiba:
+    command: "{{PYTHON}}"
+    # The production profile reaches the core through the stdio-to-Unix-socket shim.
+    args: ["-m", "kaiba.mcp.socket_bridge", "client"]
+    cwd: "{{KAIBA_ROOT}}"
+    env:
+      KAIBA_ENV: "prod"
+      KAIBA_MCP_SOCKET: "/run/kaiba/mcp/kaiba.sock"
+      KAIBA_MCP_READONLY: "1"      # server still exposes act tools; this profile ignores them
+    timeout: 20
+    # Must be a MAPPING, not a bool. Hermes does `config.get("sampling", {})` then
+    # `.get("enabled", True)` on the result (tools/mcp_tool_server_run.py:270), so a bare
+    # `false` raises AttributeError inside an async task that nothing awaits -- the MCP
+    # connection then fails and retries roughly every 60s, forever, filling the journal.
+    # Found 2026-09-21 from the gateway log on the VPS.
+    sampling:
+      enabled: false
+
+skills:
+  external_dirs:
+    - "{{KAIBA_ROOT}}/skills"
+    # GMGN's own skill pack, installed by `npx skills add GMGNAI/gmgn-skills` into
+    # .agents/skills. Referenced in place rather than copied into skills/ so that
+    # re-running the installer updates them without a merge, and so ours and theirs stay
+    # visibly separate -- theirs are vendored and we do not edit them.
+    #
+    # Two of the fourteen (gmgn-swap, gmgn-token-buy) are FINANCIAL EXECUTION skills that
+    # call GMGN directly. That bypasses the whole execution stack: RiskGate.check_entry,
+    # the viability sizing band, the paper broker, shadow mode, the limiter and the signer
+    # policy. They cannot act today because GMGN_PRIVATE_KEY is unset. When it is set,
+    # route real trades through kaiba's executor instead, so they inherit the gates and
+    # land in the same `trades` table every measurement reads.
+    - "{{KAIBA_ROOT}}/.agents/skills"
+
+memory:
+  enabled: true
+  memory_char_limit: 2200
+
+delegation:
+  max_children: 2
+  max_depth: 1
+  child_timeout_s: 240
+  inherit_mcp_toolsets: false
+
+cron:
+  max_parallel_jobs: 2
+  output_retention: 24
+  model: claude-sonnet-5
+  model_provider: anthropic
+
+gateway:
+  platforms: {}

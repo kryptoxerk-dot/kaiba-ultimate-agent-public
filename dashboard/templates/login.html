@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Kaiba · sign in{% endblock %}
+{% block body %}
+<main class="login-shell">
+  <form class="login-card" method="post" action="/login" autocomplete="off">
+    <div class="brand">
+      <span class="brand-mark">◎</span>
+      <span class="brand-word">KAIBA</span>
+    </div>
+    <p class="eyebrow cyan">OPERATOR CONSOLE</p>
+    <label for="password">Dashboard password</label>
+    <input id="password" name="password" type="password" autocomplete="current-password"
+           autofocus required>
+    {% if bad %}<p class="bad">That password was not accepted.</p>{% endif %}
+    <button class="button primary" type="submit">Unlock</button>
+    <p class="muted">
+      This console can pause, reduce-only and kill the agent. It cannot move funds:
+      {{ NO_WITHDRAW_COPY }}
+    </p>
+  </form>
+</main>
+{% endblock %}

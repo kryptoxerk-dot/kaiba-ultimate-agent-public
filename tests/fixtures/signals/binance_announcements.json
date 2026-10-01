@@ -1,0 +1,162 @@
+{
+ "code": "000000",
+ "message": null,
+ "messageDetail": null,
+ "data": {
+  "catalogs": [
+   {
+    "catalogId": 48,
+    "parentCatalogId": null,
+    "icon": "https://public.bnbstatic.com/image/cms/content/body/202505/d3201bf0be35bb246b65a767221410e0.png",
+    "catalogName": "New Cryptocurrency Listing",
+    "description": null,
+    "catalogType": 1,
+    "total": 2261,
+    "articles": [
+     {
+      "id": 285011,
+      "code": "533eb2f3998a43e3a34df310998bee48",
+      "title": "Binance Futures Will Launch USDBRLUSDT USDⓈ-Margined TradFi Perpetual Contract (2026-09-21)",
+      "type": 1,
+      "releaseDate": 1789740003166
+     },
+     {
+      "id": 284923,
+      "code": "fcd1b50824c04192b80091599c452ee8",
+      "title": "Binance Futures Will List USDⓈ-M & COIN-M Quarterly 0326 Delivery Contracts",
+      "type": 1,
+      "releaseDate": 1789718412684
+     },
+     {
+      "id": 284909,
+      "code": "3c2b63c9c3e44d40b8cec99961166fe8",
+      "title": "Binance Futures Will Launch Multiple USDⓈ-Margined Perpetual Contracts (2026-09-18)",
+      "type": 1,
+      "releaseDate": 1789714803437
+     },
+     {
+      "id": 284888,
+      "code": "7df43402f0094e79b293bd7fbb574474",
+      "title": "Binance Will Support the Broadcom (AVGO), Invesco QQQ Trust (QQQ), Meta (META), and Seagate (STX) Cash Dividend Distribution via bStocks",
+      "type": 1,
+      "releaseDate": 1789707610872
+     },
+     {
+      "id": 284660,
+      "code": "a5bf03abedaa4430b1fd04aa760e491b",
+      "title": "Binance Will Add 2 bStocks Tokenized Securities as Collateral Asset - 2026-09-16",
+      "type": 1,
+      "releaseDate": 1789533009513
+     },
+     {
+      "id": 284643,
+      "code": "da7f14dd847f436ea92330a024ce0245",
+      "title": "Binance Exchange Adds GoPro (GPROB) and Reddit (RDDTB) bStocks Trading Pairs on Binance Spot/Convert - 2026-09-16",
+      "type": 1,
+      "releaseDate": 1789527600968
+     },
+     {
+      "id": 284450,
+      "code": "437f116183e243ce8759ac8cc580881f",
+      "title": "Binance Will Add BNCB bStocks Tokenized Securities as Collateral Asset - 2026-09-14",
+      "type": 1,
+      "releaseDate": 1789378206783
+     },
+     {
+      "id": 284461,
+      "code": "d625f87897a843febc1f4c139740d875",
+      "title": "Binance Exchange Adds CEA Industries (BNCB) bStocks Trading Pair on Binance Spot/Convert - 2026-09-14",
+      "type": 1,
+      "releaseDate": 1789376404044
+     },
+     {
+      "id": 284214,
+      "code": "39fe3154675948fbb164b1e63e036629",
+      "title": "Binance Will Add 牛来 (牛来) on Earn, Buy Crypto, Convert, VIP Loan & Margin",
+      "type": 1,
+      "releaseDate": 1788963315144
+     },
+     {
+      "id": 284193,
+      "code": "6133e417dcfe43a8ad20c0db1b53c7e8",
+      "title": "Binance Will List 牛来 (牛来) with Seed Tag Applied",
+      "type": 1,
+      "releaseDate": 1788953419513
+     },
+     {
+      "id": 284124,
+      "code": "026d4dfdc82940a5924b22442bcb651e",
+      "title": "Binance Will Add 2 bStocks Tokenized Securities as Collateral Asset - 2026-09-09",
+      "type": 1,
+      "releaseDate": 1788937216577
+     },
+     {
+      "id": 284099,
+      "code": "7880bcb7f4744d8bbbba88cbbcd43124",
+      "title": "Binance Exchange Adds Salesforce (CRMB) and Hims & Hers Health (HIMSB) bStocks Trading Pairs on Binance Spot/Convert - 2026-09-09",
+      "type": 1,
+      "releaseDate": 1788922801882
+     },
+     {
+      "id": 283915,
+      "code": "ca3196e008da448da107d397bae0b4b0",
+      "title": "Binance Futures Will Launch USDⓈ-Margined PONSUSDT and 哈基米USDT Perpetual Contracts (2026-09-06)",
+      "type": 1,
+      "releaseDate": 1788674111414
+     },
+     {
+      "id": 283893,
+      "code": "b8c68539ef9f4925a8d97202d82d98e9",
+      "title": "Binance Will Add MarsCoin (MARSCOIN) on Earn, Buy Crypto, Convert, VIP Loan & Margin",
+      "type": 1,
+      "releaseDate": 1788525902072
+     },
+     {
+      "id": 283840,
+      "code": "c2eaa763831745b2b1701dab45e20225",
+      "title": "Binance Will List MarsCoin (MARSCOIN) with Seed Tag Applied",
+      "type": 1,
+      "releaseDate": 1788516901870
+     },
+     {
+      "id": 283773,
+      "code": "89a035c3ee0e4b7782bf0089323d8e78",
+      "title": "Binance Futures Will Launch Multiple USDⓈ-Margined TradFi Perpetual Contracts (2026-09-07)",
+      "type": 1,
+      "releaseDate": 1788497186706
+     },
+     {
+      "id": 283746,
+      "code": "0ffd2dbcc12e4a968fbe7ccd2b4cc9f8",
+      "title": "Binance Futures Will Launch USDⓈ-Margined GPROUSDT Perpetual Contract (2026-09-03)",
+      "type": 1,
+      "releaseDate": 1788438625942
+     },
+     {
+      "id": 283671,
+      "code": "8f5c893fa654432883f481b120b0a016",
+      "title": "Binance Will Add 4 bStocks Tokenized Securities as Collateral Asset - 2026-09-02",
+      "type": 1,
+      "releaseDate": 1788341411613
+     },
+     {
+      "id": 283648,
+      "code": "989347def916494f98bf3ba5ec8f9557",
+      "title": "Binance Futures Will Launch Multiple USDⓈ-Margined TradFi Perpetual Contracts (2026-09-02)",
+      "type": 1,
+      "releaseDate": 1788338705651
+     },
+     {
+      "id": 283642,
+      "code": "b3ba5cf68daf4264a1260c8da11eef6d",
+      "title": "Binance Exchange Adds 4 bStocks Trading Pairs on Binance Spot/Convert - 2026-09-02",
+      "type": 1,
+      "releaseDate": 1788337801247
+     }
+    ],
+    "catalogs": []
+   }
+  ]
+ },
+ "success": true
+}

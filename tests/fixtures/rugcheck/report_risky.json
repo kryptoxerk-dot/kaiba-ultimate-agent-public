@@ -1,0 +1,44 @@
+{
+  "note": "Hand-built to the documented report shape. Not a live capture. A dev-heavy launch: the creator still holds 24% of supply, insiders hold 22% of the top-10, LP is unlocked and the token is Token-2022 with a transfer fee.",
+  "body": {
+    "mint": "RiskYMint1111111111111111111111111111111111",
+    "tokenProgram": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+    "tokenType": "spl-token-2022",
+    "creator": "RugDev11111111111111111111111111111111111",
+    "creatorBalance": 240000000000000,
+    "token": {
+      "mintAuthority": "AuTh111111111111111111111111111111111111111",
+      "freezeAuthority": "AuTh111111111111111111111111111111111111111",
+      "supply": 1000000000000000,
+      "decimals": 6
+    },
+    "tokenMeta": {"name": "Risky Coin", "symbol": "RISK", "mutable": true, "updateAuthority": "AuTh111111111111111111111111111111111111111"},
+    "rugged": false,
+    "score": 42000,
+    "score_normalised": 91,
+    "risks": [
+      {"name": "Mint Authority still enabled", "value": "", "description": "tokens can be minted", "score": 30000, "level": "danger"},
+      {"name": "Freeze Authority still enabled", "value": "", "description": "accounts can be frozen", "score": 25000, "level": "danger"},
+      {"name": "Large Amount of LP Unlocked", "value": "100%", "description": "liquidity can be pulled", "score": 8000, "level": "danger"},
+      {"name": "Mutable metadata", "value": "", "description": "token metadata can be changed", "score": 100, "level": "warn"}
+    ],
+    "price": 0.0000042,
+    "totalHolders": 42,
+    "totalMarketLiquidity": 4200,
+    "transferFee": {"pct": 5.0, "maxAmount": 100000, "authority": "AuTh111111111111111111111111111111111111111"},
+    "graphInsidersDetected": 2,
+    "topHolders": [
+      {"address": "Wh1111111111111111111111111111111111111111", "owner": "Ow111111111111111111111111111111111111111", "pct": 40.0, "insider": true},
+      {"address": "Wh2222222222222222222222222222222222222222", "owner": "Ow222222222222222222222222222222222222222", "pct": 15.0, "insider": false},
+      {"address": "Wh3333333333333333333333333333333333333333", "owner": "Ow333333333333333333333333333333333333333", "pct": 10.0, "insider": true}
+    ],
+    "markets": [
+      {
+        "pubkey": "Mkt22222222222222222222222222222222222222",
+        "marketType": "raydium",
+        "liquidityA": "PoolAccount2222222222222222222222222222222",
+        "lp": {"lpLocked": 0, "lpLockedPct": 0.0, "lpLockedUSD": 0, "baseUSD": 2100, "quoteUSD": 2100}
+      }
+    ]
+  }
+}

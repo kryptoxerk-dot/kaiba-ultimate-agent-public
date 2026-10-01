@@ -1,0 +1,270 @@
+# TEMPLATE. Ships in paper mode: global_mode shadow, every lane shadow, every chain disabled,
+# bankroll 0, no wallets. To trade, set your own wallet + bankroll per chain, enable the chain,
+# and move ONE lane to live only after you have measured it in shadow. Values are base units
+# (lamports for sol, wei for EVM chains).
+version: v1
+global_mode: shadow
+kill_switch: false
+entries_paused: true
+reduce_only: false
+bounds:
+  # RAISED 5.0 -> 30.0 on 2026-09-24. OWNER's decision, asked and confirmed with the
+  # numbers in front of him: "100 dollars minimum per trade ... preferably more".
+  # This is the envelope ceiling every position is clamped to, so the lane band and the
+  # per-chain caps could never reach $100 while it stood at 5%: sol equity has fallen to
+  # 3.684 SOL on realised losses, and $100 is 23.6% of that.
+  # AGAINST THE MEASUREMENT, recorded as such: 175 closed sm-trenches trades show a 25.14%
+  # win rate and -12.44% mean per trade, needing ~38.10% wins to break even. Size
+  # multiplies that. At 30% a position the 70% total-exposure cap allows ~2 concurrent
+  # positions, which is also about what the protection tick can service.
+  max_size_pct_bankroll: 30.0
+  max_total_exposure_pct: 70.0
+  max_daily_loss_pct: 10.0
+  max_slippage_bps: 2500
+  # OWNER 2026-09-24: "Make sure the agent uses 88% slippage anti mev". Scoped to EXITS.
+  # 97 of 104 failed sells in 24h were the venue refusing with GEvmInsufficientSlippage:
+  # min_out is derived from our last MARK, and on a token that has fallen since, 75% of a
+  # stale mark is still above anything the pool will pay. One position demanded 0.0045 ETH
+  # for a token with ZERO trades in 24h and retried 90 times; positions sat 26-41h
+  # unsellable, which is what stopped entries. Entries stay at 2500 deliberately: at 8800
+  # a BUY would accept 12% of the tokens it expected. --anti-mev is on every swap.
+  # EXIT-1 2026-09-24: policy now requires trusted SELL context and token-to-native
+  # direction for this ceiling. All 50 quote-provenance tests pass at 8800 unchanged;
+  # entry, recipient, floor and withdrawal checks remain enforced. No fill guarantee.
+  max_exit_slippage_bps: 8800
+  max_lane_mode: shadow
+  allow_self_promotion: true
+  max_round_trip_cost_pct: 7.0
+chains:
+  sol:
+    enabled: false
+    bankroll_base_units: 0
+    max_position_base_units: 1303214000
+    min_position_base_units: 560000000
+    gas_reserve_base_units: 50000000
+    daily_loss_stop_base_units: 0
+    max_exposure_pct: 90.0
+    wallet: ''
+  robinhood:
+    enabled: false
+    bankroll_base_units: 0
+    max_position_base_units: 55555555555555555
+    min_position_base_units: 37037037037037037
+    gas_reserve_base_units: 10000000000000000
+    daily_loss_stop_base_units: 0
+    max_exposure_pct: 90.0
+    wallet: ''
+  bsc:
+    enabled: false
+    bankroll_base_units: 0
+    max_position_base_units: 194130000000000000
+    min_position_base_units: 129420000000000000
+    gas_reserve_base_units: 30000000000000000
+    daily_loss_stop_base_units: 0
+    max_exposure_pct: 90.0
+    wallet: ''
+  base:
+    enabled: false
+    bankroll_base_units: 0
+    max_position_base_units: 500000000000000
+    min_position_base_units: 100000000000000
+    gas_reserve_base_units: 2000000000000000
+    daily_loss_stop_base_units: 0
+    max_exposure_pct: 90.0
+lanes:
+  manual:
+    mode: shadow
+    size_pct_min: 0.25
+    size_pct_max: 1.0
+    chains:
+    - sol
+    - robinhood
+    - bsc
+    - base
+    - eth
+    params:
+      require_thesis: true
+  confluence-5:
+    mode: shadow
+    size_pct_min: 1.0
+    size_pct_max: 5.0
+    chains:
+    - sol
+    - robinhood
+    - bsc
+    - base
+    params:
+      min_entities: 5
+      window_s: 120
+      min_buy_usd: 50
+      max_signal_age_s: 30
+      require_wallet_grade: B
+  trusted-copy:
+    mode: shadow
+    size_pct_min: 1.0
+    size_pct_max: 5.0
+    chains:
+    - sol
+    - robinhood
+    params:
+      max_copy_delay_s: 20
+      max_price_drift_pct: 12
+      follow_exits: true
+  curve-velocity:
+    mode: shadow
+    size_pct_min: 0.25
+    size_pct_max: 1.0
+    chains:
+    - sol
+    params:
+      min_progress_pct: 30
+      max_progress_pct: 70
+      min_sol_per_min: 3.0
+      min_sol_per_swap: 0.18
+      min_swap_fraction_of_graduation: 0.0021
+      max_bundler_pct: 20
+      min_graded_wallets: 1
+  sm-trenches:
+    mode: shadow
+    size_pct_min: 19.3
+    size_pct_max: 29.0
+    chains:
+    - sol
+    - bsc
+    - robinhood
+    params:
+      min_smart_degen: 3
+      # The lane loads 1800 s of buys (`scanner.recent_buys_window_s`) and used to
+      # throw 25 minutes of it away: `window_s` defaulted to 300 s. MEASURED
+      # 2026-09-24: at 300 s there were ZERO sol tokens with >=3 tagged smart buyers,
+      # 13 at 1800 s. Over six hours 221 tokens across the three chains reached the
+      # bar and the lane made 26 decisions. This is the same sampler failure recorded
+      # in AGENTS.md, fixed then for token AGE and still open for the confluence
+      # WINDOW. Costs no extra provider call: the data is already loaded.
+      window_s: 1800
+      min_independent_entities: 2
+      max_rug_ratio: 0.3
+      min_holder_count: 0
+      blocked_launchpads: []
+  migration-fade:
+    mode: shadow
+    size_pct_min: 1.0
+    size_pct_max: 5.0
+    chains:
+    - sol
+    params:
+      sell_within_s: 180
+      max_hold_s: 1200
+      never_hold_through_migration: true
+  kol-fade:
+    mode: shadow
+    size_pct_min: 0.25
+    size_pct_max: 1.0
+    chains:
+    - sol
+    - robinhood
+    params:
+      min_caller_trades: 10
+      min_caller_expectancy: 0.0
+  listing-pop:
+    mode: 'off'
+    size_pct_min: 0.5
+    size_pct_max: 2.0
+    chains:
+    - sol
+    params:
+      max_latency_s: 30
+  pons-robinhood:
+    mode: shadow
+    size_pct_min: 0.5
+    size_pct_max: 2.0
+    chains:
+    - robinhood
+    params:
+      min_entities: 3
+      max_age_s: 1800
+      min_liquidity_usd: 5000
+protection:
+  poll_interval_s: 12
+  price_source: venue
+  use_provider_orders: false
+  stop_loss_bps: 3000
+  tp_ladder:
+  - - 2.0
+    - 50
+  - - 5.0
+    - 25
+  - - 10.0
+    - 15
+  trailing:
+  - - 1.2
+    - 2000
+  - - 2.0
+    - 3000
+  - - 5.0
+    - 2500
+  - - 10.0
+    - 2000
+  - - 25.0
+    - 1500
+  - - 100.0
+    - 1000
+  breakeven_after_tp1: true
+  anti_wick_min_ratio: 0.7
+  rug_liquidity_drop_pct: 40
+  emergency_loss_bps: 5000
+  stale_no_volume_exit_s: 3600
+  moonbag_retain_pct: 20
+  max_blind_s: 300
+  max_blind_halt_entries: true
+provider_budgets:
+  robinhood-rpc:
+    min_interval_ms: 1500
+    capacity: 3
+    refill_per_s: 0.6
+    max_inflight: 1
+  gmgn:
+    min_interval_ms: 250
+    capacity: 60
+    refill_per_s: 3.0
+    max_inflight: 4
+    weights:
+      quote: 10
+      swap: 10
+      default: 1
+  raydium_launchpad:
+    min_interval_ms: 350
+    capacity: 5
+    refill_per_s: 2.0
+    max_inflight: 1
+  helius:
+    min_interval_ms: 100
+    capacity: 50
+    refill_per_s: 10.0
+    max_inflight: 4
+    daily_credit_cap: 900000
+  dexscreener:
+    min_interval_ms: 1100
+    capacity: 60
+    refill_per_s: 1.0
+    max_inflight: 2
+  solanatracker:
+    min_interval_ms: 350
+    capacity: 3
+    refill_per_s: 3.0
+    max_inflight: 2
+  rugcheck:
+    min_interval_ms: 500
+    capacity: 10
+    refill_per_s: 2.0
+    max_inflight: 2
+  goplus:
+    min_interval_ms: 500
+    capacity: 30
+    refill_per_s: 2.0
+    max_inflight: 2
+  jupiter:
+    min_interval_ms: 1100
+    capacity: 5
+    refill_per_s: 1.0
+    max_inflight: 2

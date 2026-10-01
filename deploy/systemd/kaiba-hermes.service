@@ -1,0 +1,106 @@
+[Unit]
+# The brain: the Hermes gateway (Telegram + cron fleet) running the kaiba-operator
+# profile. It reaches Kaiba only through the MCP socket and the six report files.
+#
+# What this identity deliberately cannot do:
+#   - read /etc/kaiba/signer or any key material
+#   - read /etc/kaiba/core.env, so it never sees a provider credential
+#   - open the sqlite database directly
+# Everything it is allowed to do goes through typed MCP tools, which are journalled.
+Description=Kaiba Hermes gateway (kaiba-operator profile)
+Documentation=file:///opt/kaiba/current/docs/runbooks/deploy.md
+Wants=network-online.target
+After=network-online.target kaiba-mcp.service
+PartOf=kaiba.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=exec
+User=kaiba-agent
+Group=kaiba-agent
+SupplementaryGroups=kaiba kaiba-reports kaiba-mcp-ipc
+WorkingDirectory=/var/lib/kaiba/hermes
+
+# Only the Telegram token and the model auth live here. Hermes keeps its own OAuth
+# credentials under $HERMES_HOME, written interactively by `hermes auth`.
+EnvironmentFile=/etc/kaiba/hermes.env
+Environment=HOME=/var/lib/kaiba/hermes
+Environment=HERMES_HOME=/var/lib/kaiba/hermes/.hermes
+Environment=HERMES_PROFILE=kaiba-operator
+Environment=KAIBA_REPORTS_DIR=/var/lib/kaiba/reports
+Environment=KAIBA_MCP_SOCKET=/run/kaiba/mcp/kaiba.sock
+Environment=GATEWAY_ALLOW_ALL_USERS=false
+Environment=TELEGRAM_ALLOW_ALL_USERS=false
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PYTHONUNBUFFERED=1
+
+# Every Kaiba secret name, unset. The model context is the least trustworthy place on
+# this machine — provider prose and token metadata land in it — so it gets nothing it
+# could exfiltrate. PLAN §10: "LLM processes get UnsetEnvironment for every secret name."
+UnsetEnvironment=GMGN_API_KEY GMGN_PRIVATE_KEY KAIBA_SIGNER_PASSPHRASE KAIBA_SIGNER_KEYSTORE
+UnsetEnvironment=SOLANA_PRIVATE_KEY EVM_PRIVATE_KEY
+UnsetEnvironment=HELIUS_API_KEY HELIUS_WEBHOOK_SECRET SOLANA_TRACKER_API_KEY BIRDEYE_API_KEY
+UnsetEnvironment=PUMPPORTAL_API_KEY JUPITER_API_KEY BITQUERY_TOKEN ALCHEMY_API_KEY
+UnsetEnvironment=ALCHEMY_WEBHOOK_SIGNING_KEY ETHERSCAN_API_KEY BLOCKSCOUT_API_KEY
+UnsetEnvironment=GOPLUS_APP_KEY GOPLUS_APP_SECRET RUGCHECK_JWT COINGECKO_API_KEY
+UnsetEnvironment=NANSEN_API_KEY CIELO_API_KEY MOBULA_API_KEY CODEX_IO_API_KEY
+UnsetEnvironment=TWITTERSCORE_API_KEY CRYPTOPANIC_API_KEY NEWSAPI_KEY
+UnsetEnvironment=KAIBA_DASHBOARD_PASSWORD AGE_IDENTITY_FILE RCLONE_CONFIG_PASS
+UnsetEnvironment=LANGFUSE_SECRET_KEY
+UnsetEnvironment=PYTHONHOME PYTHONPATH PYTHONSTARTUP PYTHONINSPECT PYTHONOPTIMIZE
+
+# Refuse to start if the profile was never installed, rather than coming up brainless.
+ExecStartPre=/usr/bin/test -f /var/lib/kaiba/hermes/.hermes/profiles/kaiba-operator/config.yaml
+ExecStart=/opt/kaiba/hermes-venv/bin/hermes --profile kaiba-operator gateway run
+Restart=on-failure
+RestartSec=15
+TimeoutStopSec=90
+KillMode=control-group
+
+# ---- hardening baseline (identical across every kaiba unit) -------------------------
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+PrivateMounts=yes
+ProtectHostname=yes
+ProtectClock=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectProc=invisible
+ProcSubset=pid
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+# Hermes runs Python. If a toolset you enable pulls in a JIT (node for a browser tool,
+# for instance), apply deploy/systemd/dropins/allow-node-jit.conf to THIS unit and
+# record why in the work log — it is a real reduction in hardening.
+MemoryDenyWriteExecute=yes
+RemoveIPC=yes
+KeyringMode=private
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+CapabilityBoundingSet=
+AmbientCapabilities=
+UMask=0077
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+# ---- explicit write surface ---------------------------------------------------------
+ReadWritePaths=/var/lib/kaiba/hermes
+ReadOnlyPaths=/opt/kaiba/current/skills /opt/kaiba/hermes-venv /var/lib/kaiba/reports
+InaccessiblePaths=/etc/kaiba/signer /etc/kaiba/core.env /etc/kaiba/signer.env /etc/kaiba/dashboard.env
+InaccessiblePaths=/var/lib/kaiba/signer /var/lib/kaiba/db /var/lib/kaiba/backups
+InaccessiblePaths=/var/lib/kaiba/cache /var/lib/kaiba/dash /var/lib/kaiba/exports
+
+MemoryMax=2G
+CPUQuota=150%
+TasksMax=192
+
+[Install]
+WantedBy=multi-user.target

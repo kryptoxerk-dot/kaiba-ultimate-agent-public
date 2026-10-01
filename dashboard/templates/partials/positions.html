@@ -1,0 +1,54 @@
+<div class="panel-head">
+  <div><h3>Positions</h3><small>open positions, protection state and operator exit intents</small></div>
+  <a class="text-button" href="/api/positions" target="_blank" rel="noopener">json</a>
+</div>
+{% if positions %}
+<div class="table positions">
+  <div class="table-row header">
+    <span>Token</span><span>Lane</span><span>Entry</span><span>Current</span>
+    <span>PnL</span><span>Protection</span><span></span>
+  </div>
+  {% for p in positions %}
+  <div class="table-row">
+    <span class="token-name" data-label="Token">
+      <strong>{{ p.symbol or p.token_short }}</strong>
+      <button class="addr" type="button" data-copy="{{ p.token }}" title="{{ p.token }}">{{ p.token_short }}<span class="copy-glyph" aria-hidden="true">⧉</span></button>
+    </span>
+    <span class="lane" data-label="Lane">{{ p.lane }}<small class="chip">{{ p.mode }}</small></span>
+    <span data-label="Entry">{% if p.entry_price_usd %}${{ p.entry_price_usd }}{% else %}<em class="nodata">—</em>{% endif %}</span>
+    <span data-label="Current"><em class="nodata" title="{{ p.current_unavailable }}">—</em></span>
+    <span data-label="PnL">
+      {% if p.realized_native is not none %}
+        <b class="{% if p.realized_native < 0 %}neg{% elif p.realized_native > 0 %}pos{% endif %}">{{ p.realized_native|num(6) }} {{ p.symbol_native }}</b>
+        <small>realized</small>
+      {% else %}<em class="nodata">—</em>{% endif %}
+      <small class="nodata">unrealized needs a live quote</small>
+    </span>
+    <span data-label="Protection">
+      {% if p.protected %}
+        <span class="guard good"><i></i>{{ p.protection_count }} order{{ '' if p.protection_count == 1 else 's' }}</span>
+      {% else %}
+        <span class="guard block"><i></i>unprotected</span>
+      {% endif %}
+      {% if p.tp_done %}<small>TP {{ p.tp_done|length }} done</small>{% endif %}
+      {% if p.stop_price_usd %}<small>stop ${{ p.stop_price_usd }}</small>{% endif %}
+    </span>
+    <span class="cell-action">
+      <form method="post" action="/control/close-position"
+            hx-post="/control/close-position" hx-target="closest .panel" hx-swap="innerHTML">
+        <input type="hidden" name="_csrf" value="{{ csrf }}">
+        <input type="hidden" name="position_id" value="{{ p.position_id }}">
+        <button class="button danger-soft" type="submit"
+                title="Emits a close intent event; the execution layer performs the exit">close</button>
+      </form>
+    </span>
+  </div>
+  {% endfor %}
+</div>
+<p class="footnote">
+  “close” records an operator exit <em>intent</em> on the event bus. This console never
+  submits an order itself, and it has no path that moves funds anywhere.
+</p>
+{% else %}
+<p class="nodata">No open positions. Nothing is at risk right now.</p>
+{% endif %}

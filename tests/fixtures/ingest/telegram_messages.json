@@ -1,0 +1,45 @@
+[
+  {
+    "case": "solana call with a chart link",
+    "channel": "-1001752354955/250551",
+    "sender_id": 771002003,
+    "sender_name": "degen_mike",
+    "text": "NEW GEM 💎\n\nCA: Gp32UJ3xavL1sHSH9QKRygZPiQXhcoxazE4G48fu4QcA\n\nchart: https://dexscreener.com/solana/Gp32UJ3xavL1sHSH9QKRygZPiQXhcoxazE4G48fu4QcA\nape responsibly",
+    "expect": ["Gp32UJ3xavL1sHSH9QKRygZPiQXhcoxazE4G48fu4QcA"]
+  },
+  {
+    "case": "evm call on robinhood chain",
+    "channel": "-1001752354955/395868|robinhood",
+    "sender_id": 771002004,
+    "sender_name": "hoodhunter",
+    "text": "Member call: 0x68EEE5c2FE8883A63CD9E5F0e71a3116FB728B3a — mcap 8k, lp locked",
+    "expect": ["0x68eee5c2fe8883a63cd9e5f0e71a3116fb728b3a"]
+  },
+  {
+    "case": "two addresses in one message plus a program id that must be filtered",
+    "channel": "@kaiba_alpha_room",
+    "sender_id": 771002005,
+    "sender_name": "alphabot",
+    "text": "pair created\nmint 9Dk5EpBqxzjU9125iiMd4Azb1exUEAz7GBS2qQ25ejmW quote So11111111111111111111111111111111111111112 program TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA\nalso watching 4iUGz6BJNT7nrEYVDaq6ozDt6QN8WJRXfKQbbn43xMAX",
+    "expect": [
+      "9Dk5EpBqxzjU9125iiMd4Azb1exUEAz7GBS2qQ25ejmW",
+      "4iUGz6BJNT7nrEYVDaq6ozDt6QN8WJRXfKQbbn43xMAX"
+    ]
+  },
+  {
+    "case": "chatter that looks base58 but is not a pubkey",
+    "channel": "@kaiba_alpha_room",
+    "sender_id": 771002006,
+    "sender_name": "noise",
+    "text": "SuperAmazingMoonshotTokenCandyRocket is running, gm gm",
+    "expect": []
+  },
+  {
+    "case": "no address at all",
+    "channel": "@kaiba_alpha_room",
+    "sender_id": 771002007,
+    "sender_name": "noise",
+    "text": "wen moon ser",
+    "expect": []
+  }
+]

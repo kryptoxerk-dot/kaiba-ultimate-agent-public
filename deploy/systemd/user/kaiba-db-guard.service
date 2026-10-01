@@ -1,0 +1,14 @@
+[Unit]
+Description=Kaiba database guard: truncate an overgrown WAL, page before the disk fills
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/kaiba
+Environment=KAIBA_ENV=prod
+Environment=PYTHONUNBUFFERED=1
+# Same Telegram credentials as kaiba-notify. Like it, this unit is never given
+# GMGN_ALLOW_AUTOMATED_TRADES: it reads file sizes and checkpoints the WAL, nothing else.
+EnvironmentFile=%h/.config/kaiba/notify.env
+ExecStart=%h/kaiba/.venv/bin/python -B -m kaiba.ops.db_guard --db %h/kaiba/data/kaiba.db
+Nice=5
+TimeoutStartSec=90

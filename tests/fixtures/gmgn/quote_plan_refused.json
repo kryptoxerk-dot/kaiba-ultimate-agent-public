@@ -1,0 +1,23 @@
+{
+  "_synthetic": true,
+  "_why": "modelled on rate_limited_429.json; not recorded from a live `order quote`",
+  "args": [
+    "order",
+    "quote",
+    "--chain",
+    "sol",
+    "--from",
+    "EnQdeYsyhacWWDuWfFJvtyk1ehD1cB511ujxJpUtiiWA",
+    "--input-token",
+    "So11111111111111111111111111111111111111112",
+    "--output-token",
+    "CVoNMSYK9mVd3TzAutnrRTKmptQUQ7r9qBg1ejb7vVd2",
+    "--amount",
+    "100000000",
+    "--slippage",
+    "1.00"
+  ],
+  "returncode": 3221226505,
+  "stdout": "",
+  "stderr": "[gmgn-cli] POST /v1/trade/quote failed: HTTP 429 code=429 error=RATE_LIMIT_EXCEEDED message=IP rate limit exceeded. Rate limit resets at 2026-09-20 09:50"
+}

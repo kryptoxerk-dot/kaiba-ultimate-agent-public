@@ -1,0 +1,17 @@
+<div class="panel-head">
+  <div><h3>Journal</h3><small>hash-chained lessons, newest first</small></div>
+  <a class="text-button" href="/api/journal" target="_blank" rel="noopener">json</a>
+</div>
+{% if journal.available %}
+<div class="timeline">
+  {% for e in journal.entries %}
+  <div>
+    <b>{{ e.ts_ms|ts }}</b>
+    <div><strong class="act act-{{ e.kind }}">{{ e.kind }}</strong> <span class="muted">{{ e.body }}</span></div>
+    <em>#{{ e.seq }}</em>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<p class="nodata">{{ journal.reason }}</p>
+{% endif %}

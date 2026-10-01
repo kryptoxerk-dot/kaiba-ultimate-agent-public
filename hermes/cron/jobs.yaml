@@ -1,0 +1,118 @@
+# Kaiba cron fleet.
+#
+# Applied by deploy/install-hermes.sh via `hermes cron create`. Each job pins its own
+# model so a cheap recurring job never burns Opus quota; an unpinned job would follow the
+# profile default and fail closed if that default later changes.
+#
+# Deterministic work (ingestion, protection, reconciliation) does NOT live here — it runs
+# as systemd services. A cron prompt is never a stop-loss.
+
+jobs:
+  # ---------------------------------------------------------------- research profile
+  - name: kaiba-alpha-radar
+    profile: kaiba-research
+    schedule: "*/15 * * * *"
+    model: claude-haiku-4-5
+    provider: anthropic
+    reasoning_effort: low
+    deliver: local
+    skills: [alpha-radar]
+    prompt: >
+      Review signals and alpha events from the last 20 minutes with kaiba_signals and
+      kaiba_events. For anything that a lane has not already acted on, check the dossier
+      with kaiba_token. Record a one-line observation per genuinely interesting candidate
+      and nothing at all if the window was quiet. Do not invent work.
+
+  - name: kaiba-wallet-discovery
+    profile: kaiba-research
+    schedule: "7 * * * *"
+    model: claude-sonnet-5
+    provider: anthropic
+    reasoning_effort: medium
+    deliver: local
+    skills: [wallet-grading, entity-clustering]
+    prompt: >
+      Run the hourly wallet gathering and grading cycle. Seed from tokens that graduated
+      or 5x'd in the last 30 days rather than from trending lists, so seed confluence is
+      meaningful. Report new grade-A and grade-B wallets and any entity whose membership
+      changed materially.
+
+  - name: kaiba-dyor-refresh
+    profile: kaiba-research
+    schedule: "*/10 * * * *"
+    model: claude-haiku-4-5
+    provider: anthropic
+    reasoning_effort: low
+    deliver: local
+    skills: [gmgn-token-dyor]
+    prompt: >
+      Refresh dossiers for tokens with an open position or an active candidate. Flag any
+      token whose blockers changed since the last scan; an appearing blocker on a held
+      position is urgent and should be reported immediately.
+
+  - name: kaiba-news-digest
+    profile: kaiba-research
+    schedule: "*/30 * * * *"
+    model: claude-haiku-4-5
+    provider: anthropic
+    reasoning_effort: low
+    deliver: local
+    skills: [alpha-radar]
+    prompt: >
+      Collect crypto news, listing announcements and X chatter relevant to tracked tokens
+      and open positions. One digest entry per material item, with the source. Silence is
+      an acceptable result.
+
+  - name: kaiba-airdrop-registry
+    profile: kaiba-research
+    schedule: "0 6 * * *"
+    model: claude-sonnet-5
+    provider: anthropic
+    reasoning_effort: medium
+    deliver: telegram
+    skills: [airdrop-hunter]
+    prompt: >
+      Refresh the airdrop and points registry, rank by expected value, and report the top
+      five with their cost, deadline and Sybil risk. Single-wallet organic plans only.
+
+  # ---------------------------------------------------------------- reflect profile
+  - name: kaiba-nightly-reflection
+    profile: kaiba-reflect
+    schedule: "30 1 * * *"
+    model: claude-opus-5
+    provider: anthropic
+    reasoning_effort: high
+    deliver: telegram
+    skills: [trade-journaling, strategy-experiment]
+    prompt: >
+      Run the nightly reflection over the last 24 hours. Read the masked review packet,
+      including every stand-aside decision. Write at most five lessons with valid mistake
+      tags, at most three playbook deltas, and at most two parameter proposals. Check the
+      attribution split before crediting any lane with edge, and comment on calibration.
+
+  - name: kaiba-weekly-evaluation
+    profile: kaiba-reflect
+    schedule: "0 2 * * 0"
+    model: claude-opus-5
+    provider: anthropic
+    reasoning_effort: high
+    deliver: telegram
+    skills: [strategy-experiment]
+    prompt: >
+      Weekly strategy evaluation. Run the replay and shadow gates over every experiment in
+      the proposed or shadow state. Promote only what passes both. Retire playbook rules
+      with no hits in thirty days. Report promotions, rejections and retirements with the
+      gate numbers that justified them.
+
+  - name: kaiba-provider-budget-audit
+    profile: kaiba-research
+    schedule: "0 5 * * *"
+    model: claude-haiku-4-5
+    provider: anthropic
+    reasoning_effort: low
+    deliver: local
+    skills: [provider-budget-audit]
+    prompt: >
+      Audit provider usage over the last day: credits spent, rate-limit events, cooldowns
+      and measured feed latency. Recommend a plan change only when the measured numbers
+      justify it, and say which number would have to change your mind.

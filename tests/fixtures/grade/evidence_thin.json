@@ -1,0 +1,15 @@
+{
+  "note": "Two measured components (seed_confluence 12 + reputation 6 = 18) is below the 30-point floor, so the only honest answer is UNSCORED.",
+  "address": "0x68EEE5c2FE8883A63CD9E5F0e71a3116FB728B3a",
+  "chain": "eth",
+  "tags": [],
+  "seed_confluence": 3,
+  "reputation": {
+    "twitter": null,
+    "followers": 800,
+    "verified": false,
+    "kol": false
+  },
+  "created_token_count": 0,
+  "sample_capped": false
+}

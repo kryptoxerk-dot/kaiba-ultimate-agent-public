@@ -1,0 +1,15 @@
+{
+  "_synthetic": true,
+  "_why": "models a CLI that prints a banner instead of JSON (e.g. an npm update notice)",
+  "args": [
+    "token",
+    "info",
+    "--chain",
+    "sol",
+    "--address",
+    "So11111111111111111111111111111111111111112"
+  ],
+  "returncode": 0,
+  "stdout": "Update available 1.6.1 -> 1.7.0\nRun npm i -g gmgn-cli to update\n",
+  "stderr": ""
+}

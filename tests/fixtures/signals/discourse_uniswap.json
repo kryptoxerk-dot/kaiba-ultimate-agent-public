@@ -1,0 +1,54 @@
+{
+ "topic_list": {
+  "topics": [
+   {
+    "id": 26132,
+    "title": "RFC : Tokenomics overhaul : hard-capping supply via auto burn, pivoting unification to staking distribution and staking DAO treasury reserves",
+    "slug": "rfc-tokenomics-overhaul-hard-capping-supply-via-auto-burn-pivoting-unification-to-staking-distribution-and-staking-dao-treasury-reserves",
+    "created_at": "2026-06-25T12:09:44.808Z",
+    "posts_count": 4,
+    "excerpt": null
+   },
+   {
+    "id": 19976,
+    "title": "Community Governance Process Update [Jan 2023]",
+    "slug": "community-governance-process-update-jan-2023",
+    "created_at": "2023-01-09T17:36:36.206Z",
+    "posts_count": 5,
+    "excerpt": "On December 21, 2022, the Uniswap community voted to simplify the community governance process (Snapshot poll here). \nThis post is a follow up to that proposal, summarizing the new governance process, and covering a list&hellip;"
+   },
+   {
+    "id": 5142,
+    "title": "Uniswap Governance Forum Rules",
+    "slug": "uniswap-governance-forum-rules",
+    "created_at": "2020-09-21T19:33:07.693Z",
+    "posts_count": 1,
+    "excerpt": "This forum is dedicated to discussions on Uniswap governance. Relevant topics include: \n\nGovernance Proposals\nProposal Discussions\nDelegation Pitches\nSite Feedback\n\nThis is not the place for: \n\nUNI price discussion\nGener&hellip;"
+   },
+   {
+    "id": 22271,
+    "title": "PGov Delegate Platform",
+    "slug": "pgov-delegate-platform",
+    "created_at": "2023-11-08T03:10:55.002Z",
+    "posts_count": 73,
+    "excerpt": null
+   },
+   {
+    "id": 26287,
+    "title": "[Temp Check] Protocol Fee Expansion: Arc",
+    "slug": "temp-check-protocol-fee-expansion-arc",
+    "created_at": "2026-09-18T14:39:50.291Z",
+    "posts_count": 1,
+    "excerpt": null
+   },
+   {
+    "id": 26281,
+    "title": "[Temp Check] Rotate Sentinel Addresses on the DUNI-Owned Uniswap Earn Vaults",
+    "slug": "temp-check-rotate-sentinel-addresses-on-the-duni-owned-uniswap-earn-vaults",
+    "created_at": "2026-09-10T17:01:43.156Z",
+    "posts_count": 5,
+    "excerpt": null
+   }
+  ]
+ }
+}

@@ -1,0 +1,19 @@
+[Unit]
+Description=Run Kaiba reconciliation every 5 minutes
+Documentation=file:///opt/kaiba/current/docs/runbooks/incident-ambiguous-send.md
+
+[Timer]
+# 90s after boot so the database and the signer are up, then every 5 minutes on the
+# wall clock. AccuracySec=1s because a reconcile that drifts is a reconcile you cannot
+# correlate with an order timestamp.
+OnBootSec=90s
+OnCalendar=*:0/5
+AccuracySec=1s
+RandomizedDelaySec=0
+# If the box was asleep or the service was masked, catch up once rather than silently
+# skipping the whole outage window.
+Persistent=true
+Unit=kaiba-reconcile.service
+
+[Install]
+WantedBy=timers.target

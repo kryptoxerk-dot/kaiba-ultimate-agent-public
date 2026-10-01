@@ -1,0 +1,15 @@
+{
+  "args": [
+    "portfolio",
+    "profits",
+    "--chain",
+    "sol",
+    "--wallet",
+    "EnQdeYsyhacWWDuWfFJvtyk1ehD1cB511ujxJpUtiiWA",
+    "--period",
+    "7d"
+  ],
+  "returncode": 0,
+  "stdout": "{\"list\":[{\"wallet_address\":\"EnQdeYsyhacWWDuWfFJvtyk1ehD1cB511ujxJpUtiiWA\",\"realized_profit\":\"-924.83650321987454687358\",\"realized_profit_cost\":\"74481.96971376770474675686\",\"buy\":752,\"sell\":830,\"unrealized_profit\":\"101.45868114077587\",\"unrealized_profit_cost\":\"631.1331220999999\",\"total_realized_profit\":\"98030.0807514411618361516\",\"total_realized_profit_cost\":\"2166820.17613089839526597759\",\"total_profit\":\"98131.5394325819377061516\",\"total_cost\":\"2904474.107076474962407211\"}]}\n",
+  "stderr": ""
+}

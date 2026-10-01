@@ -1,0 +1,93 @@
+[Unit]
+# The typed boundary between Hermes and Kaiba.
+#
+# This unit is an addition to the list in the deployment brief, and it exists for one
+# reason: the brief also says kaiba-agent must reach "the MCP socket" and must NOT be
+# able to read provider credentials or the database. Those two statements are only both
+# true if the MCP server runs as kaiba-core and Hermes connects to it over a socket. If
+# Hermes spawned `python -m kaiba.mcp.server` over stdio the way the profile config does
+# in development, the server would inherit the kaiba-agent identity and would need the
+# database opened to that identity, which collapses the boundary.
+#
+# The socket bridge keeps the FastMCP stdio transport intact while placing the server
+# behind this unit's kaiba-core identity. Hermes uses the matching stdio client shim.
+Description=Kaiba MCP server (typed tool surface for Hermes, unix socket)
+Documentation=file:///opt/kaiba/current/docs/CONTRACT.md
+After=network.target
+PartOf=kaiba.target
+StartLimitIntervalSec=300
+StartLimitBurst=10
+
+[Service]
+Type=exec
+User=kaiba-core
+Group=kaiba-core
+SupplementaryGroups=kaiba kaiba-state kaiba-mcp-ipc kaiba-reports
+WorkingDirectory=/opt/kaiba/current
+
+EnvironmentFile=/etc/kaiba/core.env
+Environment=HOME=/var/lib/kaiba
+Environment=KAIBA_CONFIG_DIR=/etc/kaiba
+Environment=KAIBA_DATA_DIR=/var/lib/kaiba
+Environment=KAIBA_DB_PATH=/var/lib/kaiba/db/kaiba.db
+Environment=KAIBA_RISK_PATH=/etc/kaiba/config/risk.yaml
+Environment=KAIBA_MCP_SOCKET=/run/kaiba/mcp/kaiba.sock
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PYTHONUNBUFFERED=1
+
+UnsetEnvironment=KAIBA_SIGNER_PASSPHRASE KAIBA_SIGNER_KEYSTORE SOLANA_PRIVATE_KEY EVM_PRIVATE_KEY
+UnsetEnvironment=GMGN_PRIVATE_KEY KAIBA_DASHBOARD_PASSWORD AGE_IDENTITY_FILE RCLONE_CONFIG_PASS
+UnsetEnvironment=ANTHROPIC_API_KEY OPENROUTER_API_KEY
+UnsetEnvironment=PYTHONHOME PYTHONPATH PYTHONSTARTUP PYTHONINSPECT PYTHONOPTIMIZE
+
+ExecStart=/opt/kaiba/venv/bin/python -I -B -m kaiba.mcp.socket_bridge serve \
+    --socket /run/kaiba/mcp/kaiba.sock --socket-group kaiba-mcp-ipc --socket-mode 0660
+Restart=always
+RestartSec=5
+TimeoutStopSec=20
+KillMode=mixed
+
+# ---- hardening baseline (identical across every kaiba unit) -------------------------
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+PrivateMounts=yes
+ProtectHostname=yes
+ProtectClock=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectProc=invisible
+ProcSubset=pid
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RemoveIPC=yes
+KeyringMode=private
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+CapabilityBoundingSet=
+AmbientCapabilities=
+UMask=0077
+# The MCP server answers a local socket. It never makes an outbound call of its own:
+# providers are the ingest and engine services' job.
+RestrictAddressFamilies=AF_UNIX
+IPAddressDeny=any
+
+# ---- explicit write surface ---------------------------------------------------------
+ReadWritePaths=/var/lib/kaiba/db /var/lib/kaiba/logs /run/kaiba/mcp /etc/kaiba/config
+ReadOnlyPaths=/opt/kaiba/current /opt/kaiba/venv /etc/kaiba/policy /var/lib/kaiba/reports
+InaccessiblePaths=/etc/kaiba/signer /var/lib/kaiba/signer /var/lib/kaiba/backups /var/lib/kaiba/hermes
+
+MemoryMax=384M
+CPUQuota=75%
+TasksMax=48
+
+[Install]
+WantedBy=multi-user.target

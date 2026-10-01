@@ -1,0 +1,244 @@
+{
+ "note": "Live recording, not hand-built. goplus is the per-address entry already unwrapped from GoPlus's result map; rugcheck holds one key per route.",
+ "recorded_at_ms": 1789897097388,
+ "token": {
+  "label": "BOBO",
+  "address": "0xb90b2a35c65dbc466b04240097ca756ad2005295",
+  "chain": "eth",
+  "why": "Second transfer_pausable=1 token with ownership renounced. Confirms PEPE is not a one-off."
+ },
+ "chain": {
+  "owner": "0x0000000000000000000000000000000000000000000000000000000000000000",
+  "decimals": "0x0000000000000000000000000000000000000000000000000000000000000012",
+  "totalSupply": "0x0000000000000000000000000000000000000366e7064422fd84202340000000"
+ },
+ "chain_dev_pct": null,
+ "goplus": {
+  "anti_whale_modifiable": "0",
+  "buy_tax": "0",
+  "can_take_back_ownership": "0",
+  "cannot_buy": "0",
+  "cannot_sell_all": "0",
+  "creator_address": "0x90a071874a84fab63fdbe38a060aae2fede0bd42",
+  "creator_balance": "0",
+  "creator_percent": "0.000000",
+  "dex": [
+   {
+    "liquidity_type": "UniV2",
+    "name": "UniswapV2",
+    "liquidity": "102391.10176014",
+    "pool_fee": "0.0030",
+    "pair": "0xe945683b3462d2603a18bdfbb19261c6a4f03ad1"
+   },
+   {
+    "liquidity_type": "UniV4",
+    "name": "UniswapV4",
+    "liquidity": "10.714626178329000000000000000000",
+    "pool_manager": "0x000000000004444c5dc75cB358380D2e3dE08A90",
+    "pool_fee": "0.88",
+    "pair": "0xb2c2b6ff2d51d94d70a38144adb5ab7eb4f0907a0caea478558ec869fed079f8"
+   },
+   {
+    "liquidity_type": "UniV4",
+    "name": "UniswapV4",
+    "liquidity": "6.381865541571",
+    "pool_manager": "0x000000000004444c5dc75cB358380D2e3dE08A90",
+    "pool_fee": "0.2",
+    "pair": "0xba29eb5de23e569a9e469004323b36319777ffaf77950fa952c949e3a5462bba"
+   }
+  ],
+  "external_call": "0",
+  "hidden_owner": "0",
+  "holder_count": "24026",
+  "holders": [
+   {
+    "address": "0xe945683b3462d2603a18bdfbb19261c6a4f03ad1",
+    "tag": "UniswapV2",
+    "is_contract": 1,
+    "balance": "34593909873726.748480349320536558",
+    "percent": "0.501361012662706499",
+    "is_locked": 0
+   },
+   {
+    "address": "0x000000000000000000000000000000000000dead",
+    "tag": "",
+    "is_contract": 0,
+    "balance": "2515690915638.542391524545651299",
+    "percent": "0.036459288632442643",
+    "is_locked": 1
+   },
+   {
+    "address": "0x3154cf16ccdb4c6d922629664174b904d80f2c35",
+    "tag": "",
+    "is_contract": 1,
+    "balance": "1996670775578.321266365451572839",
+    "percent": "0.028937257617077119",
+    "is_locked": 0
+   },
+   {
+    "address": "0xbe31a54c78f6e73819fff78072be1660485c8105",
+    "tag": "",
+    "is_contract": 0,
+    "balance": "1434546555258.810959261961643885",
+    "percent": "0.020790529786359579",
+    "is_locked": 0
+   },
+   {
+    "address": "0x4881b00fce0a4a5cc450cbb1a7be122491279b7e",
+    "tag": "",
+    "is_contract": 0,
+    "balance": "1041980296853.44841212332218603",
+    "percent": "0.015101163722513745",
+    "is_locked": 0
+   },
+   {
+    "address": "0x69f8968b98a6b66dfc0363466347a1e386d39b14",
+    "tag": "",
+    "is_contract": 1,
+    "balance": "679532919023.844354874503984439",
+    "percent": "0.009848303174258613",
+    "is_locked": 0
+   },
+   {
+    "address": "0x8af9a00844ae064544278109c930b4e59b827a22",
+    "tag": "",
+    "is_contract": 0,
+    "balance": "678493934538.850873954456881058",
+    "percent": "0.009833245428099288",
+    "is_locked": 0
+   },
+   {
+    "address": "0xd39bc2d6a3629f33852e9fc054f3931b47678442",
+    "tag": "",
+    "is_contract": 0,
+    "balance": "677905326781.431641719077719212",
+    "percent": "0.009824714880890313",
+    "is_locked": 0
+   },
+   {
+    "address": "0x19b8309324a96803d9355f6026f3448dcd502b3e",
+    "tag": "",
+    "is_contract": 0,
+    "balance": "663098511852.199946688799641552",
+    "percent": "0.009610123360176810",
+    "is_locked": 0
+   },
+   {
+    "address": "0x0efa791c3fde8036fe161c0739ee635698dc56f4",
+    "tag": "",
+    "is_contract": 0,
+    "balance": "628569308913.297919682469182385",
+    "percent": "0.009109700129178230",
+    "is_locked": 0
+   }
+  ],
+  "honeypot_with_same_creator": "0",
+  "is_anti_whale": "0",
+  "is_blacklisted": "1",
+  "is_honeypot": "0",
+  "is_in_dex": "1",
+  "is_mintable": "0",
+  "is_open_source": "1",
+  "is_proxy": "0",
+  "is_whitelisted": "0",
+  "lp_holder_count": "8",
+  "lp_holders": [
+   {
+    "address": "0x000000000000000000000000000000000000dead",
+    "tag": "",
+    "value": "102350.949204415657196210",
+    "is_contract": 0,
+    "balance": "9651424.765287247474331743",
+    "percent": "0.999607851121514879",
+    "NFT_list": null,
+    "is_locked": 1
+   },
+   {
+    "address": "0xf38521f130fccf29db1961597bc5d2b60f995f85",
+    "tag": "",
+    "value": "21.279442891893071957",
+    "is_contract": 1,
+    "balance": "2006.595382991055263254",
+    "percent": "0.000207825118844237",
+    "NFT_list": null,
+    "is_locked": 0
+   },
+   {
+    "address": "0xcf990d77e8b9e5c141947c8a3768b6bbb5ab84cf",
+    "tag": "",
+    "value": "18.810740370470737262",
+    "is_contract": 0,
+    "balance": "1773.803241456576339482",
+    "percent": "0.000183714600654819",
+    "NFT_list": null,
+    "is_locked": 0
+   },
+   {
+    "address": "0xb3ac829ae240435c70b9d4d09500e09e425368a0",
+    "tag": "",
+    "value": "0.042421417818780131",
+    "is_contract": 1,
+    "balance": "4.000227899177203185",
+    "percent": "0.000000414307660426",
+    "NFT_list": null,
+    "is_locked": 0
+   },
+   {
+    "address": "0xe832d9a5bc0c35806e87c6b68668a6f9f669fabf",
+    "tag": "",
+    "value": "0.016595980112179152",
+    "is_contract": 0,
+    "balance": "1.56495718607356291",
+    "percent": "0.000000162084202893",
+    "NFT_list": null,
+    "is_locked": 0
+   },
+   {
+    "address": "0x000000000004444c5dc75cb358380d2e3de08a90",
+    "tag": "",
+    "value": "0.003355061746548350",
+    "is_contract": 1,
+    "balance": "0.316373480474840882",
+    "percent": "0.000000032767122229",
+    "NFT_list": null,
+    "is_locked": 0
+   },
+   {
+    "address": "0xd40515d9a6521b579491db5b4c295069f2049d40",
+    "tag": "",
+    "value": "0.000000000052532375",
+    "is_contract": 1,
+    "balance": "0.000000004953664529",
+    "percent": "0.000000000000000513",
+    "NFT_list": null,
+    "is_locked": 0
+   },
+   {
+    "address": "0x0000000000000000000000000000000000000000",
+    "tag": "Null Address",
+    "value": "0.000000000000000011",
+    "is_contract": 0,
+    "balance": "0.000000000000001",
+    "percent": "0.000000000000000000",
+    "NFT_list": null,
+    "is_locked": 1
+   }
+  ],
+  "lp_total_supply": "9655211.045470265785206985",
+  "owner_address": "0x0000000000000000000000000000000000000000",
+  "owner_balance": "0",
+  "owner_change_balance": "0",
+  "owner_percent": "0.0",
+  "personal_slippage_modifiable": "0",
+  "selfdestruct": "0",
+  "sell_tax": "0",
+  "slippage_modifiable": "0",
+  "token_name": "BOBO",
+  "token_symbol": "BOBO",
+  "total_supply": "69000000000000",
+  "trading_cooldown": "0",
+  "transfer_pausable": "1",
+  "transfer_tax": ""
+ },
+ "rugcheck": null
+}

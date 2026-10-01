@@ -1,0 +1,125 @@
+[Unit]
+# The only process on the box that holds wallet keys.
+#
+# It is reachable over one unix socket and nothing else. Its policy has no code path that
+# signs a transfer to a non-owned address; that is the single hard gate in the whole
+# system (PLAN §1, §6.4) and it is enforced here, not in a prompt.
+Description=Kaiba signer (wallet keys, unix socket only)
+Documentation=file:///opt/kaiba/current/docs/runbooks/keys.md
+After=network-online.target
+Wants=network-online.target
+PartOf=kaiba.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=exec
+User=kaiba-signer
+Group=kaiba-signer
+SupplementaryGroups=kaiba kaiba-signer-ipc
+WorkingDirectory=/opt/kaiba/current
+
+EnvironmentFile=/etc/kaiba/signer.env
+Environment=HOME=/var/lib/kaiba/signer
+Environment=KAIBA_CONFIG_DIR=/etc/kaiba
+Environment=KAIBA_SIGNER_SOCKET=/run/kaiba/signer/signer.sock
+Environment=KAIBA_SIGNER_KEYSTORE=/etc/kaiba/signer/keys
+Environment=KAIBA_SIGNER_POLICY=/etc/kaiba/policy/signer-policy.yaml
+Environment=KAIBA_SIGNER_STATE=/var/lib/kaiba/signer
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PYTHONUNBUFFERED=1
+
+# The signer needs RPC endpoints and nothing else. Every intelligence, model, operator
+# and backup credential is stripped: a compromised signer must not be able to phone a
+# provider, read the journal, or talk to Telegram.
+UnsetEnvironment=GMGN_API_KEY GMGN_PRIVATE_KEY HELIUS_API_KEY SOLANA_TRACKER_API_KEY
+UnsetEnvironment=BIRDEYE_API_KEY PUMPPORTAL_API_KEY BITQUERY_TOKEN ALCHEMY_API_KEY
+UnsetEnvironment=ALCHEMY_WEBHOOK_SIGNING_KEY HELIUS_WEBHOOK_SECRET ETHERSCAN_API_KEY
+UnsetEnvironment=BLOCKSCOUT_API_KEY GOPLUS_APP_KEY GOPLUS_APP_SECRET RUGCHECK_JWT
+UnsetEnvironment=COINGECKO_API_KEY NANSEN_API_KEY CIELO_API_KEY MOBULA_API_KEY
+UnsetEnvironment=CODEX_IO_API_KEY TWITTERSCORE_API_KEY CRYPTOPANIC_API_KEY NEWSAPI_KEY
+UnsetEnvironment=ANTHROPIC_API_KEY XAI_API_KEY OPENROUTER_API_KEY
+UnsetEnvironment=TELEGRAM_BOT_TOKEN TG_API_ID TG_API_HASH KAIBA_DASHBOARD_PASSWORD
+UnsetEnvironment=LANGFUSE_PUBLIC_KEY LANGFUSE_SECRET_KEY AGE_IDENTITY_FILE RCLONE_CONFIG_PASS
+UnsetEnvironment=PYTHONHOME PYTHONPATH PYTHONSTARTUP PYTHONINSPECT PYTHONOPTIMIZE
+
+ExecStart=/opt/kaiba/venv/bin/python -I -B -m kaiba.cli.main signer serve \
+    --socket /run/kaiba/signer/signer.sock --socket-group kaiba-signer-ipc --socket-mode 0660
+Restart=always
+RestartSec=3
+TimeoutStopSec=20
+KillMode=control-group
+
+# ---- network: the narrowest posture that still lets the signer work ------------------
+#
+# Two supported postures. Pick one; do not mix them.
+#
+# (a) SIGN-ONLY (strongest, preferred). The engine fetches the blockhash/nonce and
+#     broadcasts; the signer only signs bytes. Then the signer needs no network at all:
+#         PrivateNetwork=yes
+#         RestrictAddressFamilies=AF_UNIX
+#     With PrivateNetwork=yes the unix socket still works, because it is a filesystem
+#     object, not a network one.
+#
+# (b) RPC-ATTACHED (what ships enabled below). The signer resolves nonces and broadcasts
+#     itself, so it needs the RPC hosts and nothing else. PrivateNetwork must then be
+#     'no' — a private namespace has only loopback, which would break RPC — and the
+#     containment comes from IPAddressDeny plus an explicit allow list.
+#
+# The allow list is NOT in this file, because RPC provider addresses are deployment
+# data, not source. deploy/install.sh renders
+# /etc/systemd/system/kaiba-signer.service.d/10-rpc-allow.conf from KAIBA_RPC_ALLOW_CIDRS
+# in /etc/kaiba/deploy.env. With no drop-in installed the signer can reach loopback only,
+# which fails closed.
+PrivateNetwork=no
+IPAddressDeny=any
+IPAddressAllow=localhost
+
+# ---- hardening baseline (identical across every kaiba unit) -------------------------
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+PrivateMounts=yes
+ProtectHostname=yes
+ProtectClock=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectProc=invisible
+ProcSubset=pid
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RemoveIPC=yes
+KeyringMode=private
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+CapabilityBoundingSet=
+AmbientCapabilities=
+UMask=0077
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+# ---- explicit write surface ---------------------------------------------------------
+# This is the ONLY unit on the box with /etc/kaiba/signer writable. Every other unit
+# lists that path under InaccessiblePaths.
+ReadWritePaths=/etc/kaiba/signer /var/lib/kaiba/signer /run/kaiba/signer
+ReadOnlyPaths=/opt/kaiba/current /opt/kaiba/venv /etc/kaiba/policy
+InaccessiblePaths=/var/lib/kaiba/db /var/lib/kaiba/cache /var/lib/kaiba/reports
+InaccessiblePaths=/var/lib/kaiba/hermes /var/lib/kaiba/backups /var/lib/kaiba/dash
+InaccessiblePaths=/etc/kaiba/core.env /etc/kaiba/hermes.env /etc/kaiba/dashboard.env
+
+# Keys must not reach swap or a core file.
+MemorySwapMax=0
+LimitCORE=0
+MemoryMax=256M
+CPUQuota=50%
+TasksMax=24
+
+[Install]
+WantedBy=multi-user.target

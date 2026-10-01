@@ -1,0 +1,18 @@
+{
+  "signature": "2vtp7rtmAQsDfpKgikCrxRFDa4ToK32aaSzRfWsrpeDDCyiLGCtAL5WQoW6YDQD5SGBbUgGedJADjRq2dTUoCPYk",
+  "mint": "5uiWN8tHqR4ykLDt88UR8htfcG6YK7fqcadfKBgDEPMh",
+  "traderPublicKey": "C9abG9fSgwkenby3GiRfuufnMFuGCW9881WRHuT3fRTN",
+  "txType": "create",
+  "initialBuy": 60735849.056603,
+  "solAmount": 1.95,
+  "bondingCurveKey": "5uEtuXD3vNYDVkBbfTca2P7mWiTy3vqRm9MFem8HfM1o",
+  "vTokensInBondingCurve": 1012264150.943397,
+  "vSolInBondingCurve": 31.8,
+  "marketCapSol": 31.414,
+  "name": "Kaiba Fixture Coin",
+  "symbol": "KFIX",
+  "uri": "https://ipfs.io/ipfs/QmKaibaFixtureMetadataHashForIngestTests01",
+  "pool": "pump",
+  "slot": 312884901,
+  "timestamp": 1758355200
+}

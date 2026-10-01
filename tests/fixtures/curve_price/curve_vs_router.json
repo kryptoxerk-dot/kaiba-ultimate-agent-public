@@ -1,0 +1,64 @@
+{
+  "_source": "live Jupiter /quote and live pump.fun coin reserves, 2026-09-20. Not synthetic.",
+  "_why": "Jupiter routes pump.fun bonding curves directly, so an executable quote and our arithmetic can be compared head to head at the same size. This fixture freezes that comparison so a change to the curve maths that drifts away from what a real router would give us fails a test instead of quietly producing a better paper record.",
+  "probe_lamports": 20000000,
+  "comparisons": [
+    {
+      "token": "9WVntVmdUcHCadcyEmxgvSb1ucQTHHCA4Fy56zQkpump",
+      "decimals": 6,
+      "curve": {
+        "virtual_sol": 30792232730,
+        "virtual_token": 1045393516195615,
+        "real_sol": 792232730,
+        "real_token": 765493516195615,
+        "observed_ms": 1789898944404
+      },
+      "curve_leg_lamports": 19753084,
+      "curve_atoms_out": 670185494148,
+      "jupiter_atoms_out": 670185494148,
+      "jupiter_route": [
+        "Pump.fun"
+      ],
+      "jupiter_on_bonding_curve": true,
+      "jupiter_price_impact_pct": "0.0091138159745832954810165109"
+    },
+    {
+      "token": "JDdk2di16k1u8gPsykhSHwKWo7kAXnQSwF8mZPWfpump",
+      "decimals": 6,
+      "curve": {
+        "virtual_sol": 1946954719,
+        "virtual_token": 1082765509239527,
+        "real_sol": 6191062,
+        "real_token": 802865509239527,
+        "observed_ms": 1789898950120
+      },
+      "curve_leg_lamports": 19753084,
+      "curve_atoms_out": 10875005439896,
+      "jupiter_atoms_out": 10875005439896,
+      "jupiter_route": [
+        "Pump.fun"
+      ],
+      "jupiter_on_bonding_curve": true,
+      "jupiter_price_impact_pct": "0.0130198000158018403899602747"
+    },
+    {
+      "token": "FDWP9BwBKw5eERWNLWgYSvhPd1Re1KiFva6uSNswpump",
+      "decimals": 6,
+      "curve": {
+        "virtual_sol": 41700978,
+        "virtual_token": 1011956303495831,
+        "real_sol": 4717958,
+        "real_token": 732056303495831,
+        "observed_ms": 1789898954825
+      },
+      "curve_leg_lamports": 19753084,
+      "curve_atoms_out": 325271547831657,
+      "jupiter_atoms_out": 325271547831657,
+      "jupiter_route": [
+        "Pump.fun"
+      ],
+      "jupiter_on_bonding_curve": true,
+      "jupiter_price_impact_pct": "0.2917626518063325120474831262"
+    }
+  ]
+}

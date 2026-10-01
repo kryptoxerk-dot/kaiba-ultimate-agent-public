@@ -1,0 +1,22 @@
+[
+  {
+    "signature": "4kS1sZ9pN2q8Z5m7V3xLfY6Qw8rT1uH2jK4nB6cD8eF1gH3jK5mN7pQ9rS2tU4vW6xY8zA1bC3dE5fG7h",
+    "type": "SWAP",
+    "source": "JUPITER",
+    "slot": 312845001,
+    "timestamp": 1758300000,
+    "fee": 5001,
+    "feePayer": "5tzFkiKscXHK5ZXCGbXZxdw7gTjjD1mBwuoFbhUvuAi9",
+    "description": "5tzFkiKscXHK5ZXCGbXZxdw7gTjjD1mBwuoFbhUvuAi9 swapped 0.1 SOL for 99000000 BONK",
+    "nativeTransfers": [],
+    "tokenTransfers": [
+      {
+        "fromUserAccount": "8BnEgHoWFysVcuFFX7QztDmzuH8r5ZFvyP3sYwn1XTh6",
+        "toUserAccount": "5tzFkiKscXHK5ZXCGbXZxdw7gTjjD1mBwuoFbhUvuAi9",
+        "mint": "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263",
+        "tokenAmount": 99000000
+      }
+    ],
+    "accountData": []
+  }
+]

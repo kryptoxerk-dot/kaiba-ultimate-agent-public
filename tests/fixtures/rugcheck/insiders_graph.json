@@ -1,0 +1,36 @@
+{
+  "note": "Hand-built to the documented /insiders/graph shape. Not a live capture. Two networks holding 350,000,000,000,000 of a 1,000,000,000,000,000 raw supply = 35%, which crosses the operator's 30% reject line. The single-wallet network must be ignored: a cluster of one is just a holder.",
+  "body": [
+    {
+      "id": "net-a",
+      "size": 5,
+      "activeAccounts": 5,
+      "tokenAmount": 250000000000000,
+      "wallets": [
+        {"wallet": "In1111111111111111111111111111111111111111", "amount": 100000000000000},
+        {"wallet": "In2222222222222222222222222222222222222222", "amount": 60000000000000},
+        {"wallet": "In3333333333333333333333333333333333333333", "amount": 40000000000000},
+        {"wallet": "In4444444444444444444444444444444444444444", "amount": 30000000000000},
+        {"wallet": "In5555555555555555555555555555555555555555", "amount": 20000000000000}
+      ]
+    },
+    {
+      "id": "net-b",
+      "size": 3,
+      "activeAccounts": 2,
+      "tokenAmount": 100000000000000,
+      "wallets": [
+        {"wallet": "In6666666666666666666666666666666666666666", "amount": 50000000000000},
+        {"wallet": "In7777777777777777777777777777777777777777", "amount": 30000000000000},
+        {"wallet": "In8888888888888888888888888888888888888888", "amount": 20000000000000}
+      ]
+    },
+    {
+      "id": "net-solo",
+      "size": 1,
+      "activeAccounts": 1,
+      "tokenAmount": 90000000000000,
+      "wallets": [{"wallet": "So1o11111111111111111111111111111111111111", "amount": 90000000000000}]
+    }
+  ]
+}

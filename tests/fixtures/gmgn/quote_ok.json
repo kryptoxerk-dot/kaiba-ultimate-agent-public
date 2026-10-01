@@ -1,0 +1,23 @@
+{
+  "_synthetic": true,
+  "_why": "no Plus plan on this account, so a successful quote could not be recorded",
+  "args": [
+    "order",
+    "quote",
+    "--chain",
+    "sol",
+    "--from",
+    "EnQdeYsyhacWWDuWfFJvtyk1ehD1cB511ujxJpUtiiWA",
+    "--input-token",
+    "So11111111111111111111111111111111111111112",
+    "--output-token",
+    "CVoNMSYK9mVd3TzAutnrRTKmptQUQ7r9qBg1ejb7vVd2",
+    "--amount",
+    "100000000",
+    "--slippage",
+    "1.00"
+  ],
+  "returncode": 0,
+  "stdout": "{\"quote\": {\"inputMint\": \"So11111111111111111111111111111111111111112\", \"inAmount\": \"100000000\", \"outputMint\": \"CVoNMSYK9mVd3TzAutnrRTKmptQUQ7r9qBg1ejb7vVd2\", \"outAmount\": \"685612340000\", \"otherAmountThreshold\": \"678756216600\", \"swapMode\": \"ExactIn\", \"slippageBps\": 100, \"priceImpactPct\": \"0.0041\"}, \"raw_tx\": {\"swapTransaction\": \"<base64 omitted>\"}}",
+  "stderr": ""
+}

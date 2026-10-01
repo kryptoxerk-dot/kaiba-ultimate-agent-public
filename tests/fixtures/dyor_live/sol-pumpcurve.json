@@ -1,0 +1,393 @@
+{
+ "note": "Live recording, not hand-built. goplus is the per-address entry already unwrapped from GoPlus's result map; rugcheck holds one key per route.",
+ "recorded_at_ms": 1789897048177,
+ "token": {
+  "label": "PUMPCURVE",
+  "address": "268oC616gC8tBRD5iGn4xfBqgfxZhjHCjaTNys5Qpump",
+  "chain": "sol",
+  "why": "Still on the bonding curve: authorities revoked at mint, liquidity in the curve account rather than a pool. Tests whether a provider invents holder or market data it does not have."
+ },
+ "chain": {
+  "data": {
+   "parsed": {
+    "info": {
+     "decimals": 6,
+     "extensions": [
+      {
+       "extension": "metadataPointer",
+       "state": {
+        "authority": null,
+        "metadataAddress": "268oC616gC8tBRD5iGn4xfBqgfxZhjHCjaTNys5Qpump"
+       }
+      },
+      {
+       "extension": "tokenMetadata",
+       "state": {
+        "additionalMetadata": [],
+        "mint": "268oC616gC8tBRD5iGn4xfBqgfxZhjHCjaTNys5Qpump",
+        "name": "Uranium Plug",
+        "symbol": "UP",
+        "updateAuthority": null,
+        "uri": "https://storage.googleapis.com/padre-user-content-store/coin-launch-metadata-w_DN4rnyHMRJxMJXijrBCRWxohxsvjL5EwBBhuMuZe6Lin-7650c43a-18c7-4004-8392-9190b20f53a9"
+       }
+      }
+     ],
+     "freezeAuthority": null,
+     "isInitialized": true,
+     "mintAuthority": null,
+     "supply": "1000000000000000"
+    },
+    "type": "mint"
+   },
+   "program": "spl-token-2022",
+   "space": 492
+  },
+  "executable": false,
+  "lamports": 3149600,
+  "owner": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+  "rentEpoch": 18446744073709551615,
+  "space": 492
+ },
+ "chain_dev_pct": "0",
+ "goplus": {
+  "balance_mutable_authority": {
+   "authority": [],
+   "status": "0"
+  },
+  "closable": {
+   "authority": [],
+   "status": "0"
+  },
+  "creators": [],
+  "default_account_state": "1",
+  "default_account_state_upgradable": {
+   "authority": [],
+   "status": "0"
+  },
+  "freezable": {
+   "authority": [],
+   "status": "0"
+  },
+  "metadata": {
+   "description": "",
+   "name": "Uranium Plug",
+   "symbol": "UP",
+   "uri": "https://storage.googleapis.com/padre-user-content-store/coin-launch-metadata-w_DN4rnyHMRJxMJXijrBCRWxohxsvjL5EwBBhuMuZe6Lin-7650c43a-18c7-4004-8392-9190b20f53a9"
+  },
+  "metadata_mutable": {
+   "metadata_upgrade_authority": [],
+   "status": "0"
+  },
+  "mintable": {
+   "authority": [],
+   "status": "0"
+  },
+  "non_transferable": "0",
+  "total_supply": "1000000000",
+  "transfer_fee": {},
+  "transfer_fee_upgradable": {
+   "authority": [],
+   "status": "0"
+  },
+  "transfer_hook": [],
+  "transfer_hook_upgradable": {
+   "authority": [],
+   "status": "0"
+  },
+  "trusted_token": 0
+ },
+ "rugcheck": {
+  "summary": {
+   "tokenProgram": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "tokenType": "",
+   "risks": [],
+   "score": 1,
+   "score_normalised": 1,
+   "lpLockedPct": 0
+  },
+  "report": {
+   "mint": "268oC616gC8tBRD5iGn4xfBqgfxZhjHCjaTNys5Qpump",
+   "tokenProgram": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "creator": "91EWaatQNQCcagAAg2ZtWoLmDAu8Cjf3z84Njer7tDDN",
+   "creatorBalance": 0,
+   "token": {
+    "mintAuthority": null,
+    "supply": 1000000000000000,
+    "decimals": 6,
+    "isInitialized": true,
+    "freezeAuthority": null
+   },
+   "token_extensions": {
+    "nonTransferable": false,
+    "transferFeeConfig": null,
+    "defaultAccountState": null,
+    "permanentDelegate": null,
+    "metadataPointer": {
+     "authority": null,
+     "metadataAddress": "268oC616gC8tBRD5iGn4xfBqgfxZhjHCjaTNys5Qpump"
+    },
+    "groupPointer": null,
+    "groupMemberPointer": null,
+    "tokenMetadata": {
+     "authority": null,
+     "mint": "268oC616gC8tBRD5iGn4xfBqgfxZhjHCjaTNys5Qpump",
+     "name": "Uranium Plug",
+     "symbol": "UP",
+     "uri": "https://storage.googleapis.com/padre-user-content-store/coin-launch-metadata-w_DN4rnyHMRJxMJXijrBCRWxohxsvjL5EwBBhuMuZe6Lin-7650c43a-18c7-4004-8392-9190b20f53a9",
+     "additionalMetadata": {}
+    },
+    "mintCloseAuthority": null,
+    "confidentialTransferMint": null,
+    "interestBearingConfig": null,
+    "transferHook": null,
+    "confidentialTransferFeeConfig": null,
+    "tokenGroup": null,
+    "tokenGroupMember": null,
+    "scaledUiAmountConfig": null,
+    "pausableConfig": null
+   },
+   "tokenMeta": {
+    "name": "Uranium Plug",
+    "symbol": "UP",
+    "uri": "https://storage.googleapis.com/padre-user-content-store/coin-launch-metadata-w_DN4rnyHMRJxMJXijrBCRWxohxsvjL5EwBBhuMuZe6Lin-7650c43a-18c7-4004-8392-9190b20f53a9",
+    "mutable": false,
+    "updateAuthority": "11111111111111111111111111111111"
+   },
+   "topHolders": [],
+   "freezeAuthority": null,
+   "mintAuthority": null,
+   "risks": [],
+   "score": 1,
+   "score_normalised": 1,
+   "fileMeta": {
+    "description": "",
+    "name": "Uranium Plug",
+    "symbol": "UP",
+    "image": "https://storage.googleapis.com/padre-user-content-store/coin-launch-avatar-w_DN4rnyHMRJxMJXijrBCRWxohxsvjL5EwBBhuMuZe6Lin-b48ec65b-f9d3-42ff-81f6-abf431c3e760"
+   },
+   "lockerOwners": {},
+   "lockers": {},
+   "lockerScanStatus": "none",
+   "markets": [
+    {
+     "pubkey": "6SLEdeotXqbcKKSMGeDhFxZ9Nob6xagi32nd89jz4eSq",
+     "marketType": "pump_fun",
+     "mintA": "268oC616gC8tBRD5iGn4xfBqgfxZhjHCjaTNys5Qpump",
+     "mintB": "So11111111111111111111111111111111111111112",
+     "mintLP": "11111111111111111111111111111111",
+     "liquidityA": "AQ7VTuqjcMBHDj1j86YQdFctZo2sutaNeiECwv61Xpks",
+     "liquidityB": "6SLEdeotXqbcKKSMGeDhFxZ9Nob6xagi32nd89jz4eSq",
+     "mintAAccount": {
+      "mintAuthority": null,
+      "supply": 1000000000000000,
+      "decimals": 6,
+      "isInitialized": true,
+      "freezeAuthority": null
+     },
+     "mintBAccount": {
+      "mintAuthority": null,
+      "supply": 0,
+      "decimals": 9,
+      "isInitialized": false,
+      "freezeAuthority": null
+     },
+     "mintLPAccount": {
+      "mintAuthority": null,
+      "supply": 0,
+      "decimals": 0,
+      "isInitialized": false,
+      "freezeAuthority": null
+     },
+     "liquidityAAccount": {
+      "mint": "268oC616gC8tBRD5iGn4xfBqgfxZhjHCjaTNys5Qpump",
+      "owner": "6SLEdeotXqbcKKSMGeDhFxZ9Nob6xagi32nd89jz4eSq",
+      "amount": 724702330823057,
+      "delegate": null,
+      "state": 0,
+      "delegatedAmount": 0,
+      "closeAuthority": null
+     },
+     "liquidityBAccount": {
+      "mint": "So11111111111111111111111111111111111111112",
+      "owner": "6SLEdeotXqbcKKSMGeDhFxZ9Nob6xagi32nd89jz4eSq",
+      "amount": 2042530355,
+      "delegate": null,
+      "state": 0,
+      "delegatedAmount": 0,
+      "closeAuthority": null
+     },
+     "lp": {
+      "baseMint": "268oC616gC8tBRD5iGn4xfBqgfxZhjHCjaTNys5Qpump",
+      "quoteMint": "So11111111111111111111111111111111111111112",
+      "lpMint": "11111111111111111111111111111111",
+      "quotePrice": "108.53693823591661",
+      "basePrice": "0.000003465539742529262",
+      "base": "724702330.823057",
+      "quote": "2.042530355",
+      "reserveSupply": 2042530355,
+      "currentSupply": 0,
+      "quoteUSD": "221.6899909856198",
+      "baseUSD": "2511.4847289708932",
+      "pctReserve": 0,
+      "pctSupply": 0,
+      "holders": null,
+      "totalTokensUnlocked": 0,
+      "tokenSupply": 0,
+      "lpLocked": 2042530355,
+      "lpUnlocked": 0,
+      "lpLockedPct": 100,
+      "lpLockedUSD": "2733.174719956513",
+      "lpMaxSupply": 0,
+      "lpCurrentSupply": 0,
+      "lpTotalSupply": 2042530355
+     }
+    }
+   ],
+   "totalMarketLiquidity": "2733.174719956513",
+   "totalStableLiquidity": "221.6899909856198",
+   "totalLPProviders": 0,
+   "totalHolders": 0,
+   "price": "0.000003465539742529262",
+   "rugged": false,
+   "tokenType": "",
+   "transferFee": {
+    "pct": 0,
+    "maxAmount": 0,
+    "authority": "11111111111111111111111111111111"
+   },
+   "knownAccounts": {
+    "6SLEdeotXqbcKKSMGeDhFxZ9Nob6xagi32nd89jz4eSq": {
+     "name": "Pump Fun",
+     "type": "AMM"
+    },
+    "91EWaatQNQCcagAAg2ZtWoLmDAu8Cjf3z84Njer7tDDN": {
+     "name": "Creator",
+     "type": "CREATOR"
+    },
+    "AQ7VTuqjcMBHDj1j86YQdFctZo2sutaNeiECwv61Xpks": {
+     "name": "Pump Fun",
+     "type": "AMM"
+    },
+    "DVGpAvEobVYzEadwGEt9g6wyaiyVqPqAPUaixir66Haa": {
+     "name": "Printr Stake Pool",
+     "type": "LOCKER"
+    }
+   },
+   "events": [],
+   "verification": null,
+   "validation": {
+    "validated": false
+   },
+   "graphInsidersDetected": 8,
+   "insiderNetworks": [
+    {
+     "id": "zany-caramel-rooster",
+     "size": 4,
+     "type": "transfer",
+     "tokenAmount": 35688672577915,
+     "activeAccounts": 4
+    },
+    {
+     "id": "young-fuchsia-mule",
+     "size": 4,
+     "type": "transfer",
+     "tokenAmount": 19534575260871,
+     "activeAccounts": 4
+    }
+   ],
+   "detectedAt": "2026-09-20T07:55:30.149049218Z",
+   "creatorTokens": null,
+   "launchpad": {
+    "name": "Pump.Fun",
+    "logo": "https://api.rugcheck.xyz/public/logos/pump_fun.png",
+    "url": "https://x.com/pumpfun",
+    "platform": "pump_fun"
+   },
+   "deployPlatform": "unknown"
+  },
+  "insiders": [
+   {
+    "net_id": "1673030a-a9db-4ef5-bf8d-4d6d5104f9cd",
+    "network_type": "transfer",
+    "nodes": [
+     {
+      "id": "7o2X6kNuFLx1gJYtC5i3XVGrQm253kc1vL2DqwYap661",
+      "participant": true,
+      "holdings": 5441656401992
+     },
+     {
+      "id": "G4b6DkExrLkEooAzBL8myBf4di51wopgofx4iaKJ3cnF",
+      "participant": true,
+      "holdings": 7485573972755
+     },
+     {
+      "id": "8SKWCXWtZoNNezMK7cGKUD6XG4cXAct1XnSj7epTDABv",
+      "participant": true,
+      "holdings": 6607344886124
+     },
+     {
+      "id": "JDd3hy3gQn2V982mi1zqhNqUw1GfV2UL6g76STojCJPN",
+      "participant": true,
+      "holdings": 0
+     }
+    ],
+    "links": [
+     {
+      "source": "JDd3hy3gQn2V982mi1zqhNqUw1GfV2UL6g76STojCJPN",
+      "target": "7o2X6kNuFLx1gJYtC5i3XVGrQm253kc1vL2DqwYap661"
+     },
+     {
+      "source": "JDd3hy3gQn2V982mi1zqhNqUw1GfV2UL6g76STojCJPN",
+      "target": "G4b6DkExrLkEooAzBL8myBf4di51wopgofx4iaKJ3cnF"
+     },
+     {
+      "source": "JDd3hy3gQn2V982mi1zqhNqUw1GfV2UL6g76STojCJPN",
+      "target": "8SKWCXWtZoNNezMK7cGKUD6XG4cXAct1XnSj7epTDABv"
+     }
+    ],
+    "relatedMint": null
+   },
+   {
+    "net_id": "83f2bc7d-0bd6-4b7d-b2bb-8f421348602f",
+    "network_type": "transfer",
+    "nodes": [
+     {
+      "id": "CBDoyevDKCVb7aZcAcqkKpMfN9wyiwRas4WaZ7tGyzvo",
+      "participant": true,
+      "holdings": 35688672577915
+     },
+     {
+      "id": "8x2xqyMJ4cwkKQqp7N2b4Xbx2tekFh3A6s1mMdr3u9di",
+      "participant": true,
+      "holdings": 0
+     },
+     {
+      "id": "Gx6yY8zwqwvcMbkHDZVv2ViJ1bBY5o3Zv7P1dDfJzk35",
+      "participant": true,
+      "holdings": 0
+     },
+     {
+      "id": "BTf4A2exGK9BCVDNzy65b9dUzXgMqB4weVkvTMFQsadd",
+      "participant": true,
+      "holdings": 0
+     }
+    ],
+    "links": [
+     {
+      "source": "8x2xqyMJ4cwkKQqp7N2b4Xbx2tekFh3A6s1mMdr3u9di",
+      "target": "CBDoyevDKCVb7aZcAcqkKpMfN9wyiwRas4WaZ7tGyzvo"
+     },
+     {
+      "source": "Gx6yY8zwqwvcMbkHDZVv2ViJ1bBY5o3Zv7P1dDfJzk35",
+      "target": "CBDoyevDKCVb7aZcAcqkKpMfN9wyiwRas4WaZ7tGyzvo"
+     },
+     {
+      "source": "BTf4A2exGK9BCVDNzy65b9dUzXgMqB4weVkvTMFQsadd",
+      "target": "CBDoyevDKCVb7aZcAcqkKpMfN9wyiwRas4WaZ7tGyzvo"
+     }
+    ],
+    "relatedMint": null
+   }
+  ]
+ }
+}

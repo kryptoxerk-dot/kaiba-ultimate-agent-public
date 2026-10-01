@@ -1,0 +1,151 @@
+{
+ "code": "0",
+ "msg": "",
+ "data": [
+  {
+   "details": [
+    {
+     "annType": "announcements-new-listings",
+     "title": "OKX to list VVV/USDT (Venice) for spot trading",
+     "url": "https://www.okx.com/en-us/help/okx-to-list-vvv-usdt-venice-for-spot-trading",
+     "pTime": "1789455636348",
+     "businessPTime": "1789455600000"
+    },
+    {
+     "annType": "announcements-new-listings",
+     "title": "OKX to list GRVT/USDT (Grvt) for spot trading",
+     "url": "https://www.okx.com/en-us/help/okx-to-list-grvt-usdt-grvt-for-spot-trading",
+     "pTime": "1785380409432",
+     "businessPTime": "1785380400000"
+    },
+    {
+     "annType": "announcements-new-listings",
+     "title": "OKX will launch GRVT/USD for spot trading",
+     "url": "https://www.okx.com/en-us/help/okx-will-launch-grvt-usd-for-spot-trading",
+     "pTime": "1785380409238",
+     "businessPTime": "1785380400000"
+    },
+    {
+     "annType": "announcements-new-listings",
+     "title": "OKX will launch AEON/USD for spot trading",
+     "url": "https://www.okx.com/en-us/help/okx-will-launch-aeon-usd-for-spot-trading",
+     "pTime": "1785121210459",
+     "businessPTime": "1785121200000"
+    },
+    {
+     "annType": "announcements-new-listings",
+     "title": "OKX to list AEON/USDT (Aeon) for spot trading",
+     "url": "https://www.okx.com/en-us/help/okx-to-list-aeon-usdt-aeon-for-spot-trading",
+     "pTime": "1785121204905",
+     "businessPTime": "1785121200000"
+    },
+    {
+     "annType": "announcements-new-listings",
+     "title": "OKX to list SLX/USDT (Solstice) for spot trading",
+     "url": "https://www.okx.com/en-us/help/okx-to-list-slx-usdt-solstice-for-spot-trading",
+     "pTime": "1783648816124",
+     "businessPTime": "1783648800000"
+    },
+    {
+     "annType": "announcements-new-listings",
+     "title": "OKX will launch SLX/USD for spot trading",
+     "url": "https://www.okx.com/en-us/help/okx-will-launch-slx-usd-for-spot-trading",
+     "pTime": "1783648809926",
+     "businessPTime": "1783648800000"
+    },
+    {
+     "annType": "announcements-new-listings",
+     "title": "OKX to list TAO/USDT (Bittensor) for spot trading",
+     "url": "https://www.okx.com/en-us/help/okx-to-list-tao-usdt-bittensor-for-spot-trading",
+     "pTime": "1782788410038",
+     "businessPTime": "1782788400000"
+    },
+    {
+     "annType": "announcements-new-listings",
+     "title": "OKX will launch TAO/USD for spot trading",
+     "url": "https://www.okx.com/en-us/help/okx-will-launch-tao-usd-for-spot-trading",
+     "pTime": "1782788404987",
+     "businessPTime": "1782788400000"
+    },
+    {
+     "annType": "announcements-new-listings",
+     "title": "OKX will launch CARDS/USD for spot trading",
+     "url": "https://www.okx.com/en-us/help/okx-will-launch-cards-usd-for-spot-trading",
+     "pTime": "1782352809690",
+     "businessPTime": "1782352800000"
+    },
+    {
+     "annType": "announcements-new-listings",
+     "title": "OKX to list CARDS/USDT (Collector Crypt) for spot trading",
+     "url": "https://www.okx.com/en-us/help/okx-to-list-cards-usdt-collector-crypt-for-spot-trading",
+     "pTime": "1782352806026",
+     "businessPTime": "1782352800000"
+    },
+    {
+     "annType": "announcements-new-listings",
+     "title": "OKX will launch RE/USD for spot trading",
+     "url": "https://www.okx.com/en-us/help/okx-will-launch-re-usd-for-spot-trading",
+     "pTime": "1781748010357",
+     "businessPTime": "1781748000000"
+    },
+    {
+     "annType": "announcements-new-listings",
+     "title": "OKX to list RE (Re) for spot trading and convert pre-market futures to standard perpetual futures",
+     "url": "https://www.okx.com/en-us/help/okx-to-list-re-re-for-spot-trading-and-convert-pre-market-futures-to-standard-perpetual-futures",
+     "pTime": "1781748010269",
+     "businessPTime": "1781748000000"
+    },
+    {
+     "annType": "announcements-new-listings",
+     "title": "OKX completed TON token migration",
+     "url": "https://www.okx.com/en-us/help/okx-completed-ton-token-migration",
+     "pTime": "1781681405838",
+     "businessPTime": "1781681400000"
+    },
+    {
+     "annType": "announcements-new-listings",
+     "title": "OKX will launch GRAM/USD for spot trading",
+     "url": "https://www.okx.com/en-us/help/okx-will-launch-gram-usd-for-spot-trading",
+     "pTime": "1781681405331",
+     "businessPTime": "1781681400000"
+    },
+    {
+     "annType": "announcements-new-listings",
+     "title": "OKX to list IRYS/USDT (Irys) for spot trading",
+     "url": "https://www.okx.com/en-us/help/okx-to-list-irys-usdt-irys-for-spot-trading",
+     "pTime": "1779858013753",
+     "businessPTime": "1779858000000"
+    },
+    {
+     "annType": "announcements-new-listings",
+     "title": "OKX will launch IRYS/USD for spot trading",
+     "url": "https://www.okx.com/en-us/help/okx-will-launch-irys-usd-for-spot-trading",
+     "pTime": "1779804918091",
+     "businessPTime": "1779858000000"
+    },
+    {
+     "annType": "announcements-new-listings",
+     "title": "OKX to list AI/USDT (Gensyn) for spot trading",
+     "url": "https://www.okx.com/en-us/help/okx-to-list-ai-usdt-gensyn-for-spot-trading",
+     "pTime": "1779435009521",
+     "businessPTime": "1779435000000"
+    },
+    {
+     "annType": "announcements-new-listings",
+     "title": "OKX will launch AI/USD for spot trading",
+     "url": "https://www.okx.com/en-us/help/okx-will-launch-ai-usd-for-spot-trading",
+     "pTime": "1779435009271",
+     "businessPTime": "1779435000000"
+    },
+    {
+     "annType": "announcements-new-listings",
+     "title": "OKX will launch PROS/USD for spot trading",
+     "url": "https://www.okx.com/en-us/help/okx-will-launch-pros-usd-for-spot-trading",
+     "pTime": "1778644815142",
+     "businessPTime": "1778644800000"
+    }
+   ],
+   "totalPage": "5"
+  }
+ ]
+}
