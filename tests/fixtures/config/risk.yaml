@@ -120,6 +120,11 @@ lanes:
     - bsc
     - robinhood
     params:
+      # PRODUCTION ONLY (box config/risk.yaml): max_market_cap_usd: 3000000 -- owner 2026-10-03,
+      # every chain, unknown cap -> refused. Not set in this file: ~20 lane tests build
+      # sm-trenches signals without a market cap and read this file (the public export's
+      # fixture config is generated from it), and test_entry_features asserts the shipped
+      # defaults set no feature thresholds. Survives save_risk on the box (verified).
       min_smart_degen: 3
       window_s: 1800
       min_independent_entities: 2

@@ -1273,6 +1273,27 @@ def token_decimals(conn: sqlite3.Connection, chain: Chain, token: str) -> int | 
     return None
 
 
+def _paper_qty_decimals(conn: sqlite3.Connection, position: Position) -> int | None:
+    """The decimals a SHADOW position's ``qty`` is denominated in. ``None`` for anything else.
+
+    Not a guess about the token: a paper position's quantity was minted by
+    ``PaperBroker.buy`` in ``paper._token_decimals`` units (the recorded decimals, else that
+    module's 6/18 convention), and ``PaperBroker.sell`` converts it back with the same
+    function. Sizing the position with any other number would disagree with the broker that
+    fills it. A live position never comes here: its decimals are a fact or the sell refuses.
+    Imported lazily so a rename in ``paper`` degrades to "unknown", never to a dead watchdog.
+    """
+    if position.mode is not LaneMode.SHADOW:
+        return None
+    try:
+        from kaiba.execution.paper import _token_decimals  # noqa: PLC0415
+
+        return int(_token_decimals(position.chain, position.token, conn, None))
+    except Exception:  # noqa: BLE001 - unknown units are "cannot size", never a crash
+        log.debug("paper decimals unavailable for %s", position.token, exc_info=True)
+        return None
+
+
 def _native_mint(chain: Chain) -> str:
     return SOL_NATIVE_MINT if chain is Chain.SOL else EVM_ZERO
 
@@ -1851,6 +1872,8 @@ class Watchdog:
         self._quote_cache: dict[tuple[Chain, str], PriceQuote] = {}
         #: Round-robin cursor for shadow-only quote work when live positions are present.
         self._shadow_quote_cursor = 0
+        #: Keys whose quote was DEFERRED this tick (never asked). Cleared with the cache.
+        self._deferred_keys: set[tuple[Chain, str]] = set()
         self._quote_deadline: float | None = None
         self.blind_warn_interval_s = int(blind_warn_interval_s)
         #: ``None`` means "re-read ``protection.max_blind_s`` every tick", like the rest of
@@ -2527,6 +2550,14 @@ class Watchdog:
             return False
         if quote.liquidity_kind == "dex_tvl_usd":
             decimals = token_decimals(self.conn, position.chain, position.token)
+            if decimals is None and position.mode is LaneMode.SHADOW:
+                # A paper position's qty is denominated in the paper broker's units, not the
+                # chain's: see `_paper_qty_decimals`. MEASURED 2026-10-03: 23 of 27 shadow
+                # positions opened in 72 h had no recorded decimals (live: 0 of 34), so every
+                # DexScreener depth was refused here, GMGN's depthless price decided their
+                # exits, and the paper exit refused -- 18 of 18 then closed at -100% as
+                # `abandoned_unpriceable` while the 4 with decimals exited normally.
+                decimals = _paper_qty_decimals(self.conn, position)
             if decimals is None:
                 return False
             size = Decimal(position.qty) / Decimal(10) ** decimals * quote.price_usd
@@ -2791,10 +2822,73 @@ class Watchdog:
             "decided_ms": decided_ms,
             "poll_interval_ms": int(float(cfg.poll_interval_s or 0) * 1000),
         }
-        self._do_exit(position, state, pct, reason, quote, action.kind, report, timing=timing)
+        # Paper only: the price that decided stays the price; depth comes from a measured
+        # pool read of this tick when the deciding quote carries none. Live passes `quote`.
+        exit_quote = self._with_paper_depth(position, state, quote, original, previous)
+        self._do_exit(position, state, pct, reason, exit_quote, action.kind, report, timing=timing)
         save_state(self.conn, state)
         # After a trim the ladder has changed, so the mirror is stale until this runs.
         self._sync_standing(position, state, cfg, report, force=True)
+
+    def _with_paper_depth(
+        self, position: Position, state: WatchdogState, quote: PriceQuote,
+        measured: PriceQuote | None, previous: PriceQuote | None,
+    ) -> PriceQuote:
+        """``quote`` carrying this tick's MEASURED pool depth, for a paper exit only.
+
+        MEASURED 2026-10-03 on the box: all 255 ``exit_failed`` events in an 18.4 h read were
+        paper exits refused for depth, each decided on GMGN's price (no depth by design),
+        and in 239 of 251 (an earlier read) the same tick's DexScreener read of the token --
+        e.g. HOOKR's uniswap pool, $1,137,821 -- sat in ``rejected_quote``. ``_validate_quote`` swaps the pool mark for a corroborating source
+        when a stop first appears on a source the position was not already following, and
+        the corroboration is what decides. That is right for the decision; it left the paper
+        broker with nothing to model impact against, and the position retried forever.
+
+        The depth lent here is not a guess, and every condition is load-bearing:
+
+        * **shadow only, and only when the deciding quote has no depth.** A live exit is
+          sized from the wallet and ``min_out``; it never reads this.
+        * **this tick's read of this token.** ``measured`` is the tick's own quote for the
+          position (``_quote``), never memory, and must name its chain, token and pool.
+        * **fresh by the bar every stop uses.** ``measured.usable`` -- its own freshness
+          budget, capped at ``prices.DEFAULT_MAX_AGE_S`` -- is re-checked at the moment of
+          the exit, and its age is recorded.
+        * **credible for our size.** ``_credible_depth`` -- the same test a pool mark must
+          pass to decide anything: our size trades through it inside the slippage bound.
+
+        The price is unchanged; only ``liquidity_usd`` and the pool's identity are attached,
+        and ``quote_evidence["paper_exit_depth"]`` records where they came from.
+        """
+        if position.mode is not LaneMode.SHADOW or quote.liquidity_usd is not None:
+            return quote
+        if measured is None or not measured.usable:
+            return quote
+        if measured.liquidity_usd is None or measured.liquidity_usd <= 0:
+            return quote
+        if not measured.pool_id or not measured.liquidity_kind:
+            return quote
+        if measured.chain != position.chain or measured.token != position.token:
+            return quote
+        if not self._credible_depth(position, measured, previous):
+            return quote
+        state.quote_evidence["paper_exit_depth"] = {
+            "source": measured.source,
+            "venue": measured.venue,
+            "pool_id": measured.pool_id,
+            "liquidity_kind": measured.liquidity_kind,
+            "liquidity_usd": _s(measured.liquidity_usd),
+            "observed_ms": int(measured.observed_ms),
+            "age_ms": now_ms() - int(measured.observed_ms),
+            "price_source": quote.source,
+            "rule": "paper impact modelled against this tick's measured pool depth; "
+                    "the deciding price is unchanged",
+        }
+        return quote.model_copy(update={
+            "liquidity_usd": measured.liquidity_usd,
+            "liquidity_kind": measured.liquidity_kind,
+            "pool_id": measured.pool_id,
+            "venue": measured.venue,
+        })
 
     def _combine(
         self, action_pct: Decimal | None, action_reason: str, state: WatchdogState
@@ -3011,6 +3105,7 @@ class Watchdog:
         self._quote_cache = {}
         self._set_aside = {}
         self._quote_fetched_ms = {}
+        self._deferred_keys = set()
         unique = {(pos.chain, pos.token) for pos in positions}
         if len(unique) < 2:
             return
@@ -3075,6 +3170,7 @@ class Watchdog:
 
         def defer(keys: list[tuple[Chain, str]]) -> None:
             for key in keys:
+                self._deferred_keys.add(key)
                 self._quote_cache[key] = PriceQuote.unavailable(
                     "shadow quote deferred while live protection has priority", source="watchdog"
                 )
@@ -3419,6 +3515,14 @@ class Watchdog:
         if position.mode is not LaneMode.SHADOW:
             return False
         if quote.usable:
+            return False
+        if (position.chain, position.token) in self._deferred_keys:
+            # Deferred is "not asked this tick", not "nobody can price it". MEASURED
+            # 2026-10-03: 1,553 of 1,557 shadow `protection_blind` events in 17 h were
+            # deferrals, and 18 shadow positions were abandoned in that window, each at
+            # -100% of cost, every one of them after its exit had been decided on a usable
+            # price. A paper twin closed as a total loss for want of a fetch we chose not to
+            # make is a fabricated result on the record the promotion gate reads.
             return False
         age_s = (now_ms() - int(position.opened_ms or now_ms())) / 1000.0
         if age_s < SHADOW_BLIND_ABANDON_S:
