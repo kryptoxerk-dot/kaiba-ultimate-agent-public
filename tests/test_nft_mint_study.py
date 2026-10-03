@@ -883,6 +883,9 @@ def test_the_daily_report_prints_paper_mints_read_only(tmp_db, tmp_path, monkeyp
     chain = FakeChain()
     ms.run(tmp_db, rpc=chain, now=frontier_ms(chain) + 60_000, params=study_params())
     tmp_db.commit()
+    # The report counts "decided 24h" against the clock; the fixture tape is a real capture
+    # whose frontier ages, so read it at the fixture's time, not today's.
+    monkeypatch.setattr(daily_report, "now_ms", lambda: frontier_ms(chain) + 120_000)
     assert daily_report.main(["--db", str(tmp_path / "kaiba.db")]) == 0
     text = capsys.readouterr().out
     lines = [line for line in text.splitlines() if "PAPER MINTS" in line or line.startswith("  @24h")]

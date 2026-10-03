@@ -36,7 +36,7 @@ price to fill a gap.
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable, Sequence
+from collections.abc import Collection, Iterable, Sequence
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any, Protocol
@@ -53,6 +53,30 @@ DEFAULT_MAX_AGE_S = 30.0
 #: Liquidity below this is reported but should be treated as untradeable by callers. It is
 #: deliberately not enforced here — this module reports, the risk layer decides.
 THIN_POOL_USD = Decimal(1_000)
+
+#: The least share of the deepest pool's liquidity a PREFERRED-quote pool must hold before
+#: :func:`pick_pair` will choose it over the deepest pool. INVENTED as a number; the need
+#: for a floor is MEASURED.
+#:
+#: The exit watchdog asks for the pool quoted in the asset it sells into (SOL, ETH/WETH,
+#: WBNB), because a pool quoted in a third asset (Bonk, a tokenised stock) can be nowhere
+#: near the price a sell realises (journal #5048: COZY ``ETXqxf``, 2026-10-02). But the
+#: native pool that exists beside a deep foreign one is usually dust, and dust is a WORSE
+#: mark than the foreign pool, not a better one. MEASURED 2026-10-03 on DexScreener's pair
+#: lists for the 130 tokens our live positions traded in the previous 10 days:
+#:
+#: * COZY: Bonk CPMM $20,081; SOL pools $190 (DLMM, priced at 0.005x the Bonk pool) and
+#:   $1.98. Choosing "the deepest native pool" would have fired an emergency stop on a
+#:   price 200x too low.
+#: * Of the 49 robinhood/sol/bsc tokens whose deepest pool is NOT native-quoted, exactly one
+#:   has a native pool holding >= 25% of the deepest pool's depth (robinhood ``0xd0601c``,
+#:   ETH $1.24M beside USDG $3.19M, prices within 0.01%). The next best share was 2.9%;
+#:   40 of the 49 have no native pool at all.
+#:
+#: So the preference almost never fires, and when it does it fires on a pool deep enough to
+#: carry the same price. Everything below the floor falls back to the deepest pool, and the
+#: caller decides what a foreign-quoted mark is worth.
+PREFERRED_PAIR_MIN_SHARE = Decimal("0.25")
 
 
 @dataclass(frozen=True)
@@ -72,6 +96,11 @@ class Quote:
     pair_label: str | None = None
     pairs_considered: int = 0
     source: str = ""
+    #: The asset the chosen pool prices the token IN (the pair's quote side). ``None`` when
+    #: the pool did not report one. A mark is only as good as the route from that asset to
+    #: the one we would actually receive on a sell, so callers that sell need to see it.
+    quote_address: str | None = None
+    quote_symbol: str | None = None
 
     @property
     def known(self) -> bool:
@@ -145,17 +174,48 @@ def _unavailable(endpoint: str, note: str, provider: str = ds.PROVIDER) -> Recei
     )
 
 
-def pick_pair(pairs: Iterable[ds.PairSnapshot], token: str) -> ds.PairSnapshot | None:
+def _depth(pair: ds.PairSnapshot) -> Decimal:
+    return pair.liquidity_usd if pair.liquidity_usd is not None else Decimal(-1)
+
+
+def _quoted_in(pair: ds.PairSnapshot, assets: Collection[str]) -> bool:
+    return bool(pair.quote_address) and any(ds.same_address(pair.quote_address, a) for a in assets)
+
+
+def pick_pair(
+    pairs: Iterable[ds.PairSnapshot],
+    token: str,
+    *,
+    prefer_quotes: Collection[str] | None = None,
+) -> ds.PairSnapshot | None:
     """The deepest pool that actually prices ``token``.
 
     Pairs where ``token`` is the quote side are dropped: their ``priceUsd`` belongs to the
     other asset. Pairs with no usable price are dropped. Among the rest, unknown liquidity
     sorts below any known liquidity, so a pool we can measure always beats one we cannot.
+
+    ``prefer_quotes`` names quote assets (e.g. the chain's native and wrapped native) whose
+    pools win over a deeper pool quoted in something else -- but only when the preferred
+    pool is itself a market: known liquidity of at least :data:`THIN_POOL_USD` AND at least
+    :data:`PREFERRED_PAIR_MIN_SHARE` of the deepest pool's. Below that it is ignored and the
+    deepest pool is returned, exactly as without a preference. See the floor's docstring
+    for why a dust native pool is worse than no preference at all.
     """
     usable = [p for p in pairs if p.price_usd is not None and p.prices_for(token)]
     if not usable:
         return None
-    return max(usable, key=lambda p: p.liquidity_usd if p.liquidity_usd is not None else Decimal(-1))
+    deepest = max(usable, key=_depth)
+    if prefer_quotes:
+        preferred = [p for p in usable if _quoted_in(p, prefer_quotes)]
+        if preferred:
+            best = max(preferred, key=_depth)
+            depth = best.liquidity_usd
+            if depth is not None and depth >= THIN_POOL_USD and (
+                deepest.liquidity_usd is None
+                or depth >= deepest.liquidity_usd * PREFERRED_PAIR_MIN_SHARE
+            ):
+                return best
+    return deepest
 
 
 def _quote_from_pairs(
@@ -165,6 +225,7 @@ def _quote_from_pairs(
     receipt: Receipt,
     *,
     source: str,
+    prefer_quotes: Collection[str] | None = None,
 ) -> Quote:
     """Turn a pair list into a :class:`Quote`.
 
@@ -172,7 +233,7 @@ def _quote_from_pairs(
     receipt saying what went wrong — so the reason reaches the caller instead of being
     flattened into a bare "unknown".
     """
-    best = pick_pair(pairs, token)
+    best = pick_pair(pairs, token, prefer_quotes=prefer_quotes)
     if best is None:
         why = (
             f"provider unavailable: {receipt.note}"
@@ -203,6 +264,8 @@ def _quote_from_pairs(
         pair_label=best.label,
         pairs_considered=len(pairs),
         source=source,
+        quote_address=best.quote_address or None,
+        quote_symbol=best.quote_symbol,
     )
 
 
@@ -222,6 +285,7 @@ class DexScreenerSource:
         max_age_s: float = DEFAULT_MAX_AGE_S,
         priority: Priority = Priority.POSITION,
         conn: Any = None,
+        prefer_quotes: Collection[str] | None = None,
     ) -> dict[str, Quote]:
         wanted = list(tokens)
         if not wanted:
@@ -230,7 +294,9 @@ class DexScreenerSource:
             pairs, receipt = ds.token_pairs(
                 chain, wanted[0], priority=priority, ttl_s=max_age_s, conn=conn
             )
-            return {wanted[0]: _quote_from_pairs(chain, wanted[0], pairs, receipt, source=self.name)}
+            return {wanted[0]: _quote_from_pairs(
+                chain, wanted[0], pairs, receipt, source=self.name, prefer_quotes=prefer_quotes
+            )}
 
         out: dict[str, Quote] = {}
         for index, chunk in enumerate(_chunks(wanted, ds.MAX_TOKEN_ADDRESSES)):
@@ -238,7 +304,9 @@ class DexScreenerSource:
                 ds.pace(priority)  # or every chunk after the first is refused unread
             pairs, receipt = ds.tokens(chain, chunk, priority=priority, ttl_s=max_age_s, conn=conn)
             for token in chunk:
-                out[token] = _quote_from_pairs(chain, token, pairs, receipt, source=self.name)
+                out[token] = _quote_from_pairs(
+                    chain, token, pairs, receipt, source=self.name, prefer_quotes=prefer_quotes
+                )
         return out
 
 
@@ -296,12 +364,16 @@ def quote(
     max_age_s: float = DEFAULT_MAX_AGE_S,
     priority: Priority = Priority.POSITION,
     conn: Any = None,
+    prefer_quotes: Collection[str] | None = None,
 ) -> Quote:
     """Price *and* depth in one request. Always returns a :class:`Quote`; check ``.known``.
 
     Prefer this over calling :func:`price_usd` and :func:`liquidity_usd` back to back when
     you want both — it is one lookup instead of two, and the two numbers are guaranteed to
     describe the same pool at the same instant.
+
+    ``prefer_quotes`` is handed to :func:`pick_pair` (DexScreener only; another registered
+    source picks its own pool). ``None`` is the historical deepest-pool behaviour.
     """
     addr = _normalized(chain, token)
     if addr is None:
@@ -323,8 +395,13 @@ def quote(
 
     unresolved: Quote | None = None
     for source in _SOURCES:
+        extra: dict[str, Any] = {}
+        if prefer_quotes and isinstance(source, DexScreenerSource):
+            extra["prefer_quotes"] = prefer_quotes
         try:
-            found = source.quotes(chain, [addr], max_age_s=max_age_s, priority=priority, conn=conn)
+            found = source.quotes(
+                chain, [addr], max_age_s=max_age_s, priority=priority, conn=conn, **extra
+            )
         except Exception as exc:  # noqa: BLE001 - a broken source is data, not a crash
             log.warning("price source %s raised for %s: %s", source.name, addr, exc)
             unresolved = Quote(
@@ -486,6 +563,7 @@ def is_thin(measure: Measure, floor_usd: Decimal = THIN_POOL_USD) -> bool:
 
 __all__ = [
     "DEFAULT_MAX_AGE_S",
+    "PREFERRED_PAIR_MIN_SHARE",
     "THIN_POOL_USD",
     "DexScreenerSource",
     "PriceSource",

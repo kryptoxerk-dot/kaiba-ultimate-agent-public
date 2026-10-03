@@ -3,6 +3,10 @@
 EXIT-1 (Codex, Claude-approved 2026-09-24): pass trusted Order.side to policy;
 no order lifecycle, routing or withdrawal-policy changes.
 
+COPY-WALLET (2026-10-03, for copy_manager): ``submit(..., from_wallet=)`` lets a
+Lane.MANUAL SELL name an owned wallet (signer-policy ``owned_addresses``); buys, other
+lanes and non-owned wallets are refused. Such a fill does not move Kaiba's ledger.
+
 Two lanes, one policy. The GMGN lane goes through the vendor CLI against custodial
 wallets; the direct lane builds a transaction and asks our own signer to sign it. Both
 pass through :mod:`kaiba.execution.policy` first, and both write the same journal.
@@ -414,12 +418,68 @@ def _run_gmgn(args: list[str], timeout_s: int = 45, *, mutating: bool = False) -
         raise ExecutionAmbiguous(f"gmgn-cli returned unparseable output: {exc}") from exc
 
 
-def submit_gmgn(order: Order, conn: sqlite3.Connection | None = None) -> SubmitResult:
-    """Submit through GMGN. Custodial wallets; the API has no transfer endpoint."""
+#: ``order_events.detail`` prefix written at RESERVED when a sell names its own wallet.
+#: :func:`reconcile` reads it back: a fill from that wallet is not Kaiba's ledger.
+FROM_WALLET_MARK = "from_wallet="
+
+
+def _sell_wallet_override(order: Order, from_wallet: str) -> str:
+    """The wallet a MANUAL SELL may sell from instead of the chain's, or ExecutionRefused.
+
+    Added 2026-10-03 for ``copy_manager`` (owner: "control the copy trade sell ... on" his
+    old wallet 0x7243..., which GMGN copy-trades; Kaiba trades from the chain wallet in
+    ``config/risk.yaml``). Deliberately narrow, every condition refusing on its own:
+
+    * SELL only. A buy from another wallet is never sent, whatever asked for it.
+    * ``Lane.MANUAL`` only. No strategy lane can redirect where its orders come from.
+    * The wallet must be in ``config/signer-policy.yaml`` ``owned_addresses`` for the
+      chain -- the operator's own declaration of "ours", which no code writes. EVM is
+      compared lowercased, base58 exactly (``SignerPolicy.owned``).
+
+    Everything else keeps the chain wallet. ``--from`` must also match the GMGN API key's
+    binding; an unbound wallet is refused by the venue before anything is created.
+    """
+    if order.side is not Side.SELL:
+        raise ExecutionRefused("from_wallet override is sell-only; a buy always uses the chain wallet")
+    if order.lane is not Lane.MANUAL:
+        raise ExecutionRefused(f"from_wallet override is for lane manual only, not {order.lane.value}")
+    wallet = (from_wallet or "").strip()
+    if order.chain is not Chain.SOL:
+        wallet = wallet.lower()
+    try:
+        from kaiba.execution.policy import get_policy
+    except ImportError as exc:  # pragma: no cover - fail closed, like _authorize
+        raise ExecutionRefused(f"policy module unavailable, refusing from_wallet: {exc}") from exc
+    if not wallet or wallet not in get_policy().owned(order.chain):
+        raise ExecutionRefused(
+            f"from_wallet {wallet[:10]}... is not in signer-policy owned_addresses for {order.chain.value}"
+        )
+    return wallet
+
+
+def _sent_from_other_wallet(order_id: str, conn: sqlite3.Connection) -> bool:
+    """Was this order sent under :func:`_sell_wallet_override`? Read from its own history."""
+    row = fetch_one(
+        conn,
+        "SELECT 1 FROM order_events WHERE order_id=? AND detail LIKE ? LIMIT 1",
+        (order_id, f"%{FROM_WALLET_MARK}%"),
+    )
+    return row is not None
+
+
+def submit_gmgn(
+    order: Order, conn: sqlite3.Connection | None = None, *, from_wallet: str | None = None
+) -> SubmitResult:
+    """Submit through GMGN. Custodial wallets; the API has no transfer endpoint.
+
+    ``from_wallet``: see :func:`_sell_wallet_override`. ``None`` = the chain wallet.
+    """
     c = conn or get_conn()
     risk = get_risk()
     budget = risk.chain_budget(order.chain)
     wallet = budget.wallet
+    if from_wallet is not None:
+        wallet = _sell_wallet_override(order, from_wallet)
     if not wallet:
         raise ExecutionRefused(f"no wallet bound for {order.chain.value} in config/risk.yaml")
 
@@ -435,7 +495,10 @@ def submit_gmgn(order: Order, conn: sqlite3.Connection | None = None) -> SubmitR
         and not order.provider_order_id
         and not order.tx_hash
     )
-    order = _transition(order, OrderState.RESERVED, c, "policy passed")
+    order = _transition(
+        order, OrderState.RESERVED, c,
+        "policy passed" if from_wallet is None else f"policy passed; {FROM_WALLET_MARK}{wallet}",
+    )
 
     args = [
         "swap",
@@ -674,14 +737,24 @@ def submit_direct(order: Order, conn: sqlite3.Connection | None = None) -> Submi
 # --------------------------------------------------------------------------------------
 
 
-def submit(order: Order, conn: sqlite3.Connection | None = None) -> SubmitResult:
-    """Route to a lane. Shadow orders are recorded and never sent."""
+def submit(
+    order: Order, conn: sqlite3.Connection | None = None, *, from_wallet: str | None = None
+) -> SubmitResult:
+    """Route to a lane. Shadow orders are recorded and never sent.
+
+    ``from_wallet`` is GMGN-only and checked by :func:`_sell_wallet_override` before
+    anything is persisted; the direct lane signs for the chain wallet and refuses it.
+    """
     c = conn or get_conn()
+    if from_wallet is not None:
+        if order.provider != "gmgn":
+            raise ExecutionRefused("from_wallet override exists only on the GMGN lane")
+        _sell_wallet_override(order, from_wallet)
     if order.mode is LaneMode.SHADOW:
         _persist(order, c)
         return SubmitResult(order.order_id, OrderState.PLANNED, detail="shadow: not sent")
     if order.provider == "gmgn":
-        return submit_gmgn(order, c)
+        return submit_gmgn(order, c, from_wallet=from_wallet)
     return submit_direct(order, c)
 
 
@@ -800,6 +873,16 @@ def reconcile(order_id: str, conn: sqlite3.Connection | None = None) -> OrderSta
                 }
             )
             order = _transition(order, new_state, c, f"reconciled: {status}")
+            if new_state is OrderState.FILLED and _sent_from_other_wallet(order.order_id, c):
+                # Sold from the owner's other wallet (copy_manager). Those tokens were never
+                # on Kaiba's books: reducing a Kaiba position of the same token would close
+                # something Kaiba still holds, and "no position" would page as an error.
+                journal.append(
+                    "outcome",
+                    f"order {order_id} filled from a non-chain wallet; Kaiba's ledger untouched",
+                    subject=order.token, refs=[order.tx_hash or ""], conn=c,
+                )
+                return new_state
             if new_state is OrderState.FILLED:
                 # The order row is not the position. Until the ledger moves, a filled buy
                 # is real money the watchdog cannot see and a filled sell never reduces

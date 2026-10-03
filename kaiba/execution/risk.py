@@ -45,7 +45,7 @@ import sqlite3
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from decimal import Decimal, InvalidOperation
+from decimal import ROUND_CEILING, Decimal, InvalidOperation
 from typing import Any
 
 from kaiba.core import events
@@ -95,7 +95,8 @@ SCORE_LADDER: tuple[tuple[float, Decimal], ...] = (
 #: Rejections that mean "a brake is on" rather than "this particular size is wrong". Only
 #: these are worth an event; a size that missed the envelope is ordinary operation.
 _BRAKE_REASONS = frozenset(
-    {"kill_switch", "entries_paused", "reduce_only", "daily_loss_stop", "lane_off"}
+    {"kill_switch", "entries_paused", "reduce_only", "daily_loss_stop", "daily_stop_reserve",
+     "lane_off"}
 )
 
 
@@ -1619,6 +1620,102 @@ def _launch_wave_multiplier(
     return min(multiplier, Decimal(1)), f"wave:{wave:.3f}%:{detail}"
 
 
+# --------------------------------------------------------------------------------------
+# the daily stop RESERVES what is already committed  (journal #5048, 2026-10-02)
+#
+# The stop used to read realised PnL only: block when `realized_today <= -stop`. With a
+# ticket larger than the budget left, one more full ticket was admitted, and positions
+# already open were not counted at all. MEASURED on SOL 2026-10-02: stop 0.8 SOL, ticket
+# 0.83 SOL; CATGPT opened 19:06 and ZETA 19:10 with 0.0855 SOL of budget left; ZETA lost
+# 0.678 (emergency_loss, -82% in a minute), CATGPT 0.254, and the day closed at -1.647
+# SOL -- 206% of the stop.
+#
+# So an entry is admitted only if the budget survives every open live position AND the new
+# ticket being stopped out:   realized - (open_exposure + ticket) * reserve > -stop.
+# `reserve` is the fraction of the at-risk cost a stop exit is expected to give back.
+# MEASURED: stop exits fill at -36% to -38% on this book, so the default is 0.40. A tail
+# like ZETA's (-82%) is NOT covered by it; this bounds the expected day, not the worst one.
+#
+# Replayed on 14 days of live fills on the box (current stops, open cost at entry time):
+# sol 12 of 95 entries refused (net -1.26 SOL of the -3.41 lost), bsc 20 of 51 (-0.112 of
+# -0.314 BNB), robinhood 30 of 104 (-0.141 of -0.143 ETH). The refused trades' MEAN return
+# is the same as the admitted ones' (sol -14.2% vs -14.9%): this is a cap on the size of a
+# bad day, not an edge, and it should be judged as that.
+
+#: ``protection.daily_stop_reserve_pct`` default, as a 0-1 fraction of open cost.
+DAILY_STOP_RESERVE_DEFAULT = Decimal("0.40")
+
+
+def daily_stop_reserve(cfg: RiskConfig) -> Decimal:
+    """The configured reserve fraction, or the default. Never looser for being unreadable.
+
+    Missing -> 0.40. Unreadable (a bool, text, NaN, negative) -> 0.40 with a warning,
+    because a typo must not switch the brake off. Above 1 -> 1.0: more than the whole
+    ticket is not a loss that can happen, and clamping down would loosen it. An explicit
+    number in [0, 1] is the operator's and is used as written -- including 0, which turns
+    the reservation off and leaves the plain realised-only stop.
+    """
+    raw = (cfg.protection or {}).get("daily_stop_reserve_pct")
+    if raw is None:
+        return DAILY_STOP_RESERVE_DEFAULT
+    value: Decimal | None = None
+    if not isinstance(raw, bool) and isinstance(raw, (int, float, str, Decimal)):
+        try:
+            value = Decimal(str(raw).strip())
+        except (InvalidOperation, ValueError):
+            value = None
+    if value is None or not value.is_finite() or value < 0:
+        log.warning("protection.daily_stop_reserve_pct=%r is unreadable; using %s",
+                    raw, DAILY_STOP_RESERVE_DEFAULT)
+        return DAILY_STOP_RESERVE_DEFAULT
+    return min(value, Decimal(1))
+
+
+def daily_stop_reserved(open_exposure: int, size: int, reserve: Decimal) -> int:
+    """Base units the stop holds back for open positions plus this ticket. Rounded UP."""
+    held = (Decimal(max(0, int(open_exposure))) + Decimal(max(0, int(size)))) * reserve
+    return int(held.to_integral_value(rounding=ROUND_CEILING))
+
+
+# --------------------------------------------------------------------------------------
+# SHADOW spends nothing, so live-money brakes do not apply to it
+#
+# Measured on the box, 7 days to 2026-10-03: shadow lanes were refused `daily_loss_stop`
+# 224 times (migration-fade 166, pons-robinhood 58), `chain_disabled` 1,385 times and
+# `size_not_positive:total_exposure_cap` 3 times -- the live book's losing day stopped the
+# PAPER record growing, so the shadow sample is selected on live PnL. A paper position
+# moves no money: the daily stop, the per-token and total exposure caps, the compounding
+# bankroll / free balance and "chain enabled for real money" are all about money.
+#
+# What still binds a shadow entry: the kill switch, global/lane OFF, entries_paused,
+# reduce_only, a halt, the lane's own chains, the size ladder and the pool band -- and a
+# cap on concurrently open shadow positions per lane, because every one of them is quoted
+# by protection (`watchdog.MAX_SHADOW_QUOTE_KEYS_PER_TICK` with live inventory, ALL of
+# them without), and a protection tick that overruns halts entries on every chain.
+
+#: ``protection.shadow_max_open_per_lane`` default. Over 30 days on the box the most
+#: shadow positions one lane held at once was 13 (migration-fade, median hold 445 s), with
+#: 43 of 186 abandoned unpriceable. INVENTED as a number: at 5 per lane the 2-keys-a-tick
+#: rotation still reaches each paper position about every 3 ticks per active lane.
+SHADOW_MAX_OPEN_PER_LANE_DEFAULT = 5
+
+
+def shadow_max_open_per_lane(cfg: RiskConfig) -> int:
+    """The configured per-lane cap on open shadow positions, or the default.
+
+    A non-integer, a bool or a negative number is unreadable and falls back to the default
+    rather than to "no cap". 0 is allowed and means no new shadow entries at all.
+    """
+    raw = (cfg.protection or {}).get("shadow_max_open_per_lane")
+    if raw is None:
+        return SHADOW_MAX_OPEN_PER_LANE_DEFAULT
+    if isinstance(raw, bool) or not isinstance(raw, int) or raw < 0:
+        log.warning("protection.shadow_max_open_per_lane=%r is unreadable; using %s",
+                    raw, SHADOW_MAX_OPEN_PER_LANE_DEFAULT)
+        return SHADOW_MAX_OPEN_PER_LANE_DEFAULT
+    return raw
+
+
 class RiskGate:
     """Entry admission, the daily loss stop, and the score -> size ladder.
 
@@ -1747,6 +1844,16 @@ class RiskGate:
             total += max(0, _as_int(row["cost_native"]) - _as_int(row["proceeds_native"]))
         return total
 
+    def open_shadow_positions(self, lane: Lane, conn: sqlite3.Connection | None = None) -> int:
+        """Paper positions this lane holds open right now, on every chain."""
+        row = fetch_one(
+            _conn(conn),
+            "SELECT COUNT(*) AS n FROM positions WHERE lane = ? AND mode = 'shadow' "
+            "AND closed_ms IS NULL",
+            (lane.value,),
+        )
+        return _as_int(row["n"] if row is not None else 0)
+
     # ---------------------------------------------------------------- admission
 
     def check_entry(
@@ -1773,7 +1880,8 @@ class RiskGate:
             return self._deny("reduce_only", chain, lane, conn)
 
         budget = cfg.chain_budget(chain)
-        if not budget.enabled:
+        # "Enabled" is permission for REAL money on this chain; a paper entry spends none.
+        if not budget.enabled and mode is not LaneMode.SHADOW:
             return self._deny("chain_disabled", chain, lane, conn)
         lane_cfg = cfg.lane(lane)
         if chain not in lane_cfg.chains:
@@ -1782,6 +1890,9 @@ class RiskGate:
         state = self._state_row(conn)
         if int(state["halted"]):
             return self._deny(f"halted:{state['halt_reason'] or 'unspecified'}", chain, lane, conn)
+
+        if mode is LaneMode.SHADOW:
+            return self._check_shadow_entry(chain, lane, int(size_base_units), cfg, conn, token=token)
 
         realized = self.realized_today(chain, conn)
         stop = budget.daily_loss_stop_base_units
@@ -1797,6 +1908,19 @@ class RiskGate:
             return self._deny(f"size_below_min:{size}", chain, lane, conn)
         if budget.max_position_base_units and size > budget.max_position_base_units:
             return self._deny(f"size_above_max:{size}", chain, lane, conn)
+
+        # The stop RESERVES what is already committed: every open live position on this
+        # chain, and this ticket, are assumed to stop out at `reserve` of their at-risk
+        # cost. See `daily_stop_reserve` for the 2026-10-02 overshoot this closes.
+        if stop > 0:
+            reserved = daily_stop_reserved(
+                self.open_exposure(chain, conn), size, daily_stop_reserve(cfg)
+            )
+            if realized - reserved <= -stop:
+                return self._deny(
+                    f"daily_stop_reserve:{realized}/{reserved}/{stop}", chain, lane, conn
+                )
+            findings.append(f"daily_stop_reserved:{reserved}/{stop}")
 
         # The compounding bankroll, not the number in the file. After a losing day this is
         # smaller than the configured baseline and every percentage below is measured
@@ -1868,6 +1992,59 @@ class RiskGate:
 
         findings.append(f"mode:{mode.value}")
         return PolicyDecision(allowed=True, reason="entry_within_envelope", findings=findings)
+
+    def _check_shadow_entry(
+        self,
+        chain: Chain,
+        lane: Lane,
+        size: int,
+        cfg: RiskConfig,
+        conn: sqlite3.Connection | None,
+        *,
+        token: str | None,
+    ) -> PolicyDecision:
+        """A PAPER entry: the money brakes are skipped, the size and volume checks are not.
+
+        Reached only after the kill switch, OFF, ``entries_paused``, ``reduce_only``, the
+        lane's chains and a halt have all been checked by :meth:`check_entry`. Skipped
+        here, because a paper position moves no money: the daily loss stop and its
+        reservation, the per-token and total exposure caps, the compounding bankroll and
+        free balance. What remains is what makes the paper record mean something -- a
+        size the lane would really send and a pool that could take it -- plus
+        :func:`shadow_max_open_per_lane`, which protects protection's quote budget.
+        """
+        budget = cfg.chain_budget(chain)
+        findings = ["mode:shadow", "paper_entry:live_money_brakes_skipped"]
+        if not budget.enabled:
+            findings.append("chain_not_enabled_for_live")
+        if size <= 0:
+            cause = zero_size_cause(conn, chain, lane, token)
+            return self._deny("size_not_positive" + (f":{cause}" if cause else ""), chain, lane, conn)
+        if budget.min_position_base_units and size < budget.min_position_base_units:
+            return self._deny(f"size_below_min:{size}", chain, lane, conn)
+        if budget.max_position_base_units and size > budget.max_position_base_units:
+            return self._deny(f"size_above_max:{size}", chain, lane, conn)
+        # The configured baseline, not the live compounding equity: see `position_size`.
+        bankroll = budget.bankroll_base_units
+        if bankroll <= 0:
+            return self._deny("bankroll_unfunded", chain, lane, conn)
+        pct = Decimal(size) * 100 / Decimal(bankroll)
+        ceiling = Decimal(str(cfg.bounds.max_size_pct_bankroll))
+        if pct > ceiling:
+            return self._deny(f"size_above_clamp:{pct:.4f}>{ceiling}", chain, lane, conn)
+        findings.append(f"size_pct_bankroll:{pct:.4f}")
+
+        cap = shadow_max_open_per_lane(cfg)
+        held = self.open_shadow_positions(lane, conn)
+        if held >= cap:
+            return self._deny(f"shadow_open_cap:{held}/{cap}", chain, lane, conn)
+        findings.append(f"shadow_open:{held}/{cap}")
+
+        cost = viability.check_size(chain, size, conn, token=token, cfg=cfg)
+        findings.extend(cost.findings)
+        if not cost.ok:
+            return self._deny(cost.reason, chain, lane, conn)
+        return PolicyDecision(allowed=True, reason="paper_entry_within_envelope", findings=findings)
 
     def check_exit(
         self, chain: Chain, lane: Lane, conn: sqlite3.Connection | None = None
@@ -2103,9 +2280,17 @@ class RiskGate:
         cfg = self._risk_provider()
         budget = cfg.chain_budget(chain)
         lane_cfg = cfg.lane(lane)
-        if cfg.kill_switch or cfg.effective_mode(lane) is LaneMode.OFF:
+        mode = cfg.effective_mode(lane)
+        if cfg.kill_switch or mode is LaneMode.OFF:
             return note_zero_size(conn, chain, lane, token, "lane_off")
-        if not budget.enabled or chain not in lane_cfg.chains:
+        # PAPER sizes from the configured baseline and skips every money brake below: the
+        # chain's live permission, compounding, the drawdown cut, the total exposure cap
+        # and the free balance. It keeps the ladder, the envelope, the position cap, the
+        # pool band and the concentration cut, and is RAISED to the chain minimum (the
+        # live ticket), so a paper position is the trade live would really send. See
+        # `_check_shadow_entry`.
+        paper = mode is LaneMode.SHADOW
+        if (not budget.enabled and not paper) or chain not in lane_cfg.chains:
             return note_zero_size(conn, chain, lane, token, "chain_not_in_lane")
         if budget.bankroll_base_units <= 0:
             return note_zero_size(conn, chain, lane, token, "bankroll_zero")
@@ -2125,6 +2310,25 @@ class RiskGate:
         # (the live box's own message: 1.7478>1.7478155555555555). A float in a money
         # comparison, against this repo's own rule.
         pct = min(pct, Decimal(str(cfg.bounds.max_size_pct_bankroll)))
+
+        if paper:
+            # The paper twin of this method's live path, stopping at the position cap.
+            size = int(Decimal(budget.bankroll_base_units) * pct / Decimal(100))
+            if budget.max_position_base_units:
+                size = min(size, budget.max_position_base_units)
+            # ...and never below the chain's ticket floor. MEASURED on the box, 7 days to
+            # 2026-10-03: of the 1,612 shadow entries refused by a money brake, 1,171 then
+            # sized BELOW `min_position_base_units` (migration-fade 0.10 SOL against the
+            # 0.83 SOL floor, pons-robinhood 0.0018 ETH against 0.037) and would only have
+            # traded their refusal for `below_min_position` -- skipping the money brakes
+            # alone admits 0 of them. The floor is the size live sends (min = max = the
+            # flat ticket on sol and robinhood), so a paper position at the floor is the
+            # trade live would take, at live's impact. Raising a PAPER size spends nothing.
+            if budget.min_position_base_units:
+                size = max(size, budget.min_position_base_units)
+            if size <= 0:
+                return note_zero_size(conn, chain, lane, token, "paper_size_zero")
+            return self._finish_size(chain, lane, token, size, budget, conn)
 
         book = self.bankroll_reading(chain, conn, cfg)
         if book.equity_base_units <= 0:
@@ -2168,6 +2372,19 @@ class RiskGate:
         size = min(size, book.free_base_units)
         if size <= 0:
             return note_zero_size(conn, chain, lane, token, f"free_zero:{book.free_base_units}")
+        return self._finish_size(chain, lane, token, size, budget, conn)
+
+    def _finish_size(
+        self,
+        chain: Chain,
+        lane: Lane,
+        token: str | None,
+        size: int,
+        budget: ChainBudget,
+        conn: sqlite3.Connection | None,
+    ) -> int:
+        """The tail of :meth:`position_size` shared by live and paper: pool band, chain
+        minimum, concentration. Each step can only take money off the table."""
         banded = self._clamp_to_band(chain, token, size, conn)
         if banded <= 0:
             return note_zero_size(conn, chain, lane, token, "no_viable_band")

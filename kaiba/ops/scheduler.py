@@ -1396,6 +1396,55 @@ def job_wallet_regrade(ctx: JobContext) -> dict[str, Any]:
             "by_grade": grades, "per_chain": per_chain}
 
 
+def job_gmgn_grade(ctx: JobContext) -> dict[str, Any]:
+    """Re-grade the GMGN provider-grade pool on a call budget (``gmgn_grade.run_budgeted``).
+
+    Journal #4987: nothing scheduled this pass after the 2026-09-24 bulk run, which left
+    628 robinhood wallets UNSCORED one evidence point under the floor for want of a win rate
+    that GMGN now answers. Each run spends at most ``max_calls_per_run`` GMGN reads at
+    DISCOVERY priority, ``pace_s`` apart, and the UTC day at most ``max_calls_per_day``
+    (``ops_quota``, so a restart cannot reset it). Chains are visited in the order given and
+    share the run's budget. Every chain resumes from its own ``kv`` cursor. No threshold is
+    touched: grades are OUR rubric over GMGN's arithmetic, under ``kaiba-wallet-gmgn-v1``.
+    """
+    from kaiba.core.limiter import Priority
+    from kaiba.intelligence import gmgn_grade
+
+    raw = str(ctx.param("chains", "robinhood") or "")
+    names = [c.strip().lower() for c in raw.split(",") if c.strip()]
+    per_run = int(ctx.param("max_calls_per_run", 120))
+    per_day = int(ctx.param("max_calls_per_day", 1200))
+    used, _ = ctx.quota_used()
+    budget = max(0, min(per_run, per_day - used))
+    result: dict[str, Any] = {"budget": budget, "used_today_before": used, "per_chain": {}}
+    if budget < 2:
+        return {**result, "reason": REASON_QUOTA, "calls": 0}
+    spent = 0
+    for name in names:
+        try:
+            chain = Chain(name)
+        except ValueError:
+            result["per_chain"][name] = {"stopped": "unknown_chain"}
+            continue
+        left = budget - spent
+        if left < 2:
+            result["per_chain"][name] = {"stopped": "budget"}
+            continue
+        out = gmgn_grade.run_budgeted(
+            ctx.conn, chain, max_calls=left, period=str(ctx.param("period", "all")),
+            priority=Priority.DISCOVERY, pace_s=float(ctx.param("pace_s", 2.0)),
+            deadline_monotonic=time.monotonic() + max(5.0, ctx.time_left_s() - 15.0),
+            store=bool(ctx.param("store", True)),
+        )
+        spent += int(out["calls"])
+        ctx.quota_add(units=int(out["calls"]))
+        result["per_chain"][name] = out
+        if out["stopped"] in ("deadline", "provider_unavailable"):
+            break
+    result["calls"] = spent
+    return result
+
+
 # --------------------------------------------------------------------------------------
 # evidence deepening: more history for the few paid grades within reach of A
 # --------------------------------------------------------------------------------------
@@ -1880,22 +1929,54 @@ def job_execute_planned(ctx: JobContext) -> dict[str, Any]:
 
 
 def job_copy_manager(ctx: JobContext) -> dict[str, Any]:
-    """Manage the owner's GMGN copy trades on the agent wallet (kaiba.execution.copy_manager).
+    """Manage the owner's GMGN copy trades on HIS wallet (kaiba.execution.copy_manager).
 
     Owner, 2026-09-30: trim winners, sell to protect profit, cut losers on a weak trend,
-    never touch the copy settings. ``live`` ships false: it decides and records, sends nothing.
+    never touch the copy settings. Owner, 2026-10-03: the copy book is on 0x7243..., "do not
+    buy" there, "control the copy trade sell before it rug".
+
+    ``wallet`` is REQUIRED and is never Kaiba's own (``CM.wallet_refusal``). Holdings, the
+    balance read and every sell use it. A configured ``live: true`` runs dry, and says
+    ``wallet_not_api_bound``, until GMGN's ``portfolio info`` lists the wallet for the chain
+    (read at most every ``binding_ttl_s``, DISCOVERY priority): GMGN refuses ``--from`` a
+    wallet the API key is not bound to.
     """
+    import dataclasses
     from decimal import Decimal
 
+    from kaiba.core.limiter import Priority
     from kaiba.execution import copy_manager as CM
     from kaiba.execution import watchdog
+    from kaiba.execution.policy import get_policy
     from kaiba.providers import gmgn_cli, native_price
 
     chain = Chain(str(ctx.param("chain", "robinhood")))
     cfg = CM.CopyConfig.from_params(ctx.params)
-    wallet = watchdog.exit_wallet_for(chain)
-    if not wallet:
-        raise JobFailed(f"no wallet configured for {chain.value}")
+    wallet = str(ctx.param("wallet", "") or "").strip().lower()
+    kaiba_wallet = watchdog.exit_wallet_for(chain)
+    refused = CM.wallet_refusal(chain, wallet, kaiba_wallet=kaiba_wallet, owned=get_policy().owned(chain))
+    if refused:
+        raise JobFailed(f"copy_manager refuses {wallet[:10] or '(no wallet)'}: {refused}")
+
+    blocked: list[str] = []
+    alarms: list[str] = []
+    info = gmgn_cli.account_info(priority=Priority.DISCOVERY, ttl_s=float(ctx.param("binding_ttl_s", 3600)))
+    if info.ok:
+        binding = CM.parse_binding(info.data, chain, wallet, kaiba_wallet)
+    else:
+        binding = CM.Binding(None, None, detail=f"portfolio info unavailable: {getattr(info.receipt, 'note', '')}"[:200])
+    if binding.bound is not True:
+        blocked.append(CM.BLOCK_NOT_BOUND if binding.bound is False else CM.BLOCK_BINDING_UNKNOWN)
+    if binding.kaiba_bound is False:
+        # Binding the copy wallet must ADD it, not replace Kaiba's. If this fires, every Kaiba
+        # trade and EXIT on the chain is about to be refused by the venue. Reported loudly; it
+        # does not stop the owner's copy protection, which would help nothing.
+        log.error("ops: copy_manager: Kaiba's own %s wallet is no longer bound to the GMGN API key "
+                  "(bound now: %s)", chain.value, ", ".join(binding.wallets_on_chain) or "none")
+        alarms.append("kaiba_wallet_not_api_bound")
+    configured_live = cfg.live
+    if cfg.live and blocked:
+        cfg = dataclasses.replace(cfg, live=False)
 
     def fetch() -> Any:
         res = gmgn_cli.portfolio_holdings(wallet, chain, limit=50, order_by="usd_value", direction="desc")
@@ -1914,10 +1995,10 @@ def job_copy_manager(ctx: JobContext) -> dict[str, Any]:
     report = CM.run(
         ctx.conn, chain, cfg, fetch_holdings=fetch,
         wallet_units=lambda token, decimals: watchdog.wallet_token_units(chain, wallet, token, decimals),
-        native_usd=native, submit=CM.gmgn_submitter(ctx.conn, chain, slippage),
-        slippage_bps=slippage, now=ctx.now(),
+        native_usd=native, submit=CM.gmgn_submitter(ctx.conn, chain, slippage, wallet=wallet),
+        slippage_bps=slippage, now=ctx.now(), wallet=wallet, blocked=blocked, binding=binding.as_dict(),
     )
-    return report.as_dict()
+    return {**report.as_dict(), "configured_live": configured_live, "alarms": alarms}
 
 
 def job_native_price(ctx: JobContext) -> dict[str, Any]:
@@ -3023,6 +3104,11 @@ JOBS: dict[str, JobSpec] = {
         "wallet_regrade", job_wallet_regrade,
         "regrade wallets whose evidence moved; free, local",
     ),
+    "gmgn_grade": JobSpec(
+        "gmgn_grade", job_gmgn_grade,
+        "re-grade the GMGN provider-grade pool on a paced DISCOVERY call budget with a resume "
+        "cursor; 628 robinhood wallets sat one point under the floor for want of a win rate",
+    ),
     "wallet_deepen": JobSpec(
         "wallet_deepen", job_wallet_deepen,
         "buy more history only for paid grades within reach of A whose walk is truncated, "
@@ -3051,7 +3137,8 @@ JOBS: dict[str, JobSpec] = {
     ),
     "copy_manager": JobSpec(
         "copy_manager", job_copy_manager,
-        "trims the owner's GMGN copy trades on the agent wallet and cuts weak losers; never buys",
+        "sells the owner's GMGN copy trades on HIS named wallet (giveback; rug rules dry until "
+        "measured); never buys, never Kaiba's wallet, dry until GMGN binds the wallet",
     ),
     "native_price": JobSpec(
         "native_price", job_native_price,

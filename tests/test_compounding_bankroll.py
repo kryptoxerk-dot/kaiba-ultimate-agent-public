@@ -651,6 +651,9 @@ def test_free_is_floored_at_zero_when_exposure_exceeds_equity(tmp_db):
 
 
 def test_the_gate_refuses_an_entry_that_would_over_commit(write_risk, tmp_db):
+    # The daily-stop reserve (default 0.40, 2026-10-03) would refuse this 9.8 SOL book
+    # first; pinned off so the test isolates the gas reserve it is about.
+    write_risk(protection={"daily_stop_reserve_pct": 0})
     seed_depth(tmp_db)
     open_position(tmp_db, TOKEN, 9_800_000_000)
     clock = Clock()

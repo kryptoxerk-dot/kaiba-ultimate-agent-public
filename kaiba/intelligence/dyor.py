@@ -53,7 +53,7 @@ from __future__ import annotations
 import logging
 import re
 from collections.abc import Callable, Iterable, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from decimal import Decimal
 from enum import StrEnum
 from typing import Any, Literal
@@ -1687,9 +1687,35 @@ def collect_gmgn(address: str, chain: Chain, conn: Any = None) -> Collected:
             return [], [_dead_receipt("gmgn", f"token.{name}", exc)], "down"
         props, receipt = _unwrap_gmgn(raw, module, chain)
         if props:
-            return _claims_from(props, "gmgn", receipt), [receipt], "ok"
+            claims = _claims_from(props, "gmgn", receipt)
+            own = _own_field_receipts(props)
+            if not own:
+                return claims, [receipt], "ok"
+            claims = [replace(c, receipt=own[c.prop]) if c.prop in own else c for c in claims]
+            extra = list(dict.fromkeys(r for r in own.values() if r is not receipt))
+            return claims, [receipt, *extra], "ok"
         return [], [receipt], "down"
     return [], [_dead_receipt("gmgn", "token.security", "no known entry point on gmgn_cli")], "down"
+
+
+def _own_field_receipts(props: Any) -> dict[str, Receipt]:
+    """Per-property receipts a merged gmgn read attached (``gmgn_cli.SecurityProps``).
+
+    MEASURED 2026-10-03 (journal #4981): the merged ``token.security+token.info`` receipt
+    is stamped with its OLDER half, so a ``token info`` price seconds old reached the
+    engine 304-601 s "old" and 20 approved live entries in 7 days were refused
+    ``token_price_stale``. The adapter now names the read that actually observed each
+    market field; this applies it. Anything that is not a usable ``Receipt`` is ignored,
+    which leaves the merged (older) receipt in place -- the direction that can only refuse.
+    """
+    raw = getattr(props, "field_receipts", None)
+    if not isinstance(raw, dict):
+        return {}
+    return {
+        str(k): v
+        for k, v in raw.items()
+        if isinstance(v, Receipt) and v.basis is not EvidenceBasis.UNAVAILABLE
+    }
 
 
 # Same market freshness budget as price; the cache must still be inside token.info's

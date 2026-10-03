@@ -208,20 +208,25 @@ def test_the_job_decides_on_the_live_seams_and_sells_nothing_while_dry(tmp_db, m
     from kaiba.ops import scheduler as S
     from kaiba.providers import gmgn_cli, native_price
 
-    monkeypatch.setattr(watchdog, "exit_wallet_for", lambda chain: "0x72430877378522d1b759ac721561aa9eb9e25c2b")
+    # 2026-10-03: the job manages the OWNER's named wallet; Kaiba's own is the chain wallet.
+    owner, kaiba = "0x72430877378522d1b759ac721561aa9eb9e25c2b", "0xcc4450c80735778e9f5eaa7a4ea47990e57807c2"
+    monkeypatch.setattr(watchdog, "exit_wallet_for", lambda chain: kaiba)
     monkeypatch.setattr(watchdog, "wallet_token_units", lambda *a: 10**24)
     monkeypatch.setattr(gmgn_cli, "portfolio_holdings",
                         lambda *a, **k: SimpleNamespace(ok=True, data={"list": [row(pnl="0.30")]}, receipt=None))
+    monkeypatch.setattr(gmgn_cli, "account_info", lambda **k: SimpleNamespace(
+        ok=True, data={"wallets": [{"chain": "robinhood", "address": kaiba}]}, receipt=None))
     monkeypatch.setattr(native_price, "latest",
                         lambda c, conn=None: SimpleNamespace(ts_ms=now_ms(), price_usd=Decimal("2700")))
     sent = []
-    monkeypatch.setattr(executor, "submit", lambda order, conn=None: sent.append(order))
+    monkeypatch.setattr(executor, "submit", lambda order, conn=None, **kw: sent.append(order))
     ts = now_ms()
-    ctx = S.JobContext("copy_manager", tmp_db, {"live": False, "chain": "robinhood"},
+    ctx = S.JobContext("copy_manager", tmp_db, {"live": False, "chain": "robinhood", "wallet": owner},
                        S.ScheduleConfig(), ts, ts + 60_000)
     out = S.job_copy_manager(ctx)
     assert out["live"] is False and out["decisions"][0]["kind"] == "trim"
     assert out["sells"] == [] and sent == []
+    assert out["wallet"] == owner and out["blocked"] == [CM.BLOCK_NOT_BOUND]
 
 
 # --------------------------------------------------------------------------------------
@@ -524,8 +529,10 @@ def test_the_gmgn_seam_maps_the_executors_outcomes(tmp_db, monkeypatch):
     from kaiba.execution import executor
 
     calls = []
+    owner = "0x72430877378522d1b759ac721561aa9eb9e25c2b"
 
-    def fake_submit(order, conn=None):
+    def fake_submit(order, conn=None, *, from_wallet=None):
+        assert from_wallet == owner, "every copy sell names the owner's wallet"
         calls.append(order)
         if len(calls) == 1:
             raise executor.ExecutionRefused("policy: router not allowed")
@@ -533,7 +540,7 @@ def test_the_gmgn_seam_maps_the_executors_outcomes(tmp_db, monkeypatch):
         raise executor.ExecutionAmbiguous("gmgn-cli timed out after 45s")
 
     monkeypatch.setattr(executor, "submit", fake_submit)
-    seam = CM.gmgn_submitter(tmp_db, RH, 2500)
+    seam = CM.gmgn_submitter(tmp_db, RH, 2500, wallet=owner)
 
     def run_at(t, pnl):
         return CM.run(tmp_db, RH, giveback_only(), fetch_holdings=lambda: {"list": [row(pnl=pnl)]},

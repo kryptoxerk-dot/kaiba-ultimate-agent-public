@@ -1824,16 +1824,34 @@ def quote_asset_is_protectable(
     # 95% of the non-native set instead of the ~28% that genuinely cannot be protected.
     # The lesson is the general one: probe the path that will do the work, not a layer
     # underneath it.
+    #
+    # 2026-10-03: protection now refuses to decide on a pool mark quoted in a third asset
+    # (``protection.settlement_mark_chains``, sol by default; journal #5048). A token whose
+    # only answer is such a pool would pass here and then sit blind, so the probe settles
+    # the mark through the same layers protection asks and refuses if none answers. Solana
+    # only: there the probe is asked about the position's OWN mint; on EVM it is asked about
+    # the quote asset, whose USD read never goes through the settlement rule.
     try:
         from kaiba.execution.watchdog import (
+            PriceQuote,
             configured_price_source_name,
+            configured_settlement_mark_chains,
+            is_foreign_mark,
             resolve_price_source,
+            settle_foreign_mark,
         )
     except Exception as exc:  # noqa: BLE001 - no reader is not a price
         return False, f"protection_reader_unavailable:{type(exc).__name__}"
     try:
         source = resolve_price_source(configured_price_source_name())
         quote = source.quote(chain, token)
+        if (chain is Chain.SOL and isinstance(quote, PriceQuote) and quote.usable
+                and chain in configured_settlement_mark_chains()
+                and is_foreign_mark(quote)):
+            quote = settle_foreign_mark(source, chain, token, quote)
+            if is_foreign_mark(quote):
+                _protectable_cache[key] = (when + int(PROTECTABLE_RETRY_S * 1000), False)
+                return False, "protection_mark_not_settled_in_native"
     except Exception as exc:  # noqa: BLE001 - a raising provider is blindness
         return False, f"protection_probe_raised:{type(exc).__name__}"
     price = getattr(quote, "price_usd", None)

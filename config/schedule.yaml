@@ -215,7 +215,7 @@ jobs:
     interval_s: 86400
     timeout_s: 1500
     chains: "sol,robinhood"
-    max_candidates: 3000
+    max_candidates: 50000   # 2026-10-03: whole active population (was a 3,000 draw)
 
   variable_study:
     # Search every populated dossier/tape variable, and every promising pair, for
@@ -387,6 +387,28 @@ jobs:
     timeout_s: 300
     wallets_per_run: 200
     max_age_days: 7
+
+  gmgn_grade:
+    # GMGN provider-grade pass (kaiba/intelligence/gmgn_grade.py run_budgeted), 2026-10-03,
+    # journal #4987: nothing ran it after 09-24, leaving 628 robinhood wallets UNSCORED one
+    # evidence point under the floor (win rate unanswered then; it answers now). Pool:
+    # provider-graded wallets + gmgn-tagged ungraded wallets; never a grade of our own; failed
+    # enrichments first; resumes from kv gmgn_grade:cursor:<chain>. No threshold changed.
+    # DISCOVERY priority, pace_s between calls: the gmgn bucket is shared with swaps and an
+    # exit may overdraw it by only 2. 2 s pace on the box budget (60 cap, 3/s refill) is ~13%
+    # of the refill and at most one of four inflight slots.
+    # Budget: 120 calls/run, 1,200 per UTC day (ops_quota) ~ 1,100 wallets/day. Timeout:
+    # 120 x (~1.5 s call + 2 s pace) ~ 7 min; the pass stops itself 15 s before the deadline.
+    # chains: robinhood only by default -- SOL trading is off by owner order and sol B grades
+    # measured not predictive out of sample; append ",sol" to re-grade sol under exact keys.
+    enabled: true
+    interval_s: 7200
+    timeout_s: 540
+    chains: robinhood
+    max_calls_per_run: 120
+    max_calls_per_day: 1200
+    pace_s: 2.0
+    period: all
 
   wallet_deepen:
     # More Helius history ONLY for paid (kaiba-wallet-v1) grades within score_margin of the
@@ -675,20 +697,25 @@ jobs:
     timeout_s: 600
 
   copy_manager:
-    # The owner's GMGN copy trades on the agent wallet (kaiba/execution/copy_manager.py).
-    # Owner 2026-09-30: "dont touch my copy trading but manage them". Policy 2026-10-01,
-    # owner-approved: GIVEBACK ONLY -- sell everything once a position has given back half
-    # its peak gain, armed when the peak reached +25%. Measured on 35.7 h of dry-run
-    # decisions: +$1,312 on $6,981 at stake after a 5pp haircut (25/30 right); trims sold
-    # runners early, the weak cut was neutral. Never buys, never touches Kaiba's own
-    # positions, honeypots, pools under $5k or dust. Caps: 3 sells per pass, 30 per UTC day.
-    # DISABLED 2026-10-02: GMGN's API now trades the owner's NEW wallets (0xcc44…, rUHr…), so it can
-    # no longer sell on the old copy-trading wallet 0x7243…, and copy_manager must never manage
-    # Kaiba's own new wallet (it reads exit_wallet_for(chain)). Re-enable only with an explicit wallet.
+    # The OWNER's GMGN copy trades on HIS wallet (kaiba/execution/copy_manager.py). Owner,
+    # 2026-10-03: "do not buy on the kaiba wallet of 0x41.. but control the copy trade sell
+    # before it rug". Never buys (SELL-only seam; the executor refuses from_wallet on a buy).
+    # Never Kaiba's wallet (risk.yaml chains.robinhood.wallet); `wallet` must be in
+    # signer-policy owned_addresses. live: true is GATED: until `gmgn-cli portfolio info`
+    # lists this wallet for robinhood (re-read every binding_ttl_s, DISCOVERY) the job runs
+    # dry and reports blocked: [wallet_not_api_bound].
+    # Policy: giveback only (owner-approved 10-01; net positive over 35.7 h dry).
+    # Rug rules ship DRY: replayed 2026-10-03 on 302 copy-book holding windows, no
+    # variant had a CI clear of zero (fast_crash 50%/15 min -$304, liquidity_collapse
+    # 40%/15 min -$32). Each firing is recorded once per cycle (system event,
+    # action=copy_manager_rule) for the forward measurement.
+    # Caps: 3 sells per pass, 30 per UTC day.
     enabled: false
     interval_s: 30
     timeout_s: 90
     chain: robinhood
+    wallet: "0x72430877378522d1b759ac721561aa9eb9e25c2b"
+    binding_ttl_s: 3600
     live: true
     tp_rungs: []
     weak_cut_enabled: false
@@ -697,6 +724,16 @@ jobs:
     min_liquidity_usd: 5000
     max_sells_per_run: 3
     max_sells_per_day: 30
+    liquidity_collapse: dry
+    liq_drop: 0.4
+    liq_window_s: 900
+    liq_price_drop: 0.3
+    migration_grace_s: 1800
+    risk_flags: dry
+    fast_crash: dry
+    crash_drop: 0.5
+    crash_window_s: 900
+    crash_min_hold_s: 300
 
   native_price:
     # One native-price sampling pass per chain (native_price.run_sampler, max_iterations=1).

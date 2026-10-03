@@ -61,7 +61,7 @@ import sqlite3
 import threading
 import time
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from decimal import Decimal, InvalidOperation
 from typing import Any, Protocol, runtime_checkable
 
@@ -234,6 +234,13 @@ class PriceQuote(BaseModel):
     venue: str | None = None
     liquidity_kind: str | None = None
     freshness_budget_s: float | None = None
+    #: For a pool mark: the asset the pool prices the token in, as the provider reported
+    #: it. ``None`` for curve, router and aggregator reads, which have no such leg.
+    quote_token: str | None = None
+    quote_symbol: str | None = None
+    #: What this mark settles in -- see :func:`settlement_of`. Set by the producer when it
+    #: knows; derived from ``source`` otherwise.
+    settlement: str | None = None
 
     @property
     def usable(self) -> bool:
@@ -261,6 +268,184 @@ class PriceQuote(BaseModel):
     @classmethod
     def unavailable(cls, note: str, source: str = "none") -> PriceQuote:
         return cls(basis=EvidenceBasis.UNAVAILABLE, note=note, source=source)
+
+
+# --------------------------------------------------------------------------------------
+# settlement: which marks may decide an exit
+# --------------------------------------------------------------------------------------
+#
+# Journal #5048 (2026-10-02). An exit is a sell INTO the chain's native asset. A pool mark
+# quoted in a third asset (Bonk, a tokenised stock, a stablecoin) is that pool's price times
+# that asset's USD price, and nothing makes it the price a sell realises. MEASURED on the
+# box, every watchdog exit with a recorded fill, |fill / trigger mark - 1| (the fill lands
+# 3-120 s after the mark, so part of every gap is the market moving):
+#
+#     sol  DexScreener pool quoted in SOL        n=24  median 16.8%   >25%: 9
+#     sol  DexScreener pool quoted in a 3rd asset n=11  median 32.9%   >25%: 6
+#     sol  Jupiter executable quote              n=15  median  6.4%   >25%: 0
+#
+# COZY (ETXqxf, Bonk CPMM) is the case in the journal: all three of its exits filled 33-48%
+# below the marks they fired on. The 80% moon-bag trim fired on a +23% mark and filled at
+# -17% vs entry; `tp1_at_2.0x` fired on a +141% mark and filled at +48%. That first sell DID
+# route through the same pool (COZY->Bonk on CPMM, Bonk->SOL on Orca, read from the
+# transaction) and still realised 15.4 Bonk/COZY against a mark that implied 23.
+#
+# ROBINHOOD DOES NOT SHOW IT, which is why the rule is per chain and starts on sol only:
+#
+#     robinhood  pool quoted in ETH/WETH         n=25  median  9.7%   >25%: 5
+#     robinhood  pool quoted in a tokenised stock n=25  median  5.1%   >25%: 2
+#     robinhood  pool quoted in USDG             n=12  median 14.5%   >25%: 2
+#
+# and robinhood has no executable quote to fall back to: past DexScreener its only layer is
+# GMGN, which in the four days to 2026-10-03 priced 777 live robinhood marks while 1,355
+# `protection_blind` events (each up to 60 s of ticks) record it refusing as the last
+# layer. 28% of robinhood live marks in those four days were foreign-pool marks, and a
+# blind position past `max_blind_s` halts entries on every chain. Turn robinhood on with
+# `protection.settlement_mark_chains` once that is measured, not before.
+
+#: A pool quoted in the asset an exit sells into.
+SETTLE_NATIVE_POOL = "native_pool"
+#: A pool quoted in anything else. NOT decision-grade on an enforcing chain.
+SETTLE_FOREIGN_POOL = "foreign_pool"
+#: A launch curve read off its own reserves -- the venue the sell would go to.
+SETTLE_CURVE = "curve"
+#: A router quote for an actual swap into the native asset.
+SETTLE_EXECUTABLE = "executable"
+#: A provider's own price with no pool we can see (GMGN). Kept decision-grade: it is the
+#: last layer that prices many positions, and vetoing it is a blindness decision this
+#: change does not have the measurement to make.
+SETTLE_AGGREGATOR = "aggregator"
+
+#: What an exit receives, per chain: the native asset as DexScreener spells a pool's quote
+#: side. MEASURED 2026-10-03 from DexScreener pair lists of our own positions' tokens:
+#: sol pools quote ``So111...112``; robinhood "ETH" pools quote the zero address (Uniswap v4
+#: native ETH) and "WETH" pools quote ``0x0bd7...ad73``; bsc pools quote WBNB ``0xbb4c...095c``.
+#: EVM entries are lower case; comparison folds case.
+NATIVE_SETTLEMENT_ASSETS: dict[Chain, frozenset[str]] = {
+    Chain.SOL: frozenset({SOL_NATIVE_MINT}),
+    Chain.ROBINHOOD: frozenset({EVM_ZERO, "0x0bd7d308f8e1639fab988df18a8011f41eacad73"}),
+    Chain.BSC: frozenset({EVM_ZERO, "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c"}),
+}
+
+#: Chains on which an exit may only be decided on a mark that settles in the native asset,
+#: when ``protection.settlement_mark_chains`` is absent. See the measurement above.
+SETTLEMENT_MARK_CHAINS_DEFAULT: frozenset[Chain] = frozenset({Chain.SOL})
+
+_SOURCE_SETTLEMENT: tuple[tuple[str, str], ...] = (
+    ("curve:", SETTLE_CURVE),
+    ("evm-venue:", SETTLE_CURVE),
+    ("jupiter:", SETTLE_EXECUTABLE),
+    ("pancake-v2:", SETTLE_EXECUTABLE),
+    ("gmgn:", SETTLE_AGGREGATOR),
+)
+
+
+def is_native_settlement_asset(chain: Chain | None, address: str | None) -> bool:
+    if chain is None or not address:
+        return False
+    known = NATIVE_SETTLEMENT_ASSETS.get(chain, frozenset())
+    text = address.strip()
+    return text in known or text.lower() in known
+
+
+def settlement_of(quote: PriceQuote | None) -> str | None:
+    """What ``quote`` settles in. ``None`` when nothing says (an injected source)."""
+    if quote is None:
+        return None
+    if quote.settlement:
+        return quote.settlement
+    for prefix, kind in _SOURCE_SETTLEMENT:
+        if quote.source.startswith(prefix):
+            return kind
+    return None
+
+
+def is_foreign_mark(quote: PriceQuote | None) -> bool:
+    """A pool mark quoted in something other than what an exit sells into."""
+    return settlement_of(quote) == SETTLE_FOREIGN_POOL
+
+
+def configured_settlement_mark_chains(
+    default: frozenset[Chain] = SETTLEMENT_MARK_CHAINS_DEFAULT,
+) -> frozenset[Chain]:
+    """``protection.settlement_mark_chains``: chain names, ``[]`` for none, absent = default.
+
+    An unreadable value falls back to the default rather than to "none": a typo must not
+    quietly put foreign-pool marks back in charge of a stop.
+    """
+    value = _protection_setting("settlement_mark_chains")
+    if value is None:
+        return frozenset(default)
+    if isinstance(value, str):
+        value = [part for part in value.replace(",", " ").split() if part]
+    if not isinstance(value, (list, tuple, set, frozenset)):
+        log.warning("protection.settlement_mark_chains=%r is not a list; using the default", value)
+        return frozenset(default)
+    chains: set[Chain] = set()
+    for item in value:
+        try:
+            chains.add(Chain(str(item).strip().lower()))
+        except ValueError:
+            log.warning("protection.settlement_mark_chains: unknown chain %r; using the default", item)
+            return frozenset(default)
+    return frozenset(chains)
+
+
+def source_leaves(root: Any, chain: Chain):
+    """The leaf sources of a configured price chain, in the order ``chain`` would ask them."""
+    seen: set[int] = set()
+
+    def walk(source):
+        if source is None or id(source) in seen:
+            return
+        seen.add(id(source))
+        if isinstance(source, FallbackPriceSource):
+            for child in source.sources:
+                yield from walk(child)
+        elif isinstance(source, ChainFirstPriceSource):
+            yield from walk(source.first.get(chain))
+            for child in source.rest:
+                yield from walk(child)
+        elif isinstance(getattr(source, "routes", None), dict):
+            yield from walk(source.routes.get(chain) or getattr(source, "fallback", None))
+        else:
+            yield source
+            yield from walk(getattr(source, "fallback", None))
+
+    yield from walk(root)
+
+
+def settle_foreign_mark(
+    source: Any, chain: Chain, token: str, quote: PriceQuote, *, deadline: float | None = None,
+) -> PriceQuote:
+    """The first native-settled answer after the pool reader, or ``quote`` itself.
+
+    The rule behind ``Watchdog._settle``, shared so the entry probe
+    (``viability.quote_asset_is_protectable``) asks the same layers protection will: a token
+    whose only mark is a foreign pool would be admitted and then sit blind. The layers after
+    the pool reader are asked in order; a layer that would route back to the pool reader is
+    skipped. ``deadline`` (``time.monotonic()``) stops asking once passed.
+    """
+    leaves = list(source_leaves(source, chain))
+    start = next(
+        (i + 1 for i, leaf in enumerate(leaves) if isinstance(leaf, ProviderPriceSource)), 0
+    )
+    for leaf in leaves[start:]:
+        if isinstance(leaf, ProviderPriceSource) or getattr(leaf, "fallback", None) is not None:
+            continue  # it would hand the question straight back to the pool reader
+        if deadline is not None and time.monotonic() >= deadline:
+            break
+        try:
+            got = leaf.quote(chain, token)
+        except Exception as exc:  # noqa: BLE001 - a dead layer is a refusal, not a crash
+            log.debug("settlement layer %r raised on %s: %s", leaf, token, exc)
+            continue
+        if not isinstance(got, PriceQuote) or not got.usable or is_foreign_mark(got):
+            continue
+        if (got.chain is not None and got.chain != chain) or (got.token is not None and got.token != token):
+            continue
+        return got
+    return quote
 
 
 @runtime_checkable
@@ -306,13 +491,19 @@ class ProviderPriceSource:
             from kaiba.providers import prices
         except Exception as exc:  # noqa: BLE001 - absent provider layer is blindness
             return PriceQuote.unavailable(f"price provider unimportable: {type(exc).__name__}", self.name)
+        native = NATIVE_SETTLEMENT_ASSETS.get(chain) or None
         try:
             # EXIT is the highest limiter priority. A price read that decides whether to
             # close a position must outrank discovery work competing for the same budget,
             # or a busy scan can make the watchdog blind exactly when it matters.
             from kaiba.core.limiter import Priority
 
-            found = prices.quote(chain, token, priority=Priority.EXIT)
+            try:
+                # The pool quoted in what a sell receives, when one is deep enough to be a
+                # market (`prices.pick_pair`); the deepest pool otherwise.
+                found = prices.quote(chain, token, priority=Priority.EXIT, prefer_quotes=native)
+            except TypeError:
+                found = prices.quote(chain, token, priority=Priority.EXIT)
         except TypeError:
             found = prices.quote(chain, token)
         except Exception as exc:  # noqa: BLE001 - a provider outage is data, not a crash
@@ -322,6 +513,18 @@ class ProviderPriceSource:
         if price is None or not price.is_finite() or price <= 0:
             note = getattr(getattr(found, "receipt", None), "note", None)
             return PriceQuote.unavailable(str(note or "provider returned no price"), self.name)
+        quote_token = getattr(found, "quote_address", None) or None
+        quote_symbol = getattr(found, "quote_symbol", None) or None
+        settlement: str | None = None
+        if getattr(found, "pair_address", None) or getattr(found, "source", "") == "dexscreener":
+            # A POOL mark. It settles natively only when the pool's other side is what an
+            # exit receives -- or when the token IS that asset (pricing SOL itself off
+            # SOL/USDC is the right pool, and `_native_usd` depends on it). A pool that
+            # did not say what it is quoted in is not evidence that it is native.
+            if is_native_settlement_asset(chain, token) or is_native_settlement_asset(chain, quote_token):
+                settlement = SETTLE_NATIVE_POOL
+            else:
+                settlement = SETTLE_FOREIGN_POOL
         return PriceQuote(
             price_usd=price,
             liquidity_usd=_dec(getattr(found, "liquidity_usd", None)),
@@ -334,6 +537,9 @@ class ProviderPriceSource:
             pool_id=getattr(found, "pair_address", None),
             venue=getattr(found, "dex_id", None),
             liquidity_kind="dex_tvl_usd" if getattr(found, "pair_address", None) else None,
+            quote_token=quote_token,
+            quote_symbol=quote_symbol,
+            settlement=settlement,
         )
 
 
@@ -1037,6 +1243,10 @@ class ExitOutcome:
     #: we could not make leaves this false, because "we could not look" and "there is
     #: nothing there" must never collapse into the same answer.
     wallet_empty: bool = False
+    #: Milliseconds the submitter spent in each step it took (wallet read, native price for
+    #: ``min_out``, the executor call). Exit timing only; empty for a submitter that does
+    #: not measure itself.
+    timing: dict[str, int] = field(default_factory=dict, compare=False)
 
     @property
     def ambiguous(self) -> bool:
@@ -1188,13 +1398,27 @@ class DefaultExitSubmitter:
     def __init__(self, conn: sqlite3.Connection, price_source: PriceSource | None = None) -> None:
         self.conn = conn
         self.price_source = price_source or NullPriceSource()
+        #: Per-call step durations, filled by ``_live``. The watchdog calls this from its
+        #: one tick thread, so one dict is enough.
+        self._timing: dict[str, int] = {}
 
     def submit_exit(
         self, position: Position, pct: Decimal, *, quote: PriceQuote, reason: str
     ) -> ExitOutcome:
+        self._timing = {}
+        started = time.monotonic()
         if position.mode is LaneMode.SHADOW:
-            return self._paper(position, pct, quote, reason)
-        return self._live(position, pct, quote, reason)
+            outcome = self._paper(position, pct, quote, reason)
+        else:
+            outcome = self._live(position, pct, quote, reason)
+        timing = {**self._timing, "total_ms": int((time.monotonic() - started) * 1000)}
+        try:
+            return replace(outcome, timing=timing)
+        except Exception:  # noqa: BLE001 - timing is diagnostics; the outcome is not
+            return outcome
+
+    def _step(self, name: str, started: float) -> None:
+        self._timing[name] = int((time.monotonic() - started) * 1000)
 
     # ------------------------------------------------------------------ paper
 
@@ -1243,7 +1467,9 @@ class DefaultExitSubmitter:
         # call.
         wallet = exit_wallet_for(position.chain)
         if wallet:
+            step = time.monotonic()
             held = wallet_token_units(position.chain, wallet, position.token, decimals)
+            self._step("wallet_read_ms", step)
             if held is not None and held < qty:
                 if held <= 0:
                     # Flagged structurally, not by prose: the tick handler has to tell
@@ -1260,7 +1486,9 @@ class DefaultExitSubmitter:
                 )
                 qty = held
 
+        step = time.monotonic()
         min_out = self._min_out(position, qty, decimals, quote)
+        self._step("min_out_ms", step)
         if min_out is None:
             return ExitOutcome(
                 False,
@@ -1280,12 +1508,16 @@ class DefaultExitSubmitter:
             min_out=min_out,
             slippage_bps=slippage_bps,
         )
+        step = time.monotonic()
         try:
             result = executor.submit(order, self.conn)
         except executor.ExecutionAmbiguous as exc:
+            self._step("executor_ms", step)
             return ExitOutcome(False, OrderState.UNKNOWN, order.order_id, str(exc)[:300])
         except Exception as exc:  # noqa: BLE001 - refusals, rate limits and surprises alike
+            self._step("executor_ms", step)
             return ExitOutcome(False, OrderState.FAILED, order.order_id, f"{type(exc).__name__}: {exc}"[:300])
+        self._step("executor_ms", step)
         ok = result.state in {OrderState.SUBMITTED, OrderState.FILLED, OrderState.PARTIAL}
         return ExitOutcome(ok, result.state, result.order_id, result.detail or "")
 
@@ -1423,6 +1655,9 @@ class TickReport:
     working watchdog from a stalled one."""
 
     checked: int = 0
+    #: Of ``checked``, how many were LIVE/CANARY (real money). ``None`` = not counted, which
+    #: :meth:`Watchdog._note_overrun` treats as live; ``tick`` always sets it.
+    live_checked: int | None = None
     blind: int = 0
     #: Of the blind ones, how many are past ``protection.max_blind_s``, and the worst
     #: blind duration this tick. These two are what separates "a provider hiccuped" from
@@ -1456,6 +1691,7 @@ class TickReport:
     def as_payload(self) -> dict[str, Any]:
         return {
             "checked": self.checked,
+            "live_checked": self.live_checked,
             "blind": self.blind,
             "blind_over_budget": self.blind_over_budget,
             "longest_blind_s": self.longest_blind_s,
@@ -1571,8 +1807,28 @@ class Watchdog:
         max_blind_s: int | None = None,
         halt_entries_on_blind_timeout: bool | None = None,
         standing_runner: Any = None,
+        settlement_chains: Any = None,
     ) -> None:
         self.conn = conn or get_conn()
+        #: Chains whose exits may only be decided on a native-settled mark. ``None`` means
+        #: "re-read ``protection.settlement_mark_chains`` every tick"; a value pins it.
+        self._settlement_pinned: frozenset[Chain] | None = (
+            None if settlement_chains is None else frozenset(settlement_chains)
+        )
+        self._settlement_chains: frozenset[Chain] = (
+            self._settlement_pinned
+            if self._settlement_pinned is not None
+            else configured_settlement_mark_chains()
+        )
+        #: This tick's foreign-pool marks that a native-settled mark replaced, keyed like
+        #: ``_quote_cache``. Diagnostics only; cleared with the cache.
+        self._set_aside: dict[tuple[Chain, str], PriceQuote] = {}
+        #: When this tick's quote for a key reached the watchdog (epoch ms). Exit timing.
+        self._quote_fetched_ms: dict[tuple[Chain, str], int] = {}
+        #: position_id -> (last ``mark_set_aside`` event ms, the sale reason it carried).
+        self._set_aside_noted: dict[str, tuple[int, str | None]] = {}
+        #: Epoch ms the current tick started. Exit timing.
+        self._tick_started_ms: int | None = None
         self.price_source: PriceSource = price_source or NullPriceSource()
         #: Builds one price source per prefetch WORKER THREAD. ``None`` means the workers
         #: share ``price_source``, which is only safe for a source that holds no SQLite
@@ -1753,10 +2009,17 @@ class Watchdog:
 
     # ------------------------------------------------------------------ tick
 
+    def settlement_chains(self) -> frozenset[Chain]:
+        """Chains whose exits are decided only on native-settled marks, this tick."""
+        return self._settlement_chains
+
     def tick(self) -> TickReport:
         started = time.monotonic()
+        self._tick_started_ms = now_ms()
         report = TickReport()
         cfg = self.config()
+        if self._settlement_pinned is None:
+            self._settlement_chains = configured_settlement_mark_chains()
         try:
             exits, updates, seen, cursor = self.drain()
         except Exception as exc:  # noqa: BLE001 - a bad cursor must not stop protection
@@ -1815,8 +2078,11 @@ class Watchdog:
                 level="warn",
             )
 
+        report.live_checked = 0
         for position in positions:
             report.checked += 1
+            if position.mode is not LaneMode.SHADOW:
+                report.live_checked += 1
             try:
                 self._check_position(position, cfg, report)
             except Exception as exc:  # noqa: BLE001 - one bad position never stops the loop
@@ -1864,7 +2130,30 @@ class Watchdog:
         until an operator resumes. Exits are never gated by this; they are what it guards.
         """
         budget_ms = int(float(cfg.poll_interval_s) * 1000)
-        if budget_ms <= 0 or report.duration_ms <= budget_ms:
+        # A tick that checked NO live position cannot have made a stop late, and with no
+        # live inventory `_prefetch_quotes` gives the paper book the whole interval BY
+        # DESIGN. MEASURED 2026-10-03 12:16 CST: 8 open positions, all shadow, 19-26 s ticks
+        # against 12 s -> `protection_overrun` halted live entries on every chain; halted
+        # entries meant no live position, so every later tick was paper-only again and the
+        # halt renewed itself. Such a tick counts as healthy, so the halt can lift; a live
+        # position opened later bounds paper work again and is judged on its own ticks.
+        paper_only = report.live_checked == 0
+        if budget_ms <= 0 or report.duration_ms <= budget_ms or paper_only:
+            if paper_only and budget_ms > 0 and report.duration_ms > budget_ms:
+                self._emit(
+                    "tick_overrun",
+                    {
+                        "duration_ms": report.duration_ms,
+                        "poll_interval_ms": budget_ms,
+                        "positions": report.checked,
+                        "live_positions": 0,
+                        "consecutive": 0,
+                        "halting_entries": False,
+                        "note": "paper-only tick: no live stop was checked, so none was late; "
+                                "not counted toward the entry halt",
+                    },
+                    level="info",
+                )
             self._overruns = 0
             self._healthy_ticks += 1
             if self._healthy_ticks >= OVERRUN_RECOVER_TICKS:
@@ -2093,8 +2382,17 @@ class Watchdog:
                 quote.liquidity_kind if liquidity else None)
 
     def _quote_memory(self, position: Position) -> tuple[PriceQuote | None, PriceQuote | None]:
+        price, liquidity, _ = self._read_quote_memory(position)
+        return price, liquidity
+
+    def _read_quote_memory(
+        self, position: Position,
+    ) -> tuple[PriceQuote | None, PriceQuote | None, dict[str, Any]]:
+        """The last accepted price, the liquidity baseline, and the raw record (timing keys)."""
         row = fetch_one(self.conn, "SELECT value FROM kv WHERE key=?", (self._quote_memory_key(position),))
         raw = jload(row["value"], {}) if row else {}
+        if not isinstance(raw, dict):
+            raw = {}
         quotes: list[PriceQuote | None] = []
         for key in ("price", "liquidity"):
             try:
@@ -2113,23 +2411,106 @@ class Watchdog:
                 quotes.append(quote if valid else None)
             except (KeyError, TypeError, ValueError):
                 quotes.append(None)
-        return quotes[0], quotes[1]
+        return quotes[0], quotes[1], raw
+
+    @staticmethod
+    def _price_since(
+        quote: PriceQuote, last_price: PriceQuote | None, memory: dict[str, Any],
+    ) -> tuple[int, int | None]:
+        """``(price_since_ms, prev_price_since_ms)`` for exit timing.
+
+        When the mark's PRICE first appeared, and when the price before it first appeared.
+        A feed that repeats one number for 36 s and then jumps is a late stop that no poll
+        interval can fix (``onchain_pool``'s header: 61% of consecutive robinhood marks
+        identical); this is how each exit records how stale its trigger price was.
+        """
+        def stamp(key: str) -> int | None:
+            try:
+                value = int(memory.get(key))
+            except (TypeError, ValueError):
+                return None
+            return value if value > 0 else None
+
+        if last_price is not None and last_price.price_usd == quote.price_usd:
+            return (stamp("price_since_ms") or int(last_price.observed_ms)), stamp("prev_price_since_ms")
+        before = stamp("price_since_ms") or (int(last_price.observed_ms) if last_price else None)
+        return int(quote.observed_ms), before
 
     def _remember_quote(
         self, position: Position, state: WatchdogState, quote: PriceQuote,
-        previous: PriceQuote | None,
+        previous: PriceQuote | None, *, price_since_ms: int | None = None,
+        prev_price_since_ms: int | None = None,
     ) -> None:
         if self._quote_identity(quote) is None:
             return
         if quote.liquidity_usd is not None and self._quote_identity(quote, liquidity=True) is not None:
             previous = quote
             state.prev_liquidity_usd = quote.liquidity_usd
+        record: dict[str, Any] = {
+            "price": quote.model_dump(mode="json"),
+            "liquidity": previous.model_dump(mode="json") if previous else None,
+        }
+        if price_since_ms is not None:
+            record["price_since_ms"] = int(price_since_ms)
+        if prev_price_since_ms is not None:
+            record["prev_price_since_ms"] = int(prev_price_since_ms)
         upsert(self.conn, "kv", {
             "key": self._quote_memory_key(position),
-            "value": jdump({"price": quote.model_dump(mode="json"),
-                            "liquidity": previous.model_dump(mode="json") if previous else None}),
+            "value": jdump(record),
             "updated_ms": now_ms(),
         }, ["key"])
+
+    def _note_set_aside(
+        self, position: Position, state: WatchdogState, cfg: ProtectionConfig,
+        foreign: PriceQuote, used: PriceQuote | None,
+    ) -> None:
+        """Record a foreign-pool mark we refused to decide on. Never raises, never decides.
+
+        Written the first time the foreign mark ALONE would have sold for a given reason
+        (that is the counterfactual the operator needs to count), and otherwise at most once
+        a minute per position.
+        """
+        try:
+            probe = evaluate(state.to_protection(), price_usd=foreign.price_usd,
+                             executable_quote_usd=foreign.executable_quote_usd,
+                             cfg=self._position_cfg(cfg, state))
+            ts = now_ms()
+            would = probe.reason if probe.sells else None
+            last, last_would = self._set_aside_noted.get(position.position_id, (None, None))
+            fresh_sale = would is not None and would != last_would
+            if not fresh_sale and last is not None and ts - last < self.blind_warn_interval_s * 1000:
+                return
+            self._set_aside_noted[position.position_id] = (ts, would)
+            gap = None
+            if used is not None and used.price_usd and foreign.price_usd:
+                gap = f"{(foreign.price_usd / used.price_usd - 1) * 100:.2f}"
+            self._emit(
+                "mark_set_aside",
+                {
+                    "position_id": position.position_id,
+                    "mode": position.mode.value,
+                    "foreign": {
+                        "source": foreign.source, "price_usd": _s(foreign.price_usd),
+                        "quote_symbol": foreign.quote_symbol, "quote_token": foreign.quote_token,
+                        "pool_id": foreign.pool_id, "liquidity_usd": _s(foreign.liquidity_usd),
+                        "observed_ms": foreign.observed_ms,
+                    },
+                    "used": None if used is None else {
+                        "source": used.source, "price_usd": _s(used.price_usd),
+                        "settlement": settlement_of(used), "observed_ms": used.observed_ms,
+                    },
+                    "foreign_vs_used_pct": gap,
+                    "foreign_alone_would_sell": bool(probe.sells),
+                    "foreign_alone_reason": probe.reason if probe.sells else None,
+                    "blind": used is None,
+                    "rule": "exits are decided only on marks that settle in the native asset",
+                },
+                level="warn" if probe.sells or used is None else "info",
+                chain=position.chain,
+                subject=position.token,
+            )
+        except Exception:  # noqa: BLE001 - diagnostics must never break a tick
+            log.debug("could not note a set-aside mark", exc_info=True)
 
     def _comparable(self, quote: PriceQuote, previous: PriceQuote | None) -> bool:
         identity = self._quote_identity(quote, liquidity=True)
@@ -2154,28 +2535,52 @@ class Watchdog:
             return impact <= get_risk().bounds.max_slippage_bps
         return True
 
-    def _alternative_sources(self, chain: Chain):
-        """Walk configured fallback boundaries, not a new provider stack."""
-        seen: set[int] = set()
+    def _alternative_sources(self, chain: Chain, root: Any = None):
+        """Walk configured fallback boundaries, not a new provider stack.
 
-        def walk(source):
-            if source is None or id(source) in seen:
-                return
-            seen.add(id(source))
-            if isinstance(source, FallbackPriceSource):
-                for child in source.sources:
-                    yield from walk(child)
-            elif isinstance(source, ChainFirstPriceSource):
-                yield from walk(source.first.get(chain))
-                for child in source.rest:
-                    yield from walk(child)
-            elif isinstance(getattr(source, "routes", None), dict):
-                yield from walk(source.routes.get(chain) or getattr(source, "fallback", None))
-            else:
-                yield source
-                yield from walk(getattr(source, "fallback", None))
+        Yields in the order the chain itself would ask. ``root`` defaults to this
+        watchdog's source; a prefetch worker passes its own per-thread copy.
+        """
+        yield from source_leaves(self.price_source if root is None else root, chain)
 
-        yield from walk(self.price_source)
+    def _settle(
+        self, source: Any, chain: Chain, token: str, quote: PriceQuote, *, may_overrun: bool = True
+    ) -> PriceQuote:
+        """A native-settled mark for ``token`` when the chain's answer was a foreign pool.
+
+        Only on a chain in :meth:`settlement_chains`, and only for a usable foreign-pool
+        mark; anything else is returned untouched. The rest of the configured chain is then
+        asked IN ORDER from the layer after the pool reader -- on sol that is Jupiter's
+        executable quote and then GMGN; on bsc the Pancake router and then GMGN; on
+        robinhood GMGN. Everything before the pool reader already refused (that is why the
+        pool answered), so it is not asked twice, and no layer that would route back to
+        the pool reader is asked at all.
+
+        Returns the first usable, same-scope, non-foreign answer, remembering the foreign
+        mark for diagnostics. Returns the foreign mark itself when nothing else priced;
+        :meth:`_check_position` then refuses to decide on it (the position is blind this
+        tick, and says why). ``may_overrun=False`` stops asking once the tick's quote
+        deadline has passed -- used for shadow positions, which must never spend live
+        protection's interval.
+        """
+        if chain not in self._settlement_chains or not quote.usable or not is_foreign_mark(quote):
+            return quote
+        self._set_aside[(chain, token)] = quote
+        return settle_foreign_mark(
+            source, chain, token, quote,
+            deadline=None if may_overrun else self._quote_deadline,
+        )
+
+    def _settlement_veto(self, chain: Chain, quote: PriceQuote) -> PriceQuote | None:
+        """The UNAVAILABLE stand-in for a foreign-pool mark on an enforcing chain, or None."""
+        if chain not in self._settlement_chains or not quote.usable or not is_foreign_mark(quote):
+            return None
+        asset = quote.quote_symbol or quote.quote_token or "unreported"
+        return quote.model_copy(update={
+            "basis": EvidenceBasis.UNAVAILABLE,
+            "note": (f"mark_not_settled_in_native: pool quoted in {asset}, and no executable, "
+                     f"curve or native-pool layer priced it; " + (quote.note or ""))[:400],
+        })
 
     def _validate_quote(
         self, position: Position, state: WatchdogState, cfg: ProtectionConfig,
@@ -2208,6 +2613,8 @@ class Watchdog:
                 continue
             if not isinstance(alternative, PriceQuote) or not alternative.usable:
                 continue
+            if position.chain in self._settlement_chains and is_foreign_mark(alternative):
+                continue  # corroboration must meet the same bar as the mark it replaces
             if alternative.chain != position.chain or alternative.token != position.token:
                 continue
             if self._quote_identity(alternative) == identity:
@@ -2238,22 +2645,38 @@ class Watchdog:
             save_state(self.conn, state)
             return
 
-        last_price, previous = self._quote_memory(position)
+        last_price, previous, memory = self._read_quote_memory(position)
         original = self._quote(position)
-        quote = self._validate_quote(position, state, cfg, original, last_price, previous)
+        # A foreign-pool mark never reaches `evaluate` on an enforcing chain: when no
+        # settled layer priced it, the position is blind this tick and says why.
+        vetoed = self._settlement_veto(position.chain, original)
+        quote = (
+            vetoed if vetoed is not None
+            else self._validate_quote(position, state, cfg, original, last_price, previous)
+        )
+        set_aside = self._set_aside.get((position.chain, position.token))
         state.quote_evidence = {
             "quote_provenance": quote.model_dump(mode="json"),
             "previous_liquidity_usd": _s(previous.liquidity_usd if previous else state.prev_liquidity_usd),
             "previous_liquidity_provenance": previous.model_dump(mode="json") if previous else None,
             "liquidity_comparable": self._comparable(quote, previous),
             "rejected_quote": original.model_dump(mode="json") if quote is not original else None,
+            "settlement": settlement_of(original if vetoed is not None else quote),
         }
+        if set_aside is not None and set_aside is not original:
+            state.quote_evidence["set_aside_quote"] = set_aside.model_dump(mode="json")
+        if set_aside is not None:
+            self._note_set_aside(position, state, cfg, set_aside, None if vetoed is not None else quote)
         if not quote.usable:
             # A PAPER position nobody can price is latency, not learning. Checked before
             # the blind bookkeeping so an abandoned one stops costing the rotation a real
             # fetch on the very next tick. Live positions are never eligible -- see
             # `_abandon_unpriceable_shadow`.
-            if self._abandon_unpriceable_shadow(position, quote):
+            #
+            # NOT for a settlement veto: that position HAS a price, just not one an exit
+            # may be decided on, and a shadow walk cut short by the tick deadline must not
+            # close a paper position that the next tick would have priced.
+            if vetoed is None and self._abandon_unpriceable_shadow(position, quote):
                 return
             report.blind += 1
             self._blind(position, state, (quote.invalid_reason or "price_unavailable") + "; "
@@ -2332,6 +2755,7 @@ class Watchdog:
 
         protection = state.to_protection()
         comparable = self._comparable(quote, previous)
+        price_since_ms, prev_price_since_ms = self._price_since(quote, last_price, memory)
         action = evaluate(
             protection,
             price_usd=quote.price_usd,
@@ -2343,19 +2767,31 @@ class Watchdog:
             last_trade_ms=self._last_trade_ms(position),
             cfg=self._position_cfg(cfg, state),
         )
+        decided_ms = now_ms()
         state.absorb(protection)
         if self._quote_identity(quote) != self._quote_identity(last_price):
             self._emit("quote_source_changed", {
                 "position_id": position.position_id, **state.quote_evidence,
             }, chain=position.chain, subject=position.token)
-        self._remember_quote(position, state, quote, previous)
+        self._remember_quote(position, state, quote, previous, price_since_ms=price_since_ms,
+                             prev_price_since_ms=prev_price_since_ms)
 
         pct, reason = self._combine(action.pct if action.sells else None, action.reason, state)
         if pct is None:
             save_state(self.conn, state)
             self._sync_standing(position, state, cfg, report)
             return
-        self._do_exit(position, state, pct, reason, quote, action.kind, report)
+        timing = {
+            "tick_started_ms": self._tick_started_ms,
+            "mark_observed_ms": int(quote.observed_ms),
+            "mark_fetched_ms": self._quote_fetched_ms.get((position.chain, position.token)),
+            "previous_mark_observed_ms": int(last_price.observed_ms) if last_price else None,
+            "price_since_ms": price_since_ms,
+            "prev_price_since_ms": prev_price_since_ms,
+            "decided_ms": decided_ms,
+            "poll_interval_ms": int(float(cfg.poll_interval_s or 0) * 1000),
+        }
+        self._do_exit(position, state, pct, reason, quote, action.kind, report, timing=timing)
         save_state(self.conn, state)
         # After a trim the ladder has changed, so the mirror is stale until this runs.
         self._sync_standing(position, state, cfg, report, force=True)
@@ -2573,6 +3009,8 @@ class Watchdog:
         second serial provider call.
         """
         self._quote_cache = {}
+        self._set_aside = {}
+        self._quote_fetched_ms = {}
         unique = {(pos.chain, pos.token) for pos in positions}
         if len(unique) < 2:
             return
@@ -2597,14 +3035,21 @@ class Watchdog:
                 worker.source = built
             return built
 
+        live_set = set(live_keys)
+
         def one(key: tuple[Chain, str]) -> tuple[tuple[Chain, str], PriceQuote]:
             chain, token = key
+            here = source()
             try:
-                got = source().quote(chain, token)
+                got = here.quote(chain, token)
             except Exception as exc:  # noqa: BLE001 - one dead quote is blindness for one position
                 return key, PriceQuote.unavailable(f"price source raised {type(exc).__name__}")
             if not isinstance(got, PriceQuote):
                 return key, PriceQuote.unavailable(f"price source returned {type(got).__name__}")
+            # Same worker, same per-thread source: the settlement layers run concurrently
+            # with the rest of the book instead of serially in the decision loop.
+            got = self._settle(here, chain, token, got, may_overrun=key in live_set)
+            self._quote_fetched_ms[key] = now_ms()
             return key, got
 
         def fetch(keys: list[tuple[Chain, str]]) -> None:
@@ -2668,6 +3113,11 @@ class Watchdog:
             return PriceQuote.unavailable(f"price source raised {type(exc).__name__}")
         if not isinstance(quote, PriceQuote):
             return PriceQuote.unavailable(f"price source returned {type(quote).__name__}")
+        quote = self._settle(
+            self.price_source, position.chain, position.token, quote,
+            may_overrun=position.mode is not LaneMode.SHADOW,
+        )
+        self._quote_fetched_ms[(position.chain, position.token)] = now_ms()
         return quote
 
     def _blind(
@@ -3199,6 +3649,108 @@ class Watchdog:
         )
         return True
 
+    def _emit_exit_timing(
+        self,
+        position: Position,
+        state: WatchdogState,
+        *,
+        pct: Decimal,
+        reason: str,
+        kind: ProtectionKind,
+        quote: PriceQuote,
+        outcome: ExitOutcome,
+        timing: dict[str, Any] | None,
+        submit_started_ms: int,
+        submit_returned_ms: int,
+    ) -> None:
+        """One ``exit_timing`` event per exit attempt that reached the submitter.
+
+        Journal #4997: robinhood stops closed a median 83 s after the tape's first -30%
+        print against a 12 s poll, and nothing recorded where the time went. This stamps
+        every step this process owns -- when the trigger mark was observed, when it reached
+        us, when the tick started, when it was decided, when the submit started and
+        returned, and what the submitter spent inside -- and carries ``order_id`` so
+        confirmation can be joined from ``orders`` later. ``kaiba.learning.exit_latency``
+        reads it back. ``dedupe_key`` is ``exit_timing:<position>:<submit ms>:<attempt>``,
+        which also makes the events findable by index rather than by scanning ``system``.
+
+        Diagnostics only: it never raises and nothing reads it to decide anything.
+        """
+        try:
+            t = dict(timing or {})
+            observed = t.get("mark_observed_ms") or int(quote.observed_ms)
+            decided = t.get("decided_ms") or submit_started_ms
+
+            def gap(later: Any, earlier: Any) -> int | None:
+                if later is None or earlier is None:
+                    return None
+                return int(later) - int(earlier)
+
+            price_since = t.get("price_since_ms")
+            prev_since = t.get("prev_price_since_ms")
+            outcome_label = (
+                "ambiguous" if outcome.ambiguous else ("submitted" if outcome.ok else "failed")
+            )
+            set_aside = self._set_aside.get((position.chain, position.token))
+            payload = {
+                "version": 1,
+                "position_id": position.position_id,
+                "order_id": outcome.order_id,
+                "outcome": outcome_label,
+                "order_state": outcome.state.value if outcome.state else None,
+                "mode": position.mode.value,
+                "lane": position.lane.value,
+                "reason": reason,
+                "kind": kind.value,
+                "pct": str(pct),
+                "attempt": int(state.exit_attempts),
+                "mark": {
+                    "source": quote.source,
+                    "settlement": settlement_of(quote),
+                    "price_usd": _s(quote.price_usd),
+                    "observed_ms": observed,
+                    "fetched_ms": t.get("mark_fetched_ms"),
+                    "previous_observed_ms": t.get("previous_mark_observed_ms"),
+                    "price_since_ms": price_since,
+                    "prev_price_since_ms": prev_since,
+                    "set_aside_source": set_aside.source if set_aside is not None else None,
+                },
+                "ms": {
+                    "tick_started": t.get("tick_started_ms"),
+                    "decided": decided,
+                    "submit_started": submit_started_ms,
+                    "submit_returned": submit_returned_ms,
+                },
+                "segments_ms": {
+                    "mark_age_at_decision": gap(decided, observed),
+                    "fetch_to_decision": gap(decided, t.get("mark_fetched_ms")),
+                    "tick_to_decision": gap(decided, t.get("tick_started_ms")),
+                    "previous_mark_to_mark": gap(observed, t.get("previous_mark_observed_ms")),
+                    "price_unchanged_at_decision": gap(decided, price_since),
+                    # Only meaningful when THIS mark changed the price: how long the price
+                    # before it had been showing. The audit's "held 36 s, then jumped".
+                    "prev_price_held": (
+                        gap(observed, prev_since)
+                        if price_since is not None and int(price_since) == int(observed) else None
+                    ),
+                    "decision_to_submit": gap(submit_started_ms, decided),
+                    "submit_call": gap(submit_returned_ms, submit_started_ms),
+                },
+                "submitter_ms": dict(outcome.timing or {}),
+                "poll_interval_ms": t.get("poll_interval_ms"),
+            }
+            self._emit(
+                "exit_timing",
+                payload,
+                chain=position.chain,
+                subject=position.token,
+                dedupe_key=(
+                    f"exit_timing:{position.position_id}:{submit_started_ms}:{int(state.exit_attempts)}"
+                ),
+            )
+        except Exception:  # noqa: BLE001 - timing is diagnostics, never an exit failure
+            log.debug("could not emit exit timing", exc_info=True)
+
     def _do_exit(
         self,
         position: Position,
@@ -3208,6 +3760,8 @@ class Watchdog:
         quote: PriceQuote,
         kind: ProtectionKind,
         report: TickReport,
+        *,
+        timing: dict[str, Any] | None = None,
     ) -> None:
         ts = now_ms()
         if state.exit_final:
@@ -3300,12 +3854,19 @@ class Watchdog:
             "position_id": position.position_id, "reason": reason, "pct": str(pct),
             **state.quote_evidence,
         }, chain=position.chain, subject=position.token)
+        submit_started_ms = now_ms()
         outcome = self.submitter.submit_exit(position, pct, quote=quote, reason=reason)
+        submit_returned_ms = now_ms()
         state.exit_attempts += 1
         state.exit_order_id = outcome.order_id
         state.exit_state = outcome.state.value if outcome.state else None
         state.exit_pct = pct
         state.exit_reason = reason
+        self._emit_exit_timing(
+            position, state, pct=pct, reason=reason, kind=kind, quote=quote, outcome=outcome,
+            timing=timing, submit_started_ms=submit_started_ms,
+            submit_returned_ms=submit_returned_ms,
+        )
 
         if outcome.ambiguous:
             state.exit_retry_after_ms = None
@@ -3559,6 +4120,8 @@ __all__ = [
     "CURSOR_KEY",
     "MAX_BLIND_HALT_ENTRIES_DEFAULT",
     "MAX_BLIND_S_DEFAULT",
+    "NATIVE_SETTLEMENT_ASSETS",
+    "SETTLEMENT_MARK_CHAINS_DEFAULT",
     "DefaultExitSubmitter",
     "ExitOutcome",
     "ExitRequest",
@@ -3577,6 +4140,9 @@ __all__ = [
     "configured_max_blind_halt_entries",
     "configured_max_blind_s",
     "configured_price_source_name",
+    "configured_settlement_mark_chains",
+    "is_foreign_mark",
+    "settlement_of",
     "load_state",
     "prefetch_source_factory_for",
     "read_cursor",

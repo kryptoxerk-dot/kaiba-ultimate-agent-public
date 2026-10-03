@@ -1576,12 +1576,70 @@ def normalize_security(
     return out
 
 
+#: Market properties that only ``token info`` carries and that move with every trade.
+#: They keep ``token info``'s OWN receipt instead of the merged one.
+#:
+#: MEASURED 2026-10-02/03 on the live box (journal #4981): 20 approved live entries in 7
+#: days (robinhood 16, sol 4) placed no order because ``engine._plan_min_out`` refused
+#: them ``token_price_stale`` at 304-601 s against the 120 s price budget. Each of those
+#: dossiers had been rebuilt 0.9-46.9 s before the plan; the price in it was seconds old.
+#: The age was the merge's: ``_merged_receipt`` stamps the merge with its OLDEST half, and
+#: ``token security`` is cached 900 s (+3600 s grace), so a fresh ``token info`` price
+#: inherited a 5-15 minute old ``observed_at_ms`` -- and, past 900 s, a STALE basis.
+#: ``token security`` carries none of these fields (no ``price``, supply, or cap on any
+#: recorded body), so the merged clock is the security clock, not the price's.
+#:
+#: ``liquidity_usd`` and ``holder_count`` come from ``token info`` too and are mis-stamped
+#: the same way; they are deliberately NOT listed. Re-stamping liquidity feeds
+#: ``viability``'s depth read and therefore live sizing, which is a separate decision.
+INFO_MARKET_PROPS: tuple[str, ...] = ("price_usd", "market_cap_usd")
+
+
+class SecurityProps(dict):
+    """The merged property map, plus the receipt that actually observed each market field.
+
+    A plain ``dict`` to every reader that does not know about ``field_receipts``, so the
+    contract (``data, receipt = security_properties(...)``) is unchanged. A reader that
+    does -- ``dyor.collect_gmgn`` -- gives each property named here its own receipt
+    instead of the merged one. Only :data:`INFO_MARKET_PROPS` are ever named.
+    """
+
+    def __init__(self, props: Mapping[str, Any], field_receipts: Mapping[str, Receipt] | None = None):
+        super().__init__(props)
+        self.field_receipts: dict[str, Receipt] = dict(field_receipts or {})
+
+
+def _market_field_receipts(
+    props: Mapping[str, Any], sec: GmgnResult, info: GmgnResult, chain: Chain | str
+) -> dict[str, Receipt]:
+    """``{prop: token info's receipt}`` for each market field ``token info`` alone supplies.
+
+    A property qualifies only when normalising the ``token info`` body BY ITSELF reproduces
+    the merged value exactly. That is the provenance test: if ``token security`` had
+    contributed to it (it carries none of these today, but this must not depend on that),
+    or the value needed both bodies, the two would differ and the merged receipt -- the
+    honest, older one -- stands. Nothing is invented: the receipt handed back is the very
+    one ``token info`` returned, basis included, so a ``token info`` served from its own
+    stale grace still reads STALE.
+    """
+    if not (sec.ok and info.ok):
+        # One half only: the merged receipt already IS that half's receipt.
+        return {}
+    alone = normalize_security(info.data, chain=chain)
+    out: dict[str, Receipt] = {}
+    for prop in INFO_MARKET_PROPS:
+        if prop in props and prop in alone and alone[prop] == props[prop]:
+            out[prop] = info.receipt
+    return out
+
+
 def _merged_receipt(parts: Sequence[Receipt], note: str) -> Receipt:
     """One receipt for a merged read, honest about its *weakest* contributor.
 
     Basis is the worst of the parts and ``observed_at_ms`` the oldest, because a merged
     view is exactly as fresh as its stalest half and ``Measure.stale`` is what the
-    execution engine reads.
+    execution engine reads. The market fields ``token info`` alone supplies are the
+    exception and carry that read's own receipt -- see :data:`INFO_MARKET_PROPS`.
     """
     order = {
         EvidenceBasis.PROVIDER_REPORTED: 0,
@@ -1670,7 +1728,10 @@ def security_properties(
         note += f"; scale assumed for {','.join(sorted(SCALE_UNVERIFIED))}"
     if dropped:
         note += f"; dropped {'; '.join(dropped[:2])}"
-    return GmgnResult(props, _merged_receipt(parts, note))
+    own = _market_field_receipts(props, sec, info, chain)
+    if own:
+        note += f"; {','.join(sorted(own))} carry token.info's own receipt"
+    return GmgnResult(SecurityProps(props, own), _merged_receipt(parts, note))
 
 
 # ----------------------------------------------------------------------------- market
@@ -2129,6 +2190,7 @@ __all__ = [
     "DEFAULT_TIMEOUT_S",
     "FREE_PLAN_WEIGHT",
     "GMGN_WEIGHTS",
+    "INFO_MARKET_PROPS",
     "PLAN_NOTE",
     "PROVIDER",
     "SCALE_UNVERIFIED",
@@ -2138,6 +2200,7 @@ __all__ = [
     "TRENCHES_ROW_ENDPOINT",
     "Failure",
     "GmgnResult",
+    "SecurityProps",
     "account_info",
     "cli_argv",
     "credential_source",

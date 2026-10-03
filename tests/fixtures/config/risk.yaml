@@ -19,7 +19,7 @@ chains:
     enabled: true
     bankroll_base_units: 8000000000
     max_position_base_units: 830000000
-    min_position_base_units: 830000000
+    min_position_base_units: 370000000
     gas_reserve_base_units: 50000000
     daily_loss_stop_base_units: 800000000
     max_exposure_pct: 90.0
@@ -28,7 +28,7 @@ chains:
     enabled: true
     bankroll_base_units: 360000000000000000
     max_position_base_units: 37037037037037037
-    min_position_base_units: 37037037037037037
+    min_position_base_units: 16700000000000000
     gas_reserve_base_units: 10000000000000000
     daily_loss_stop_base_units: 36000000000000000
     max_exposure_pct: 90.0
@@ -169,6 +169,11 @@ lanes:
       max_age_s: 1800
       min_liquidity_usd: 5000
 protection:
+  # 2026-10-03: entries reserve open positions' + the new ticket's stop exposure against the
+  # remaining daily budget (SOL 10-02 closed at 206% of its stop). 0 = off.
+  daily_stop_reserve_pct: 0.40
+  # Paper lanes skip live-money brakes; bounded by this many open paper positions per lane.
+  shadow_max_open_per_lane: 5
   onchain_price_log: true
   onchain_price_log_min_interval_s: 10
   onchain_price_log_retention_days: 14
