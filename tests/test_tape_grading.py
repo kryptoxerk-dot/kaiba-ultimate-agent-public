@@ -21,7 +21,7 @@ from kaiba.core.schemas import Archetype, Chain, EventKind, EvidenceBasis, Grade
 from kaiba.execution import lanes
 from kaiba.intelligence import grade, tracker
 
-SOL_WALLET = "CJF7MNqb9xv1XrTs5St1Du5JuQXLsfFBB137vmYRKpnb"
+SOL_WALLET = "Bnd5oBSWpPpXoaWTckgXTVx9TCKkX5GyVqxcrwBzUYsB"
 SOL_WALLET_2 = "3JUdoRHLtKkNqHG1ceL9NvGA4ketUcQJTJDf7keaJmaH"
 SOL_WALLET_3 = "kv9h5rzPPL6bS2MXbnTzA1imRohMKF8pqFd1UP1aQ2U"
 BSC_WALLET = "0x3bc82d3d920208f5f0590319494012599768b1fe"

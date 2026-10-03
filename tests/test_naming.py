@@ -25,7 +25,7 @@ from kaiba.execution import lanes
 from kaiba.intelligence import grade, naming, tracker
 from kaiba.intelligence.naming import WalletFacts
 
-SOL_A = "CJF7MNqb9xv1XrTs5St1Du5JuQXLsfFBB137vmYRKpnb"
+SOL_A = "Bnd5oBSWpPpXoaWTckgXTVx9TCKkX5GyVqxcrwBzUYsB"
 SOL_B = "5Q544fKrFoe6tsEbD7S8EmxGTJYAKtTVhAW5Q5pge4j1"
 SOL_C = "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU"
 SOL_D = "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM"

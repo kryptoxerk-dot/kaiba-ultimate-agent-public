@@ -8,7 +8,7 @@ from kaiba.core.config import load_risk
 from kaiba.core.schemas import EVM_ZERO, Chain, Lane, LaneMode, OrderState, Side
 from kaiba.execution import executor, policy
 
-SOL_TOKEN = 'CJF7MNqb9xv1XrTs5St1Du5JuQXLsfFBB137vmYRKpnb'
+SOL_TOKEN = 'Bnd5oBSWpPpXoaWTckgXTVx9TCKkX5GyVqxcrwBzUYsB'
 SOL_WALLET = '9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM'
 
 

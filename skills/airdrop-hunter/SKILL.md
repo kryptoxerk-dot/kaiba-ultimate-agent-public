@@ -26,7 +26,7 @@ don't miss out" into a number.
 ## When to use it
 
 - The daily airdrop registry run.
-- the operator asks whether a specific programme is worth farming.
+- The operator asks whether a specific programme is worth farming.
 - A points programme announces a token and the ranking needs redoing.
 - You are deciding how to spend a fixed capital allocation across programmes.
 - Someone (or something) suggests running more wallets.
@@ -126,11 +126,13 @@ once you price:
 programmes has modest positive EV.** That is the whole opportunity, and Kaiba does not
 Sybil.
 
-Confirmed for 2026 at the time of the research: Polymarket (token confirmed), Backpack
-S4, MetaMask Rewards ($MASK), Aster, Kraken Ink, Meteora S2, Hyperliquid future
-emissions, LayerZero S2. Speculative: Base, Abstract, Monad, MegaETH. OpenSea SEA
-delayed. The structural shift is multi-season points over weeks or months rather than a
-single snapshot, which raises the time cost and therefore the EV bar.
+Do not carry a static "confirmed programmes" list forward from old research. Verify the
+current official programme and season terms, token status, snapshot/claim window, geography
+and wallet eligibility before assigning a confirmation probability. MetaMask Rewards, in
+particular, is not by itself evidence of a $MASK token or allocation. A loyalty campaign,
+sweepstakes, existing token and promised airdrop are different claims. Treat legacy named
+programme lists as discovery leads until re-verified; never fund participation from an old
+skill's status label. Multi-season participation also requires its full time and capital cost.
 
 ## Failure modes
 

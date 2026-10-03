@@ -69,7 +69,7 @@ def test_deciding_registers_the_configuration_it_ran_under(tmp_db):
     from kaiba.execution.engine import submit_agent_intent
 
     assert registry.trial_count(Lane.MANUAL, tmp_db) == 0
-    submit_agent_intent(Chain.SOL, "CJF7MNqb9xv1XrTs5St1Du5JuQXLsfFBB137vmYRKpnb",
+    submit_agent_intent(Chain.SOL, "Bnd5oBSWpPpXoaWTckgXTVx9TCKkX5GyVqxcrwBzUYsB",
                         thesis="t", conn=tmp_db)
     assert registry.trial_count(Lane.MANUAL, tmp_db) == 1
 

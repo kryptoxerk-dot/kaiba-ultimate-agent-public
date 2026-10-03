@@ -39,8 +39,12 @@ owned_addresses:
   # Declared by the operator 2026-09-21 to arm live trading. This is the signer's
   # definition of "ours": value may settle HERE and nowhere else. Adding an address is
   # the one thing in this file that grants trust, and no code may write it.
+  # Declared by the operator 2026-10-02: new GMGN-bound wallets (gmgn-cli portfolio info:
+  # robinhood/bsc/base/eth -> 0xcc44…07c2, sol -> rUHr…dTo). Kaiba trades from these; the
+  # 09-21 wallets stay listed because they are still the owner's.
   sol:
     - "62EbtFbmJATT94Y6Uguf6a1kdaJuZWAu8ycqbg3xKfQg"
+    - "rUHrovRbRDoCmn9ojmZ2Pi3bLPUJ15kGjmLfGm6MdTo"
   # Declared by the operator 2026-09-21 ("Go on robinhood and bnb chain as well").
   # ONE EVM key covers both chains -- `gmgn-cli portfolio info` reports the same address
   # bound on bsc and robinhood, so this is a single custodial wallet reachable on two
@@ -51,9 +55,12 @@ owned_addresses:
   # it, which is re-proved in tests/test_policy.py after every change to this file.
   robinhood:
     - "0x72430877378522d1b759ac721561aa9eb9e25c2b"
+    - "0xcc4450c80735778e9f5eaa7a4ea47990e57807c2"
   bsc:
     - "0x72430877378522d1b759ac721561aa9eb9e25c2b"
-  base: []
+    - "0xcc4450c80735778e9f5eaa7a4ea47990e57807c2"
+  base:
+    - "0xcc4450c80735778e9f5eaa7a4ea47990e57807c2"
 
 solana:
   # Program ids the signer will sign an instruction for. Anything else is `unknown program`.

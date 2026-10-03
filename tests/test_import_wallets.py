@@ -12,7 +12,7 @@ from kaiba.intelligence import import_wallets as iw
 
 EVM_A = "0x" + "a1" * 20
 EVM_B = "0x" + "b2" * 20
-SOL_A = "CJF7MNqb9xv1XrTs5St1Du5JuQXLsfFBB137vmYRKpnb"
+SOL_A = "Bnd5oBSWpPpXoaWTckgXTVx9TCKkX5GyVqxcrwBzUYsB"
 
 
 # ------------------------------------------------------------------ label parsing

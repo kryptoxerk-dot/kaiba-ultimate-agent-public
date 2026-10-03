@@ -10,6 +10,12 @@ import pytest
 
 from kaiba.core.schemas import Chain
 from kaiba.execution import signer
+from tests.signer_fixtures import compile_message, new_pubkey, system_transfer, unsigned_tx
+
+
+@pytest.fixture(autouse=True)
+def _isolated_replay_ledger(tmp_path, monkeypatch):
+    monkeypatch.setenv("KAIBA_SIGNER_STATE", str(tmp_path / "signer-state"))
 
 
 def make_req(chain: Chain = Chain.SOL) -> signer.SignRequest:
@@ -22,7 +28,7 @@ def make_req(chain: Chain = Chain.SOL) -> signer.SignRequest:
 
 
 def test_a_policy_refusal_produces_no_signature(tmp_db, monkeypatch):
-    monkeypatch.setattr(signer, "_evaluate", lambda req: (False, "transfer to non-owned", ["spl_transfer"]))
+    monkeypatch.setattr(signer, "_judge", lambda req: (None, False, "transfer to non-owned", ["spl_transfer"]))
     resp = signer.sign_request(make_req())
     assert resp.ok is False
     assert resp.signature is None
@@ -33,7 +39,7 @@ def test_a_refusal_is_recorded_as_an_event(tmp_db, monkeypatch):
     from kaiba.core import events as ev
     from kaiba.core.schemas import EventKind
 
-    monkeypatch.setattr(signer, "_evaluate", lambda req: (False, "nope", []))
+    monkeypatch.setattr(signer, "_judge", lambda req: (None, False, "nope", []))
     signer.sign_request(make_req())
     kinds = [e.kind for e in ev.recent(conn=tmp_db)]
     assert EventKind.RISK_HALT.value in kinds
@@ -41,7 +47,7 @@ def test_a_refusal_is_recorded_as_an_event(tmp_db, monkeypatch):
 
 def test_policy_runs_before_the_keystore_is_touched(tmp_db, monkeypatch):
     """A refused request must never even load a key."""
-    monkeypatch.setattr(signer, "_evaluate", lambda req: (False, "refused", []))
+    monkeypatch.setattr(signer, "_judge", lambda req: (None, False, "refused", []))
 
     class Exploding(signer.Keystore):
         def load(self, chain, wallet):
@@ -65,13 +71,13 @@ def test_missing_policy_module_is_a_refusal_not_a_bypass(tmp_db, monkeypatch):
     assert allowed is False and "policy" in reason
 
 
-def test_a_payload_without_decoded_instructions_is_refused(tmp_db):
-    """The signer will not re-derive semantics from bytes it is about to sign."""
-    allowed, reason, _ = signer._evaluate(make_req())  # payload has no "instructions"
+def test_bytes_that_do_not_decode_are_refused(tmp_db):
+    """The signer judges the bytes it signs (2026-10-02); bytes it cannot decode are refused."""
+    allowed, reason, _ = signer._evaluate(make_req())  # "AAA=" is two zero bytes
     assert allowed is False and "undecodable" in reason
 
 
-def test_a_malformed_instruction_is_refused(tmp_db):
+def test_a_description_without_the_bytes_it_describes_is_refused(tmp_db):
     req = signer.SignRequest(
         chain=Chain.SOL, order_id="o", wallet="w",
         payload={"instructions": [{"not": "an instruction"}]},
@@ -87,9 +93,10 @@ def test_a_policy_missing_the_expected_interface_is_refused(tmp_db, monkeypatch)
         pass
 
     monkeypatch.setattr(pkg, "policy", Hollow)
+    wallet = new_pubkey()
+    msg = compile_message(wallet, [system_transfer(wallet, new_pubkey(), 1)])
     req = signer.SignRequest(
-        chain=Chain.SOL, order_id="o", wallet="w",
-        payload={"instructions": [{"program_id": "p", "accounts": [], "data": ""}]},
+        chain=Chain.SOL, order_id="o", wallet=wallet, payload={"transaction": unsigned_tx(msg)},
     )
     allowed, reason, _ = signer._evaluate(req)
     assert allowed is False and "interface mismatch" in reason
@@ -127,16 +134,15 @@ def test_module_exposes_no_withdrawal_helper():
 def test_a_missing_key_is_a_refusal_not_a_crash(tmp_path):
     ks = signer.Keystore(tmp_path)
     with pytest.raises(signer.SignerRefused, match="no key"):
-        ks.load(Chain.SOL, "nobody")
+        ks.load(Chain.SOL, new_pubkey())
 
 
 @pytest.mark.skipif(os.name != "posix", reason="POSIX permission bits")
 def test_a_world_readable_key_is_refused(tmp_path):
-    key = tmp_path / "sol-wallet1.key"
-    key.write_text("x")
-    key.chmod(0o644)
+    wallet = signer.keygen("sol", tmp_path)
+    (tmp_path / f"sol-{wallet}.key").chmod(0o644)
     with pytest.raises(signer.SignerRefused, match="readable"):
-        signer.Keystore(tmp_path).load(Chain.SOL, "wallet1")
+        signer.Keystore(tmp_path).load(Chain.SOL, wallet)
 
 
 def test_keystore_never_returns_raw_material(tmp_path):

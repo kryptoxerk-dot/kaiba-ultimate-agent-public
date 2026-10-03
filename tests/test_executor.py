@@ -10,7 +10,7 @@ from kaiba.core.config import load_risk, save_risk
 from kaiba.core.schemas import Chain, Lane, LaneMode, OrderState, Side
 from kaiba.execution import executor
 
-SOL = "CJF7MNqb9xv1XrTs5St1Du5JuQXLsfFBB137vmYRKpnb"
+SOL = "Bnd5oBSWpPpXoaWTckgXTVx9TCKkX5GyVqxcrwBzUYsB"
 WALLET = "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM"
 
 

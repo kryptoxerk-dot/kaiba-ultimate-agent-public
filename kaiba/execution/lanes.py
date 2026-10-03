@@ -150,11 +150,35 @@ class LaneContext(BaseModel):
 #: exist so a lane still behaves sensibly if a key is missing from the file.
 DEFAULT_PARAMS: dict[Lane, dict[str, Any]] = {
     Lane.CONFLUENCE_5: {
+        # ``min_entities``, ``window_s``, ``min_buy_usd`` and ``max_signal_age_s`` each
+        # take a scalar OR a per-chain mapping with a ``"default"`` (see ``_per_chain``),
+        # because the tapes behind each chain arrive at very different speeds.
         "min_entities": 5,
         "window_s": 120,
         "min_buy_usd": 50,
         "max_signal_age_s": 30,
         "require_wallet_grade": "B",
+        # WHICH wallets count. "grade" is the original lane: wallet_scores grade >= B.
+        # "proven" counts only the newest frozen cohort of `kaiba.learning.proven` --
+        # wallets whose copy returns held up out of sample. Shipped "grade" so nothing
+        # changes until risk.yaml asks for it.
+        #
+        # MEASURED 2026-10-02, the grade route over 7 days on the box (B wallets, $50
+        # floor, 120 s, 5 entities): sol 0 tokens, robinhood 19, bsc 0 -- and 0 of those
+        # 19 were scanned within 30 s of qualifying. The lane has never fired, and sol
+        # B grades do not predict forward returns anyway (28.0% reach 2x vs 27.4% for C/D).
+        "wallet_source": "grade",
+        # A cohort older than this is not served (`proven.proven_members`): a refresh job
+        # that stopped running must not leave the lane on a list chosen weeks ago. Three
+        # days = two missed daily refreshes (schedule.yaml `proven_wallets`).
+        "proven_max_cohort_age_s": 259_200,
+        # FLAT, not scaled by confluence. Owner directive 2026-09-24: entry size is flat
+        # because conviction, smart-wallet count and dossier grade all measured
+        # ANTI-calibrated. The value only has to clear the sizer's ladder (score >= 70 ->
+        # strength >= 0.70) or the lane sizes to zero and records nothing; the confluence
+        # level rides in the payload so EV can be measured BY level
+        # (`kaiba.learning.confluence_size`) before anyone proposes sizing on it.
+        "proven_strength": 0.75,
     },
     Lane.TRUSTED_COPY: {
         "max_copy_delay_s": 20,
@@ -547,6 +571,66 @@ def _wallet_row(chain: Chain, address: str, conn: Any) -> dict[str, Any] | None:
         return None
 
 
+def _source_allowed(
+    chain: Chain, address: str, conn: Any, tags: set[str] | None = None
+) -> bool:
+    """Apply existing hard exclusions before ANY positive source admission route.
+
+    Row-carried labels cannot hide a database veto. Missing grades or unchecked
+    independence are not new vetoes here; this is not a history/sample-size policy.
+    SQL errors propagate to the lane evaluator rather than clearing a source.
+    """
+    from kaiba.intelligence.hubs import safe_normalize
+
+    row = fetch_one(
+        conn if conn is not None else get_conn(),
+        "SELECT h.address AS hub, c.status, w.cohort, w.tags_json, s.grade "
+        "FROM (SELECT ? AS chain, ? AS address) AS k "
+        "LEFT JOIN hub_addresses h ON h.chain=k.chain AND h.address=k.address "
+        "LEFT JOIN clustering_coverage c ON c.chain=k.chain AND c.address=k.address "
+        "LEFT JOIN wallets w ON w.chain=k.chain AND w.address=k.address "
+        "LEFT JOIN wallet_scores s ON s.chain=k.chain AND s.address=k.address",
+        (chain.value, safe_normalize(address, chain)),
+    )
+    if (row["hub"] is not None or row["status"] in {"hub", "quarantined"}
+            or row["cohort"] == "blacklist" or row["grade"] == Grade.QUARANTINED.value):
+        return False
+    labels = {str(t).strip().lower() for t in (jload(row["tags_json"], []) or [])}
+    labels.update(str(t).strip().lower() for t in (tags or ()))
+    quarantine = {t.value for t in HARD_QUARANTINE_TAGS} | {
+        vendor_tag(t.value) for t in HARD_QUARANTINE_TAGS
+    }
+    return not (labels & quarantine)
+
+
+def _source_qualifier(ctx: LaneContext) -> Callable[[str], bool]:
+    """Index wallet-level row labels once; cache DB qualification per source.
+
+    All context rows can carry a hard veto, even a sell or a row that cannot
+    vote. Positive tag precedence stays with _tags; this index only vetoes.
+    SQL errors deliberately propagate, and no cache survives an evaluation.
+    """
+    from kaiba.intelligence.hubs import safe_normalize
+
+    labels: dict[str, set[str]] = {}
+    for row in ctx.recent_buys:
+        wallet = safe_normalize(str(row.get("wallet") or ""), ctx.chain)
+        raw = row.get("tags")
+        if isinstance(raw, str):
+            raw = jload(raw, [])
+        if wallet and isinstance(raw, (list, tuple, set, frozenset)):
+            labels.setdefault(wallet, set()).update(str(t) for t in raw)
+    allowed: dict[str, bool] = {}
+
+    def qualifies(wallet: str) -> bool:
+        key = safe_normalize(wallet, ctx.chain)
+        if key not in allowed:
+            allowed[key] = _source_allowed(ctx.chain, key, _conn(ctx), labels.get(key))
+        return allowed[key]
+
+    return qualifies
+
+
 def _tags(chain: Chain, buy: dict[str, Any], conn: Any) -> set[str]:
     """This wallet's labels VERBATIM, row first then the wallets table.
 
@@ -757,8 +841,371 @@ def _clamp(value: float, low: float = 0.0, high: float = 1.0) -> float:
 
 
 # --------------------------------------------------------------------------------------
+# entry features: what the lane saw, recorded so a threshold on it can be replayed
+#
+# ADDED 2026-10-03 (loss learning). The replay gate (kaiba/learning/gates.py) can only
+# re-run a ``min_<x>``/``max_<x>`` threshold over a feature the decision's own signal
+# payload carried at decision time. Until today sm-trenches recorded three numbers
+# (smart_wallets, entity_count, rug_ratio), so the strongest filter ever measured on our
+# fills -- holders >= 200, +14% on the newer half of a holdout -- could not even be
+# proposed in a form the gates could judge, and ~70% of trades hitting the stop could not
+# turn into a promotable lesson.
+#
+# Rules, all of them load-bearing:
+#   * POINT-IN-TIME ONLY. Everything here is read from the LaneContext the lane already
+#     holds (dossier, token_meta, recent_buys, curve) plus two indexed table reads
+#     (deployer_stats via ``deployer.lookup``, token_bundles), each refused when the row
+#     is newer than ``ctx.now_ms``. No provider call, ever.
+#   * MISSING IS ``None``, NEVER A GUESS. A key that is present with ``null`` means "the
+#     lane looked and it was unknown or stale"; a key that is ABSENT means "this signal
+#     predates the feature". The gates tell the two apart (``gates._feature_point``).
+#   * ONE THRESHOLD SEMANTIC: ``min_<f>``/``max_<f>`` defaults to ``None`` (not enforced).
+#     A configured threshold refuses a signal whose feature is ``None`` -- exactly what
+#     ``gates._passes`` assumes in the replay, so the replay and the lane cannot disagree
+#     about an unknown. Defaults therefore change nothing until a threshold is set.
+#   * Thresholds run AFTER every existing gate, so with all defaults ``None`` the lane
+#     returns byte-for-byte the decision it returned before, plus the recorded features.
+# --------------------------------------------------------------------------------------
+
+#: Version of the recorded feature set, carried in ``payload["features_v"]``.
+ENTRY_FEATURES_VERSION = 1
+
+#: Dossier measures recorded verbatim (``_measure``: known AND inside its freshness
+#: budget, else ``None``). ``rug_ratio`` is deliberately absent: sm-trenches records it
+#: under its own stale/unavailable rules and ``max_rug_ratio`` admits an unknown, which a
+#: generic threshold would not.
+DOSSIER_FEATURES: tuple[str, ...] = (
+    "holder_count", "liquidity_usd", "market_cap_usd", "volume_24h_usd",
+    "top10_pct", "dev_pct", "insider_pct", "bundler_pct", "sniper_pct", "cluster_pct",
+    "buy_tax_bps", "sell_tax_bps", "lp_burned_pct",
+)
+
+#: Every NUMERIC feature :func:`entry_features` records. Each one is a ``min_<f>`` and a
+#: ``max_<f>`` lane param (``None`` = off) unless the lane already reads a native key for
+#: that side (see :data:`FEATURE_THRESHOLD_KEYS`).
+ENTRY_FEATURES: tuple[str, ...] = DOSSIER_FEATURES + (
+    "dossier_score",
+    "token_age_s", "migrated", "since_migration_s", "on_curve", "curve_progress_pct",
+    "launch_bundled_pct", "launch_sniped_pct",
+    "deployer_launches", "deployer_prior_scored", "deployer_prior_runners", "deployer_runner_rate",
+    "window_swaps", "window_buy_usd", "window_sell_usd", "window_buy_share",
+    "window_buyers", "window_sellers", "price_change_window_pct", "from_window_high_pct",
+    "smart_buy_usd", "first_smart_buy_age_s", "last_smart_buy_age_s",
+)
+
+
+def _generic_threshold_keys(extra: tuple[str, ...], native: frozenset[str]) -> tuple[str, ...]:
+    keys: list[str] = []
+    for feature in ENTRY_FEATURES + extra:
+        for side in ("min_", "max_"):
+            key = side + feature
+            if key not in native:
+                keys.append(key)
+    return tuple(keys)
+
+
+#: The generic ``min_<f>``/``max_<f>`` keys each lane enforces through
+#: :func:`feature_threshold_refusal`. A side the lane ALREADY reads under its own key and
+#: semantics is excluded, so nothing is enforced twice:
+#:   sm-trenches  min_liquidity_usd (per-chain floor, waived on a readable curve),
+#:                min_holder_count (0 = off), min_smart_wallets (= min_smart_degen),
+#:                min_entity_count (= min_independent_entities);
+#:   confluence-5 min_entity_count (= min_entities).
+FEATURE_THRESHOLD_KEYS: dict[Lane, tuple[str, ...]] = {
+    Lane.SM_TRENCHES: _generic_threshold_keys(
+        ("smart_wallets", "entity_count"),
+        frozenset({"min_liquidity_usd", "min_holder_count", "min_smart_wallets", "min_entity_count"}),
+    ),
+    Lane.CONFLUENCE_5: _generic_threshold_keys(
+        ("entity_count", "address_count"),
+        frozenset({"min_entity_count"}),
+    ),
+}
+
+# The no-op defaults. In DEFAULT_PARAMS (not only here) because the experiment loop admits
+# a proposal only for a key "the lane already reads" (experiment_loop._effective_params),
+# and because a default is what a lane falls back to when risk.yaml is silent. setdefault:
+# a key someone declares explicitly in the literal above keeps its own default.
+for _lane, _keys in FEATURE_THRESHOLD_KEYS.items():
+    for _key in _keys:
+        DEFAULT_PARAMS[_lane].setdefault(_key, None)
+del _lane, _keys, _key
+
+
+def _fnum(value: Any, places: int = 6) -> float | None:
+    """A JSON-safe float, or ``None``. Never a guess: an unparseable value is ``None``."""
+    d = _dec(value)
+    if d is None or not d.is_finite():
+        return None
+    return round(float(d), places)
+
+
+def _robust_prices(rows: list[dict[str, Any]]) -> list[tuple[int, float]]:
+    """``(ts_ms, price)`` for priced rows, oldest first, smoothed by a median of three.
+
+    A single dust print at a silly price is common on these tapes; a median of three
+    neighbours removes it without inventing anything.
+    """
+    raw: list[tuple[int, float]] = []
+    for row in rows:
+        px = _dec(row.get("price_usd"))
+        if px is None or not px.is_finite() or px <= 0:
+            continue
+        raw.append((int(row.get("ts_ms") or 0), float(px)))
+    raw.sort(key=lambda t: t[0])
+    if len(raw) < 3:
+        return raw
+    out = [raw[0]]
+    for i in range(1, len(raw) - 1):
+        out.append((raw[i][0], sorted((raw[i - 1][1], raw[i][1], raw[i + 1][1]))[1]))
+    out.append(raw[-1])
+    return out
+
+
+def _window_flow(ctx: LaneContext, window_s: int) -> dict[str, Any]:
+    """Buy/sell pressure and price path over the lane's own window, all wallets."""
+    since = ctx.now_ms - int(window_s) * 1000
+    rows = [
+        r for r in ctx.recent_buys
+        if since <= int(r.get("ts_ms") or 0) <= ctx.now_ms
+    ]
+    buy_usd = sell_usd = Decimal(0)
+    buyers: set[str] = set()
+    sellers: set[str] = set()
+    sided = priced = 0
+    for r in rows:
+        side = str(r.get("side") or "").strip().lower()
+        if side not in ("buy", "sell"):
+            continue  # UNKNOWN side is neither (same rule as _net_buyers)
+        sided += 1
+        usd = _dec(r.get("usd_value"))
+        if usd is not None and usd.is_finite():
+            priced += 1
+        else:
+            usd = Decimal(0)  # unpriced: counted as a swap, adds no dollars
+        wallet = str(r.get("wallet") or "")
+        if side == "buy":
+            buy_usd += usd
+            if wallet:
+                buyers.add(wallet)
+        else:
+            sell_usd += usd
+            if wallet:
+                sellers.add(wallet)
+    total = buy_usd + sell_usd
+    prices = _robust_prices(rows)
+    change = from_high = None
+    if len(prices) >= 2:
+        k = max(1, min(5, len(prices) // 2))
+        first = sorted(p for _, p in prices[:k])[k // 2]
+        last = sorted(p for _, p in prices[-k:])[k // 2]
+        high = max(p for _, p in prices)
+        if first > 0:
+            change = round((last / first - 1.0) * 100.0, 4)
+        if high > 0:
+            from_high = round((last / high - 1.0) * 100.0, 4)
+    return {
+        "window_swaps": sided,
+        # Dollars only when at least one row was priced: no priced row is UNKNOWN, not $0.
+        "window_buy_usd": _fnum(buy_usd, 2) if priced else None,
+        "window_sell_usd": _fnum(sell_usd, 2) if priced else None,
+        "window_buy_share": _fnum(buy_usd / total, 4) if priced and total > 0 else None,
+        "window_buyers": len(buyers) if sided else None,
+        "window_sellers": len(sellers) if sided else None,
+        "price_change_window_pct": change,
+        "from_window_high_pct": from_high,
+    }
+
+
+def _deployer_features(ctx: LaneContext) -> dict[str, Any]:
+    """The deployer's PRIOR launch record, from the same lookup the sizer uses.
+
+    ``deployer.lookup`` already refuses a stale record and takes this token's own outcome
+    back out. It does not refuse a record computed AFTER ``ctx.now_ms`` (its age comes out
+    negative), which only a replay can hit; that is lookahead, so it is ``None`` here.
+    """
+    none = {"deployer_launches": None, "deployer_prior_scored": None,
+            "deployer_prior_runners": None, "deployer_runner_rate": None}
+    if ctx.conn is None:
+        return none
+    try:
+        from kaiba.intelligence import deployer as who
+
+        record = who.lookup(ctx.conn, ctx.chain, ctx.token, now_ms=ctx.now_ms)
+    except Exception as exc:  # noqa: BLE001 - a feature read must never stop a lane
+        log.debug("deployer features unavailable for %s: %s", ctx.token[:12], exc)
+        return none
+    if not record.known or str(record.note or "").startswith("age-"):
+        return none
+    scored = int(record.prior_scored)
+    return {
+        "deployer_launches": int(record.launches),
+        "deployer_prior_scored": scored,
+        "deployer_prior_runners": int(record.prior_runners),
+        "deployer_runner_rate": round(record.prior_runners / scored, 4) if scored > 0 else None,
+    }
+
+
+def _launch_bundle_features(ctx: LaneContext) -> dict[str, Any]:
+    """Our own launch-bundle detector (``token_bundles``), measured rows only, point-in-time."""
+    none = {"launch_bundled_pct": None, "launch_sniped_pct": None}
+    if ctx.conn is None:
+        return none
+    try:
+        row = fetch_one(
+            ctx.conn,
+            "SELECT computed_ms, coverage, bundled_pct, sniped_pct FROM token_bundles "
+            "WHERE chain = ? AND token = ?",
+            (ctx.chain.value, ctx.token),
+        )
+    except sqlite3.Error:
+        return none
+    if not row or row["coverage"] != "measured" or int(row["computed_ms"] or 0) > ctx.now_ms:
+        return none
+    return {"launch_bundled_pct": _fnum(row["bundled_pct"], 4),
+            "launch_sniped_pct": _fnum(row["sniped_pct"], 4)}
+
+
+def _on_curve(ctx: LaneContext) -> bool:
+    """Same test sm-trenches uses to waive its pool floor: unmigrated with a positive reserve."""
+    migrated = ctx.token_meta.migrated_ms if ctx.token_meta else None
+    curve = ctx.curve if isinstance(ctx.curve, dict) else {}
+    reserve = None
+    for key in ("sol_in_curve", "reserve_native", "native_reserve", "virtual_native"):
+        reserve = _dec(curve.get(key))
+        if reserve is not None:
+            break
+    return migrated is None and reserve is not None and reserve > 0
+
+
+def entry_features(
+    ctx: LaneContext,
+    *,
+    window_s: int,
+    smart: list[str] | None = None,
+    buyers: dict[str, dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Every entry feature the lane can see at ``ctx.now_ms``, ``None`` where it cannot.
+
+    ``smart``/``buyers`` are the lane's own qualifying wallets and their ``_net_buyers``
+    aggregates, so the smart-flow numbers describe exactly the wallets that made it fire.
+    Pure apart from two indexed reads; see the section comment above.
+    """
+    feats: dict[str, Any] = {}
+    for name in DOSSIER_FEATURES:
+        value = _measure(ctx.dossier, name)
+        feats[name] = (int(value) if name == "holder_count" and value is not None
+                       else _fnum(value, 6))
+    feats["dossier_score"] = (_fnum(ctx.dossier.score, 4)
+                              if ctx.dossier is not None and ctx.dossier.score is not None else None)
+
+    meta = ctx.token_meta
+    created = meta.created_ms if meta else None
+    age = (ctx.now_ms - int(created)) / 1000.0 if created else None
+    feats["token_age_s"] = round(age, 1) if age is not None and age >= 0 else None
+    migrated_ms = meta.migrated_ms if meta else None
+    if meta is None:
+        feats["migrated"] = feats["since_migration_s"] = None
+    elif migrated_ms is not None and int(migrated_ms) <= ctx.now_ms:
+        feats["migrated"] = 1
+        feats["since_migration_s"] = round((ctx.now_ms - int(migrated_ms)) / 1000.0, 1)
+    else:
+        feats["migrated"] = 0
+        feats["since_migration_s"] = None
+    feats["on_curve"] = 1 if _on_curve(ctx) else 0
+    curve = ctx.curve if isinstance(ctx.curve, dict) else {}
+    feats["curve_progress_pct"] = _fnum(curve.get("progress_pct"), 4)
+    launchpad = str((meta.launchpad if meta else None) or "").strip().lower()
+    feats["launchpad"] = launchpad or None  # categorical: recorded, never thresholded
+
+    feats.update(_launch_bundle_features(ctx))
+    feats.update(_deployer_features(ctx))
+    feats.update(_window_flow(ctx, window_s))
+
+    smart_rows = [buyers[w] for w in (smart or []) if buyers and w in buyers]
+    if smart_rows:
+        firsts = [int(a["first_buy_ms"]) for a in smart_rows if a.get("first_buy_ms")]
+        lasts = [int(a["last_buy_ms"]) for a in smart_rows if a.get("last_buy_ms")]
+        feats["smart_buy_usd"] = _fnum(sum((a["buy_usd"] for a in smart_rows), Decimal(0)), 2)
+        feats["first_smart_buy_age_s"] = round((ctx.now_ms - min(firsts)) / 1000.0, 1) if firsts else None
+        feats["last_smart_buy_age_s"] = round((ctx.now_ms - max(lasts)) / 1000.0, 1) if lasts else None
+    else:
+        feats["smart_buy_usd"] = feats["first_smart_buy_age_s"] = feats["last_smart_buy_age_s"] = None
+    feats["features_v"] = ENTRY_FEATURES_VERSION
+    return feats
+
+
+def feature_threshold_refusal(
+    lane: Lane, chain: Chain, params: dict[str, Any], payload: dict[str, Any]
+) -> str | None:
+    """Why a configured ``min_<f>``/``max_<f>`` refuses this signal, or ``None``.
+
+    Only the keys in :data:`FEATURE_THRESHOLD_KEYS` for ``lane``. ``None`` (the default)
+    means not enforced. A configured threshold refuses an unknown feature -- the
+    semantics the replay gate assumes. A value that cannot be read as a number (a typo,
+    or a per-chain mapping naming neither the chain nor a default) refuses too: a lane
+    whose threshold is unreadable is misconfigured, and this file fails those closed.
+    """
+    for key in FEATURE_THRESHOLD_KEYS.get(lane, ()):
+        raw = params.get(key)
+        if raw is None:
+            continue
+        if isinstance(raw, dict):
+            raw = raw.get(chain.value, raw.get("default"))
+            if raw is None:
+                continue
+        threshold = _dec(raw)
+        feature = key[4:]
+        if threshold is None or not threshold.is_finite():
+            return f"{key}={raw!r} is not a number"
+        value = _dec(payload.get(feature))
+        if value is None:
+            return f"{key}={threshold}: {feature} unknown"
+        if key.startswith("min_") and value < threshold:
+            return f"{key}={threshold}: {feature} {value}"
+        if key.startswith("max_") and value > threshold:
+            return f"{key}={threshold}: {feature} {value}"
+    return None
+
+
+# --------------------------------------------------------------------------------------
 # lanes
 # --------------------------------------------------------------------------------------
+
+
+def _per_chain(params: dict[str, Any], key: str, chain: Chain, default: Any) -> Any:
+    """``params[key]`` as a scalar, or a ``{chain: value, "default": value}`` mapping.
+
+    Same convention as ``_min_liquidity_for``. A mapping that names neither the chain nor
+    a default falls back to ``default``: the lane's shipped value, never zero.
+    """
+    raw = params.get(key, default)
+    if isinstance(raw, dict):
+        raw = raw.get(chain.value, raw.get("default", default))
+    return default if raw is None else raw
+
+
+#: The two wallet criteria ``confluence_5`` can count. See ``DEFAULT_PARAMS``.
+CONFLUENCE_WALLET_SOURCES: frozenset[str] = frozenset({"grade", "proven"})
+
+
+def _proven_cohort(ctx: LaneContext, p: dict[str, Any]) -> Any:
+    """The proven cohort this lane may count on ``ctx.chain`` now, or ``None``.
+
+    ``None`` when there is no connection to read it from, when none was ever frozen for the
+    chain, or when the newest is older than ``proven_max_cohort_age_s``. Bounded by
+    ``ctx.now_ms`` so a replay never counts a cohort chosen after the moment it replays.
+    """
+    if ctx.conn is None:
+        return None
+    from kaiba.learning.proven import proven_members  # lazy: learning imports nothing of ours
+
+    return proven_members(
+        ctx.conn,
+        ctx.chain,
+        max_age_s=float(p.get("proven_max_cohort_age_s", 259_200)),
+        at_ms=ctx.now_ms,
+    )
 
 
 def confluence_5(ctx: LaneContext) -> Signal | None:
@@ -768,13 +1215,35 @@ def confluence_5(ctx: LaneContext) -> Signal | None:
     it ships in shadow and has to prove itself. The one thing that makes our version worth
     running is the entity collapse — the sybil rings the research measured would otherwise
     manufacture this signal on demand.
+
+    ``wallet_source`` picks who counts. ``"grade"`` (shipped) is the original rule:
+    ``wallet_scores`` grade at or above ``require_wallet_grade``. ``"proven"`` counts only
+    members of the newest frozen proven cohort (:mod:`kaiba.learning.proven`): wallets
+    whose COPY returns, at our own lag and fees, persisted out of sample. Everything else
+    -- net buying, the dust floor, the age gate, the entity collapse, the source vetoes --
+    is the same code for both. An unknown source refuses rather than guessing.
     """
     p = ctx.lane_params(Lane.CONFLUENCE_5)
-    window_s = int(p["window_s"])
-    min_entities = int(p["min_entities"])
-    min_buy_usd = _dec(p["min_buy_usd"]) or Decimal(0)
-    max_age_s = int(p["max_signal_age_s"])
+    source = str(p.get("wallet_source") or "grade").strip().lower()
+    if source not in CONFLUENCE_WALLET_SOURCES:
+        if getattr(confluence_5, "_warned_source", None) != source:  # once, not per scan
+            confluence_5._warned_source = source  # type: ignore[attr-defined]
+            log.warning("confluence-5: unknown wallet_source %r; refusing (expected one of %s)",
+                        source, sorted(CONFLUENCE_WALLET_SOURCES))
+        return None
+    window_s = int(_per_chain(p, "window_s", ctx.chain, 120))
+    min_entities = int(_per_chain(p, "min_entities", ctx.chain, 5))
+    min_buy_usd = _dec(_per_chain(p, "min_buy_usd", ctx.chain, 0)) or Decimal(0)
+    max_age_s = int(_per_chain(p, "max_signal_age_s", ctx.chain, 30))
     min_grade = _grade_of(p.get("require_wallet_grade", "B"))
+
+    cohort = None
+    if source == "proven":
+        cohort = _proven_cohort(ctx, p)
+        if cohort is None or not cohort.members:
+            # Missing/stale and EMPTY are different facts; both mean nobody counts here.
+            # An empty cohort is the honest answer on a chain where nobody persisted.
+            return None
 
     buyers = _net_buyers(
         ctx.recent_buys,
@@ -788,12 +1257,18 @@ def confluence_5(ctx: LaneContext) -> Signal | None:
     qualified: list[str] = []
     points: list[int] = []
     newest = 0
+    source_allowed = _source_qualifier(ctx)
     for wallet, acc in sorted(buyers.items()):
-        score = _score(ctx.chain, wallet, _conn(ctx))
-        if score is None or GRADE_POINTS.get(score.grade, 0) < GRADE_POINTS[min_grade]:
+        if cohort is not None and wallet not in cohort.members:
+            continue  # cheap set test first: most buyers are not in a small cohort
+        if not source_allowed(wallet):
             continue
+        if cohort is None:
+            score = _score(ctx.chain, wallet, _conn(ctx))
+            if score is None or GRADE_POINTS.get(score.grade, 0) < GRADE_POINTS[min_grade]:
+                continue
+            points.append(GRADE_POINTS.get(score.grade, 0))
         qualified.append(wallet)
-        points.append(GRADE_POINTS.get(score.grade, 0))
         newest = max(newest, int(acc["last_buy_ms"]))
 
     if len(qualified) < min_entities:
@@ -802,15 +1277,62 @@ def confluence_5(ctx: LaneContext) -> Signal | None:
         return None  # the move already happened; entering now is chasing
 
     entities = _entities(ctx.chain, qualified, _conn(ctx))
+    clusters = None
+    if cohort is not None:
+        # The entity graph has no funding data for most tape wallets, so it cannot see an
+        # unfunded bot network. The cohort's co-timing clusters can: wallets that keep
+        # buying the same token within 2 s of each other are one operator, and count once.
+        clusters = cohort.cluster_count(qualified)
+        entities = min(entities, clusters)
     if entities < min_entities:
         return None
 
-    mean_points = mean(points) if points else 0.0
-    entity_factor = min(1.0, entities / float(max(1, min_entities * 2)))
-    grade_factor = mean_points / 4.0
-    strength = _clamp(0.55 * entity_factor + 0.45 * grade_factor)
     age_s = round((ctx.now_ms - newest) / 1000.0, 3) if newest else None
+    rug = _measure(ctx.dossier, "rug_ratio")
+    payload: dict[str, Any] = {
+        # Point-in-time entry features first; the lane's own keys below win any clash.
+        **entry_features(ctx, window_s=window_s, smart=qualified, buyers=buyers),
+        # Recorded, never thresholded here (fresh only; None when unknown or stale).
+        "rug_ratio": None if rug is None else str(rug),
+        "wallet_source": source,
+        # The level EV is measured BY. Entities, not addresses: five addresses one
+        # operator funded are one opinion and must not read as a higher level.
+        "confluence_level": entities,
+        "entity_count": entities,
+        "address_count": len(qualified),
+        "min_entities": min_entities,
+        "window_s": window_s,
+        "newest_buy_age_s": age_s,
+    }
+    if cohort is None:
+        mean_points = mean(points) if points else 0.0
+        entity_factor = min(1.0, entities / float(max(1, min_entities * 2)))
+        grade_factor = mean_points / 4.0
+        strength = _clamp(0.55 * entity_factor + 0.45 * grade_factor)
+        criterion = f"mean grade points {mean_points:.2f} (floor {min_grade.value})"
+        payload["mean_grade_points"] = round(mean_points, 4)
+        payload["evidence"] = "C: platform feature, no public backtest — measure in shadow"
+    else:
+        strength = _clamp(_num(p.get("proven_strength"), 0.75))
+        criterion = (
+            f"proven cohort {cohort.cohort_id}: {len(cohort.members)} wallets, frozen "
+            f"{cohort.age_s(ctx.now_ms) / 3600.0:.1f}h ago; strength flat at {strength}"
+        )
+        payload.update({
+            "proven_wallets": len(qualified),
+            "cotime_clusters": clusters,
+            "cohort_id": cohort.cohort_id,
+            "cohort_frozen_ms": cohort.frozen_ms,
+            "cohort_size": len(cohort.members),
+            "evidence": (
+                "B-: wallets chosen on copy returns that persisted out of sample; the "
+                "confluence of them is unmeasured -- paper only until confluence_size says"
+            ),
+        })
 
+    # Learnable thresholds LAST (None defaults: a no-op). See entry_features.
+    if feature_threshold_refusal(Lane.CONFLUENCE_5, ctx.chain, p, payload) is not None:
+        return None
     return Signal(
         signal_id=signal_id_for(Lane.CONFLUENCE_5, ctx.chain, ctx.token, ctx.now_ms, window_s),
         lane=Lane.CONFLUENCE_5,
@@ -819,21 +1341,14 @@ def confluence_5(ctx: LaneContext) -> Signal | None:
         strength=strength,
         reasons=[
             f"{entities} independent entities ({len(qualified)} addresses) net-bought within {window_s}s",
-            f"mean grade points {mean_points:.2f} (floor {min_grade.value})",
+            criterion,
             f"newest qualifying buy {age_s}s old",
         ],
         wallets=qualified,
         entities=_entity_ids(ctx.chain, qualified, _conn(ctx)),
         window_s=window_s,
         created_ms=ctx.now_ms,
-        payload={
-            "entity_count": entities,
-            "address_count": len(qualified),
-            "mean_grade_points": round(mean_points, 4),
-            "min_entities": min_entities,
-            "newest_buy_age_s": age_s,
-            "evidence": "C: platform feature, no public backtest — measure in shadow",
-        },
+        payload=payload,
     )
 
 
@@ -891,12 +1406,14 @@ def trusted_copy(ctx: LaneContext) -> Signal | None:
     max_delay_s = int(p["max_copy_delay_s"])
     max_drift_pct = _num(p["max_price_drift_pct"], 12.0)
 
+    source_allowed = _source_qualifier(ctx)
     candidates = [
         r
         for r in ctx.recent_buys
         if _is_decoded_buy(r)
         and int(r.get("ts_ms") or 0) <= ctx.now_ms
         and _cohort(ctx.chain, r, _conn(ctx)) == "trusted_copy"
+        and source_allowed(str(r.get("wallet") or ""))
     ]
     if not candidates:
         _log_uncopyable_inflow(ctx)
@@ -1191,6 +1708,8 @@ def sm_trenches(ctx: LaneContext) -> Signal | None:
     }
     for wallet in sorted(buyers):
         tags = row_tags.get(wallet, set())
+        if not _source_allowed(ctx.chain, wallet, _conn(ctx), tags):
+            continue
         if tags & {t.value for t in SMART_TAGS}:
             smart.append(wallet)
             continue
@@ -1280,6 +1799,24 @@ def sm_trenches(ctx: LaneContext) -> Signal | None:
         )
     else:
         rug_reason = f"rug ratio {rug_ratio} < {max_rug} (MEASURED; earns no strength)"
+    payload: dict[str, Any] = {
+        # Point-in-time entry features FIRST, so the lane's own keys below win any clash.
+        **entry_features(ctx, window_s=window_s, smart=smart, buyers=buyers),
+        "smart_wallets": len(smart),
+        "entity_count": entities,
+        # None when unavailable OR stale: never "0", never "None"-the-string. The
+        # basis tells the two apart; the age and budget say why a stale one is stale.
+        "rug_ratio": None if rug_ratio is None else str(rug_ratio),
+        "rug_ratio_basis": rug_basis,
+        "rug_ratio_age_s": rug_age_s,
+        "rug_ratio_budget_s": rug_budget_s,
+        "max_rug_ratio": str(max_rug),
+        "evidence": "A: smart-money presence is a modest positive, also an exit cascade risk",
+    }
+    # Learnable thresholds LAST: every gate above has already said yes, so with the
+    # shipped None defaults this is a no-op and the decision is unchanged.
+    if feature_threshold_refusal(Lane.SM_TRENCHES, ctx.chain, p, payload) is not None:
+        return None
     return Signal(
         signal_id=signal_id_for(Lane.SM_TRENCHES, ctx.chain, ctx.token, ctx.now_ms, window_s),
         lane=Lane.SM_TRENCHES,
@@ -1295,18 +1832,7 @@ def sm_trenches(ctx: LaneContext) -> Signal | None:
         entities=_entity_ids(ctx.chain, smart, _conn(ctx)),
         window_s=window_s,
         created_ms=ctx.now_ms,
-        payload={
-            "smart_wallets": len(smart),
-            "entity_count": entities,
-            # None when unavailable OR stale: never "0", never "None"-the-string. The
-            # basis tells the two apart; the age and budget say why a stale one is stale.
-            "rug_ratio": None if rug_ratio is None else str(rug_ratio),
-            "rug_ratio_basis": rug_basis,
-            "rug_ratio_age_s": rug_age_s,
-            "rug_ratio_budget_s": rug_budget_s,
-            "max_rug_ratio": str(max_rug),
-            "evidence": "A: smart-money presence is a modest positive, also an exit cascade risk",
-        },
+        payload=payload,
     )
 
 
@@ -1848,12 +2374,14 @@ def pons_entry_check(ctx: LaneContext, p: dict[str, Any] | None = None) -> PonsE
     check.exempt_buys = exempt
     check.exempt_basis = "fee_word" if exempt_exact else "elapsed0_proxy"
     check.outside_demand_early_wei = outside_early_wei
-    check.post_tax_buyers = sorted(post_tax)
-    check.early_buyers = sorted(early)
     conn = _conn(ctx)
+    source_allowed = _source_qualifier(ctx)
+    check.post_tax_buyers = sorted(w for w in post_tax if source_allowed(w))
+    check.early_buyers = sorted(w for w in early if source_allowed(w))
     check.post_tax_entities = _entities(ctx.chain, check.post_tax_buyers, conn) if post_tax else 0
     check.early_entities = _entities(ctx.chain, check.early_buyers, conn) if early else 0
-    check.known_bundlers = _pons_known_bundlers(ctx, check.post_tax_buyers)
+    # Excluding a source vote must not conceal a raw-book hazard.
+    check.known_bundlers = _pons_known_bundlers(ctx, sorted(post_tax))
 
     if dev_post_tax:
         check.refusals.append("dev_bought_after_tax_zero")
@@ -1914,7 +2442,9 @@ def pons_robinhood(ctx: LaneContext) -> Signal | None:
     excluded = set(check.known_bundlers)
     if check.creator:
         excluded.add(check.creator)
-    wallets = sorted(w for w in buyers if w.lower() not in excluded)
+    source_allowed = _source_qualifier(ctx)
+    wallets = sorted(w for w in buyers if w.lower() not in excluded
+                     and source_allowed(w))
     if len(wallets) < min_entities:
         return None
     entities = _entities(ctx.chain, wallets, _conn(ctx))
@@ -2013,7 +2543,8 @@ def _graded_wallets(ctx: LaneContext, *, min_grade: Grade = Grade.C) -> list[str
         score = _score(ctx.chain, wallet, _conn(ctx))
         if score is not None and GRADE_POINTS.get(score.grade, 0) >= GRADE_POINTS[min_grade]:
             found.add(wallet)
-    return sorted(found)
+    source_allowed = _source_qualifier(ctx)
+    return sorted(w for w in found if source_allowed(w))
 
 
 def _migration_ms(ctx: LaneContext) -> int | None:

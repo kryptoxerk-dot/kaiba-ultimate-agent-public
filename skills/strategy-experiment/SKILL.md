@@ -138,6 +138,16 @@ profile is explicit: an honest negative finding is worth more than an encouragin
 - **Do not skip the versioned promotion record.** A change nobody can date or roll back
   is not a promotion, it is drift.
 
+## Gate readiness and durable verdicts
+
+- Inspect the installed replay contract before submitting a diff. A numeric `min_*` or `max_*` threshold must map to a feature retained on the original decision or its point-in-time signals. An arbitrary nested configuration, execution-time expiry, exit protocol or placeholder variable is not automatically replayable by a selection evaluator.
+- Preserve the original proposal. If a diagnostic adapter normalizes its representation, label that input separately and do not pretend the original proposal or unsupported runtime parameter was successfully validated.
+- Retain the exact returned verdict, including early refusals. Check whether the evaluator's `record=True` path actually saves every return; where it does not, use the returned `GateResult.record()` without changing `passed`, reasons or statistics. Zero stored rows prove no retained verdicts, not that evaluation was never attempted.
+- Distinguish invalid specification, missing point-in-time features, zero labelled candidate trades, underpowered statistics and adverse performance. A readiness refusal is not a demonstrated losing strategy.
+- Verify chain/mode scope before interpreting a replay; a routine that pools all lane records must not be presented as chain-specific live validation. Use a bounded isolated snapshot for scoped evaluation and retain the population and honest trial count.
+- Collect candidate/control observations prospectively. Never relabel historical trades after seeing their outcomes merely to supply the shadow gate with a sample.
+- Record gate/source hashes, exact output IDs and read-back evidence, and keep judgement separate from promotion. A passed test suite or a saved verdict is not proof of a profitable deployed change.
+
 ## Reading your own gate results
 
 `kaiba_propose_experiment(...)` records a proposal. `kaiba_experiments(status=...)`

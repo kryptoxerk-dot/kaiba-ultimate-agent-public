@@ -1,7 +1,7 @@
 {
   "_note": "Five graded wallets net-buying inside the window. Ages are relative to the test clock so the fixture never expires. Two decoys: a dust buy and a C-grade wallet, both of which must be ignored.",
   "chain": "sol",
-  "token": "CJF7MNqb9xv1XrTs5St1Du5JuQXLsfFBB137vmYRKpnb",
+  "token": "Bnd5oBSWpPpXoaWTckgXTVx9TCKkX5GyVqxcrwBzUYsB",
   "scores": [
     {"address": "wa11etAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA1", "grade": "A", "score": 88.0, "archetype": "smart_money"},
     {"address": "wa11etBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB2", "grade": "B", "score": 71.5, "archetype": "top_trader"},

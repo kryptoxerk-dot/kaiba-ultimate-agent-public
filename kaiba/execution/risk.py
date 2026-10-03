@@ -299,7 +299,7 @@ def parse_native_balance(
 
     MEASURED payload, 2026-09-21::
 
-        {"balances":[{"wallet_address":"0x41a0...","token_address":"0x0000...",
+        {"balances":[{"wallet_address":"0x7243...","token_address":"0x0000...",
                       "balance":"1.031957","decimal":0,"height":123117107,"tx_index":0}]}
 
     Three things about that shape are load-bearing and none of them are obvious:
@@ -1723,9 +1723,21 @@ class RiskGate:
     def open_exposure(
         self, chain: Chain, conn: sqlite3.Connection | None = None, token: str | None = None
     ) -> int:
-        """Base units still at risk: cost less proceeds already taken, floored at zero."""
+        """Base units still at risk: cost less proceeds already taken, floored at zero.
+
+        Paper positions are excluded, by the same rule as :meth:`realized_today`: a
+        shadow position is not money. Until 2026-10-01 they were counted, so paper could
+        shrink or refuse a live entry through the total-exposure cap, the per-token cap
+        and ``free`` in the bankroll reading. Latent while no RH shadow lane held paper;
+        live the moment the engine paper-trades launchpad-refused entries (engine
+        ``_launchpad_refusal``) -- RH ran at ~62% of its 70% cap that day, so one 0.04
+        ETH twin would have refused the next pons entry.
+        """
         c = _conn(conn)
-        sql = "SELECT cost_native, proceeds_native FROM positions WHERE chain = ? AND closed_ms IS NULL"
+        sql = (
+            "SELECT cost_native, proceeds_native FROM positions "
+            "WHERE chain = ? AND closed_ms IS NULL AND mode != 'shadow'"
+        )
         params: list[Any] = [chain.value]
         if token is not None:
             sql += " AND token = ?"

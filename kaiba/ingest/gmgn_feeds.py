@@ -101,6 +101,7 @@ import asyncio
 import json
 import logging
 import math
+import os
 import sqlite3
 import time
 from collections.abc import Callable, Iterable, Sequence
@@ -109,10 +110,11 @@ from decimal import ROUND_DOWN, Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 
+import yaml
 from pydantic import BaseModel, Field
 
-from kaiba.core.config import get_risk
-from kaiba.core.db import connect, fetch_one, get_conn, jdump, jload
+from kaiba.core.config import REPO_ROOT, get_risk
+from kaiba.core.db import connect, fetch_one, get_conn, jdump, jload, tx
 from kaiba.core.events import emit, emit_once
 from kaiba.core.limiter import Priority, RateLimited, guarded
 from kaiba.core.schemas import (
@@ -124,6 +126,7 @@ from kaiba.core.schemas import (
     digest,
     now_ms,
 )
+from kaiba.intelligence import feed_tags
 from kaiba.providers.native_price import WRAPPED_NATIVE
 
 # The wrapper landed as ``run_read(endpoint, args) -> (data, receipt)``, not the
@@ -1031,11 +1034,67 @@ FEEDS: dict[str, FeedSpec] = {
 
 DEFAULT_FEEDS: tuple[str, ...] = ("smartmoney", "kol", "signal", "trenches", "trending")
 
+#: The feeds whose rows are WALLET intelligence -- who traded, carrying which GMGN label --
+#: rather than token or trading signals. They feed wallet discovery and grading (the
+#: gather queue's ``feed``/``tags`` signals, ``discover.cohort_wallets``, the tracker's
+#: cohort seeding, naming), so they poll the chains we HUNT WALLETS on, whether or not a
+#: chain is enabled for trading. MEASURED 2026-10-02 on the box: with Solana trading
+#: switched off on 2026-10-01 the sol smart-money and KOL feeds stopped with it (their kv
+#: cursors last moved 56 h earlier; the last ~5.3 h of feed swaps were 6,953 smart-money +
+#: 209 KOL rows, all robinhood), while the owner's stated goal is more Solana A/B wallets.
+WALLET_FEEDS: frozenset[str] = frozenset({"smartmoney", "kol"})
+
+#: The wallet-hunting chains when the config names none: the three chains whose wallets
+#: the system grades (sol, bsc, robinhood). Not every :class:`Chain`: the feeds accept
+#: eth/base/arc/stable too, but nothing downstream grades wallets there.
+DEFAULT_WALLET_CHAINS: tuple[Chain, ...] = (Chain.SOL, Chain.BSC, Chain.ROBINHOOD)
+
 
 def feed_chains() -> list[Chain]:
-    """Chains to poll: whatever the operator enabled in ``config/risk.yaml``, else Solana."""
+    """Chains to poll the TRADING feeds on: whatever the operator enabled for trading in
+    ``config/risk.yaml``, else Solana. The wallet feeds use :func:`wallet_chains`."""
     enabled = [c for c, budget in (get_risk().chains or {}).items() if budget.enabled]
     return enabled or [Chain.SOL]
+
+
+def _schedule_path() -> Path:
+    override = os.environ.get("KAIBA_SCHEDULE_CONFIG")  # the same override the ops scheduler reads
+    return Path(override) if override else REPO_ROOT / "config" / "schedule.yaml"
+
+
+def wallet_chains(path: Path | None = None) -> list[Chain]:
+    """Chains to poll the WALLET feeds (:data:`WALLET_FEEDS`) on, independent of trading.
+
+    ``gmgn_feeds.wallet_chains`` in config/schedule.yaml, a list of chain names; absent ->
+    :data:`DEFAULT_WALLET_CHAINS`. An empty list is honoured: no wallet feed anywhere.
+    Re-read every sweep, so an edit lands within a minute without a restart. An unknown
+    name is dropped and logged; an unreadable file falls back to the default, loudly --
+    a wallet feed that goes quiet without a word is the failure this exists to fix.
+    """
+    p = path or _schedule_path()
+    try:
+        raw = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
+    except (OSError, yaml.YAMLError) as exc:
+        log.warning("gmgn wallet chains: %s unreadable (%s); polling the default %s", p, exc,
+                    [c.value for c in DEFAULT_WALLET_CHAINS])
+        return list(DEFAULT_WALLET_CHAINS)
+    block = raw.get("gmgn_feeds") if isinstance(raw, dict) else None
+    if not isinstance(block, dict) or "wallet_chains" not in block:
+        return list(DEFAULT_WALLET_CHAINS)
+    names = block.get("wallet_chains") or []
+    if not isinstance(names, list):
+        log.warning("gmgn_feeds.wallet_chains must be a list, got %r; polling the default", names)
+        return list(DEFAULT_WALLET_CHAINS)
+    out: list[Chain] = []
+    for name in names:
+        try:
+            chain = Chain(str(name).strip().lower())
+        except ValueError:
+            log.warning("gmgn_feeds.wallet_chains: unknown chain %r ignored", name)
+            continue
+        if chain not in out:
+            out.append(chain)
+    return out
 
 
 def invocation(chain: Chain, feed: str) -> tuple[str, str, dict[str, Any]]:
@@ -1160,25 +1219,37 @@ def write_swap(conn: Any, row: SwapRow) -> bool:
             swap["source"],
         ),
     )
-    emit_once(
-        EventKind.WALLET_TRADE,
-        {
-            **swap,
-            "feed": row.feed,
-            "wallet_name": row.wallet_name,
-            "token_symbol": row.token_symbol,
-            "tags": row.tags,
-            "amount_token_ui": row.amount_token_ui,
-            "amount_token_atoms": row.amount_token_atoms,
-            "token_decimals": row.token_decimals,
-            "token_decimals_basis": row.token_decimals_basis,
-            "amount_native_basis": row.amount_native_basis,
-        },
-        chain=row.chain,
-        subject=row.wallet,
-        dedupe_key=f"{EventKind.WALLET_TRADE.value}:{row.dedupe_key}",
-        conn=conn,
-    )
+    payload = {
+        **swap,
+        "feed": row.feed,
+        "wallet_name": row.wallet_name,
+        "token_symbol": row.token_symbol,
+        "tags": row.tags,
+        "amount_token_ui": row.amount_token_ui,
+        "amount_token_atoms": row.amount_token_atoms,
+        "token_decimals": row.token_decimals,
+        "token_decimals_basis": row.token_decimals_basis,
+        "amount_native_basis": row.amount_native_basis,
+    }
+    # The event and its wallet_feed_tags rollup land in ONE transaction: the table is what
+    # lets old wallet.trade events be deleted, so a label must never be on the event and
+    # missing from the table (feed_tags module doc). A failure loses both, exactly as a
+    # swallowed emit used to lose the event; it never raises into the feed loop.
+    try:
+        with tx(conn):
+            event_id = emit_once(
+                EventKind.WALLET_TRADE,
+                payload,
+                chain=row.chain,
+                subject=row.wallet,
+                dedupe_key=f"{EventKind.WALLET_TRADE.value}:{row.dedupe_key}",
+                conn=conn,
+            )
+            if event_id is not None:
+                feed_tags.record_event(conn, event_id, chain=row.chain.value, subject=row.wallet,
+                                       payload=payload)
+    except sqlite3.Error as exc:
+        log.warning("gmgn wallet.trade event/rollup not written for %s: %s", row.wallet[:12], exc)
     return bool(cur.rowcount)
 
 
@@ -1509,8 +1580,14 @@ _sweep_turn = 0
 FEED_MAX_WAIT_S = 0.3
 
 
-def sweep_order(chains: Sequence[Chain], feeds: Sequence[str], turn: int) -> list[tuple[Chain, str]]:
+def sweep_order(
+    chains: Sequence[Chain], feeds: Sequence[str], turn: int, *,
+    wallet_chains: Sequence[Chain] | None = None,
+) -> list[tuple[Chain, str]]:
     """The order one sweep visits (chain, feed) pairs in. Feed-major, chain-rotated.
+
+    ``wallet_chains`` (when given) is the chain list for the :data:`WALLET_FEEDS`; every
+    other feed polls ``chains``. ``None`` keeps one list for every feed.
 
     Two separate problems, one ordering.
 
@@ -1531,12 +1608,21 @@ def sweep_order(chains: Sequence[Chain], feeds: Sequence[str], turn: int) -> lis
     worth keeping.
     """
     chain_list = list(chains)
+    wallet_list = chain_list if wallet_chains is None else list(wallet_chains)
     feed_list = list(feeds)
-    if not chain_list or not feed_list:
-        return []
-    shift = turn % len(chain_list)
-    rotated = chain_list[shift:] + chain_list[:shift]
-    return [(chain, feed) for feed in feed_list for chain in rotated]
+
+    def rotated(items: list[Chain]) -> list[Chain]:
+        if not items:
+            return []
+        shift = turn % len(items)
+        return items[shift:] + items[:shift]
+
+    trading_order, wallet_order = rotated(chain_list), rotated(wallet_list)
+    return [
+        (chain, feed)
+        for feed in feed_list
+        for chain in (wallet_order if feed in WALLET_FEEDS else trading_order)
+    ]
 
 
 def pace_s() -> float:
@@ -1564,15 +1650,17 @@ def pace_s() -> float:
 
 
 async def poll_all(
-    chains: Iterable[Chain], feeds: Iterable[str], conn: Any = None, *, stop: asyncio.Event | None = None
+    chains: Iterable[Chain], feeds: Iterable[str], conn: Any = None, *, stop: asyncio.Event | None = None,
+    wallet_chains: Iterable[Chain] | None = None,
 ) -> int:
     """One sweep over every (chain, feed) pair, paced to the provider's minimum interval.
 
     Blocking work is pushed off the loop; the gap between calls is awaited on the loop so
-    a stop still lands promptly.
+    a stop still lands promptly. ``wallet_chains``: see :func:`sweep_order`.
     """
     global _sweep_turn
-    pairs = sweep_order(list(chains), list(feeds), _sweep_turn)
+    pairs = sweep_order(list(chains), list(feeds), _sweep_turn,
+                        wallet_chains=None if wallet_chains is None else list(wallet_chains))
     _sweep_turn += 1
     gap = pace_s()
     total = 0
@@ -1615,13 +1703,21 @@ async def run(
     feeds: Iterable[str] | None = None,
     conn: Any = None,
 ) -> None:
-    """Poll every enabled (chain, feed) on a fixed interval until ``stop``."""
+    """Poll every (chain, feed) on a fixed interval until ``stop``.
+
+    The trading feeds poll the chains enabled for trading (:func:`feed_chains`); the wallet
+    feeds poll the wallet-hunting chains (:func:`wallet_chains`), both re-read each sweep.
+    An explicit ``chains`` (tests, a one-off) is used for every feed.
+    """
     stop = stop or asyncio.Event()
     feed_names = list(feeds or DEFAULT_FEEDS)
     while not stop.is_set():
-        targets = list(chains) if chains is not None else feed_chains()
+        if chains is not None:
+            targets, per_feed = list(chains), {}
+        else:
+            targets, per_feed = feed_chains(), {"wallet_chains": wallet_chains()}
         try:
-            new_rows = await poll_all(targets, feed_names, conn, stop=stop)
+            new_rows = await poll_all(targets, feed_names, conn, stop=stop, **per_feed)
             log.debug("gmgn sweep: %d new rows across %d chains", new_rows, len(targets))
             _note_events(new_rows, conn)
         except asyncio.CancelledError:

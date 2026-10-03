@@ -32,7 +32,7 @@ from kaiba.core.schemas import now_ms
 
 PASSWORD = "correct-horse-battery-staple"
 
-SOL_TOKEN = "CJF7MNqb9xv1XrTs5St1Du5JuQXLsfFBB137vmYRKpnb"
+SOL_TOKEN = "Bnd5oBSWpPpXoaWTckgXTVx9TCKkX5GyVqxcrwBzUYsB"
 SOL_WALLET = "8psNvWTrdNTiVRNzAgsou9kETXNJm2SXZyaKuJraVRtf"
 SOL_WALLET_B = "9xQeWvG816bUx9EPjHmaT23yvVM2ZWbrrpZb9PusVFin"
 

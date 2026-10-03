@@ -1,0 +1,20 @@
+[Unit]
+Description=Kaiba core-state backup: one read snapshot of the irreplaceable tables, gzipped, last 7 kept
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/kaiba
+Environment=KAIBA_ENV=prod
+Environment=PYTHONUNBUFFERED=1
+# No EnvironmentFile, deliberately: this unit needs no credential and must never see one.
+# It reads the live database through a read-only (mode=ro) attachment, so it cannot take
+# the write lock; protection never waits on it. It writes only under data/backups.
+ExecStart=%h/kaiba/.venv/bin/python -B -m kaiba.ops.core_backup --db %h/kaiba/data/kaiba.db --out-dir %h/kaiba/data/backups --keep 7 --max-snapshot-s 900 --min-free-gb 5
+# Lowest CPU and IO priority: the disk is IO-saturated and the snapshot must not compete
+# with protection's reads. The snapshot is aborted after --max-snapshot-s so a starved run
+# cannot pin the WAL for hours.
+Nice=19
+IOSchedulingClass=idle
+UMask=0077
+MemoryMax=1G
+TimeoutStartSec=1800

@@ -27,7 +27,7 @@ whether one should exist and how large it may be.
 
 - A lane produced an eligible signal (`wallet-confluence`, `trusted-wallet-copy`, or a
   shadow lane) and something has to decide.
-- the operator asks for a manual entry on a specific token.
+- The operator asks for a manual entry on a specific token.
 - You are explaining why a strong-looking candidate was skipped.
 - You are about to scale into or out of an existing position.
 

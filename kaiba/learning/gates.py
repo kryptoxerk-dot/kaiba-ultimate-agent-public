@@ -270,11 +270,60 @@ def _direction(key: str) -> str | None:
     return None
 
 
+#: Lane thresholds whose feature the lane records under a DIFFERENT name in its signal
+#: payload. Without these the replay finds no value and refuses (sm-trenches), or -- worse
+#: -- finds the wrong one (below). Each alias is the exact payload key the lane compares
+#: against that threshold in ``kaiba/execution/lanes.py``:
+#:   sm_trenches:     ``len(smart) < min_smart_degen``        -> payload ``smart_wallets``
+#:                    ``entities < min_independent_entities`` -> payload ``entity_count``
+#:   confluence_5 / pons_robinhood: ``entities < min_entities`` -> payload ``entity_count``
+FEATURE_ALIASES: dict[str, tuple[str, ...]] = {
+    "min_smart_degen": ("smart_wallets",),
+    "min_independent_entities": ("entity_count",),
+    "min_entities": ("entity_count",),
+}
+# The entry features sm-trenches and confluence-5 record since 2026-10-03
+# (``lanes.ENTRY_FEATURES``) need no alias: every generic key is ``min_<f>``/``max_<f>``
+# over the payload key ``<f>`` itself (``lanes.FEATURE_THRESHOLD_KEYS``), which
+# :func:`_feature_names` resolves by stripping the prefix. tests/test_entry_features.py
+# asserts every lane key resolves to a name the lane actually writes.
+
+#: (lane, key) pairs where the lane reads ``0`` as "not enforced". The replay compares
+#: with :func:`_passes`, where 0 is a real floor that refuses an unknown feature, so the
+#: incumbent would appear to have refused signals the lane took. Normalised to ``None``.
+#:   sm-trenches  ``if min_holders > 0:`` (lanes.sm_trenches); risk.yaml ships 0.
+ZERO_IS_OFF: frozenset[tuple[str, str]] = frozenset({("sm-trenches", "min_holder_count")})
+
+#: (lane, key) thresholds whose live rule the replay CANNOT reproduce. Judging them would
+#: score a configuration that does not exist, so the replay refuses and says why.
+REPLAY_SEMANTICS_DIFFER: dict[tuple[str, str], str] = {
+    ("sm-trenches", "min_liquidity_usd"): (
+        "sm-trenches waives its pool-liquidity floor on a readable bonding curve and reads "
+        "it per chain; a scalar replay over liquidity_usd would refuse signals the lane "
+        "admits. Propose max_liquidity_usd, or change the floor by hand"
+    ),
+    ("sm-trenches", "max_rug_ratio"): (
+        "sm-trenches ADMITS an unavailable or stale rug ratio (most signals carry none); "
+        "the replay refuses an unknown under any threshold, so it would score a stricter "
+        "rule than the one that would run"
+    ),
+}
+
+
 def _feature_names(key: str) -> list[str]:
-    names = [key]
+    """Payload / decision names that hold the feature a ``min_*``/``max_*`` key filters on.
+
+    FIXED 2026-10-02: this used to include ``key`` itself. Lanes ECHO their threshold into
+    the payload -- confluence-5 and pons-robinhood write ``"min_entities": <threshold>``,
+    sm-trenches writes ``"max_rug_ratio": <threshold>`` -- so the replay read the threshold
+    in force as every decision's feature, and a candidate either kept all trades or none.
+    A payload field named like the threshold IS the threshold, never the measurement.
+    """
+    names: list[str] = []
     for prefix in ("min_", "max_"):
         if key.startswith(prefix):
             names.append(key[len(prefix) :])
+    names.extend(FEATURE_ALIASES.get(key, ()))
     return names
 
 
@@ -285,10 +334,32 @@ def _feature_value(conn: sqlite3.Connection, decision: Mapping[str, Any], key: s
     lookahead guard, and it is why the gate can only test filters over features the
     decision actually had in front of it.
     """
+    return _feature_point(conn, decision, key)[0]
+
+
+def _feature_point(
+    conn: sqlite3.Connection, decision: Mapping[str, Any], key: str
+) -> tuple[Decimal | None, bool]:
+    """``(value, recorded)`` -- the feature, and whether the decision RECORDED it at all.
+
+    ADDED 2026-10-03 with the lanes' entry features (``lanes.entry_features``). Two kinds
+    of "no value" mean opposite things and used to be one ``None``:
+
+    * ``recorded=False`` -- no point-in-time signal payload carries any of the key's
+      feature names. The signal PREDATES the feature. Nothing can be said about it; the
+      replay leaves it out of both arms rather than letting the candidate "refuse" it.
+    * ``recorded=True`` with ``value None`` -- the lane looked and the feature was unknown
+      or stale (the payload holds the key with ``null``). Under a configured threshold the
+      lane REFUSES such a signal (``lanes.feature_threshold_refusal``), so the replay must
+      count it as refused by the candidate -- which is what :func:`_passes` already does.
+
+    Decision columns (``confidence`` ...) and ``strength`` always count as recorded.
+    """
     direction = _direction(key)
     names = _feature_names(key)
     ts = int(decision["ts_ms"])
     values: list[Decimal] = []
+    recorded = False
 
     for sid in jload(decision.get("signals_json"), []):
         row = fetch_one(
@@ -301,23 +372,26 @@ def _feature_value(conn: sqlite3.Connection, decision: Mapping[str, Any], key: s
         payload = jload(row["payload_json"], {})
         for name in names:
             if isinstance(payload, Mapping) and name in payload:
+                recorded = True
                 v = _num(payload[name])
                 if v is not None:
                     values.append(v)
             if name == "strength":
+                recorded = True
                 v = _num(row["strength"])
                 if v is not None:
                     values.append(v)
 
     for name in names:
         if name in DECISION_FEATURE_COLUMNS:
+            recorded = True
             v = _num(decision.get(name))
             if v is not None:
                 values.append(v)
 
     if not values:
-        return None
-    return max(values) if direction != "le" else min(values)
+        return None, recorded
+    return (max(values) if direction != "le" else min(values)), True
 
 
 def _passes(feature: Decimal | None, threshold: Decimal | None, direction: str | None) -> bool:
@@ -343,23 +417,42 @@ def _replay_rows(conn: sqlite3.Connection, lane: str, key: str) -> list[dict[str
         ret = metrics.trade_return(r)
         if ret is None:
             continue
-        r["feature"] = _feature_value(conn, r, key)
+        r["feature"], r["recorded"] = _feature_point(conn, r, key)
         r["return"] = float(ret)
         out.append(r)
     return out
 
 
-def _lane_thresholds(conn: sqlite3.Connection, lane: str, key: str, diff: Mapping[str, Any]) -> dict[str, Decimal | None]:
-    """Every configuration in the sweep: the incumbent plus each proposed candidate value."""
-    configs: dict[str, Decimal | None] = {}
+def _incumbent_value(lane: str, key: str, diff: Mapping[str, Any]) -> Decimal | None:
+    """The incumbent threshold: the diff's ``old`` if numeric, else the lane's configured one.
+
+    A value the lane reads as "off" (:data:`ZERO_IS_OFF`) is ``None``: no threshold.
+    """
     incumbent = _num(diff.get("old"))
     if incumbent is None:
         try:
-            params = get_risk().lane(Lane(lane)).params
-            incumbent = _num(params.get(key))
+            incumbent = _num(get_risk().lane(Lane(lane)).params.get(key))
         except (ValueError, KeyError):
             incumbent = None
-    configs["incumbent"] = incumbent
+    if incumbent is not None and incumbent == 0 and (lane, key) in ZERO_IS_OFF:
+        return None
+    return incumbent
+
+
+def _mapping_incumbent(lane: str, key: str, diff: Mapping[str, Any]) -> bool:
+    """True when the incumbent is a per-chain mapping: one scalar replay cannot stand for it."""
+    if isinstance(diff.get("old"), Mapping):
+        return True
+    try:
+        return isinstance(get_risk().lane(Lane(lane)).params.get(key), Mapping)
+    except (ValueError, KeyError):
+        return False
+
+
+def _lane_thresholds(conn: sqlite3.Connection, lane: str, key: str, diff: Mapping[str, Any]) -> dict[str, Decimal | None]:
+    """Every configuration in the sweep: the incumbent plus each proposed candidate value."""
+    configs: dict[str, Decimal | None] = {}
+    configs["incumbent"] = _incumbent_value(lane, key, diff)
     for row in fetch_all(
         conn,
         "SELECT experiment_id, diff_json FROM experiments WHERE lane = ? ORDER BY created_ms ASC",
@@ -420,6 +513,199 @@ def _mdd(series: Sequence[float]) -> Decimal:
     return Decimal(str(worst))
 
 
+# --------------------------------------------------------------------------------------
+# the relative criterion, for tightenings
+#
+# OWNER OBJECTIVE (2026-09-24, decided by the lead 2026-10-02): judge a change by whether
+# it moves expected value PER TRADE. The absolute rule (DSR >= 0.95 on the candidate's own
+# returns) asks whether the candidate is profitable on its own, so on a losing lane NO
+# tightening can pass however much it cuts the loss -- MEASURED on the box 2026-10-02:
+# min_independent_entities 2 -> 3 moved out-of-sample EV from -8.0% to -5.1% per trade and
+# failed on DSR 0.0024. A tightening keeps a SUBSET of the incumbent's decisions, so the
+# question it can answer is relative: on the same decisions, does the subset earn more
+# per trade than the whole? Anything that is not a tightening keeps the absolute rule.
+# --------------------------------------------------------------------------------------
+
+#: Seeded so the same rows always give the same verdict; a gate that flips on re-run is
+#: not auditable.
+BOOTSTRAP_DRAWS = 2000
+BOOTSTRAP_SEED = 20261002
+
+#: Distinct UTC days the day-cluster bootstrap needs before it returns a bound at all. The
+#: same number as ``kaiba.learning.validation.MIN_BOOTSTRAP_BLOCKS`` (not imported:
+#: validation imports this module; a test pins the two equal), for the reason given there:
+#: with few blocks the bootstrap sees almost no between-block spread, reports a tiny
+#: interval, and so fails towards confidence -- the direction that moves capital.
+MIN_CLUSTER_DAYS = 20
+
+#: Default ceiling on the share of the lane's decided signals a tightening may remove
+#: (``experiment_gates.max_auto_refused_share`` passes its own value).
+MAX_REMOVAL_SHARE = 0.5
+
+
+def is_tightening(candidate: Decimal | None, incumbent: Decimal | None, direction: str | None) -> bool:
+    """True when ``candidate`` admits a strict subset of what ``incumbent`` admits.
+
+    ``None`` incumbent means "no threshold configured; the lane took everything", so any
+    threshold is a tightening of it. Equal is not a tightening: it changes nothing.
+    """
+    if candidate is None or direction not in ("ge", "le"):
+        return False
+    if incumbent is None:
+        return True
+    return candidate > incumbent if direction == "ge" else candidate < incumbent
+
+
+def _percentile(sorted_values: Sequence[float], q: float) -> float:
+    return sorted_values[min(len(sorted_values) - 1, max(0, int(q * len(sorted_values))))]
+
+
+def paired_improvement(
+    observations: Sequence[tuple[int, float, bool]],
+    *,
+    draws: int = BOOTSTRAP_DRAWS,
+    seed: int = BOOTSTRAP_SEED,
+    min_days: int = MIN_CLUSTER_DAYS,
+) -> dict[str, Any]:
+    """EV-per-trade improvement of a subset over its whole stream, with a bootstrap bound.
+
+    ``observations`` is the INCUMBENT's stream: ``(ts_ms, return, kept_by_candidate)`` per
+    decision. ``delta = mean(return | kept) - mean(return)``.
+
+    The bound is a PAIRED, DAY-CLUSTERED percentile bootstrap: each draw resamples whole UTC
+    days of the incumbent's stream with replacement -- kept and refused decisions of a day
+    together -- and recomputes both means from that one resample, so the two arms are never
+    resampled independently (paired), and decisions sharing a day are never treated as
+    independent (clustered). Same-chain returns share a market factor (rho +0.22, measured
+    2026-09-21) and our trades bunch: 101 sm-trenches fills landed on 09-22 alone. Not
+    stratified: the replay stream mixes chains, but in RETURN terms, which are comparable.
+    ``ci_lo``/``ci_hi`` are the 2.5th/97.5th percentiles (two-sided 95%). Fewer than
+    ``min_days`` days: no bound (``unevaluable``), never a narrow one.
+
+    ``ci_lo_trade_level`` -- the same paired bootstrap with the single decision as the
+    unit -- is recorded as INFORMATION only: it ignores the clustering, so it is narrower.
+    """
+    days: dict[int, list[float]] = {}
+    flat: list[tuple[float, bool]] = []
+    for ts_ms, value, kept in observations:
+        v = float(value)
+        block = days.setdefault(int(ts_ms) // DAY_MS, [0.0, 0.0, 0.0, 0.0])
+        block[0] += v
+        block[1] += 1
+        if kept:
+            block[2] += v
+            block[3] += 1
+        flat.append((v, bool(kept)))
+    n_all = int(sum(b[1] for b in days.values()))
+    n_kept = int(sum(b[3] for b in days.values()))
+    out: dict[str, Any] = {
+        "method": "paired bootstrap, UTC-day clusters, percentile 95%",
+        "n_incumbent": n_all, "n_candidate": n_kept, "days": len(days),
+        "delta": None, "ci_lo": None, "ci_hi": None,
+        "ci_lo_trade_level": None, "ci_hi_trade_level": None, "unevaluable": None,
+    }
+    if n_all == 0 or n_kept == 0:
+        out["unevaluable"] = "the candidate keeps no decision of the incumbent's stream"
+        return out
+    out["delta"] = sum(b[2] for b in days.values()) / n_kept - sum(b[0] for b in days.values()) / n_all
+
+    rng_trade = random.Random(seed + 1)
+    trade_stats: list[float] = []
+    for _ in range(max(draws, 2)):
+        sa = na = sk = nk = 0.0
+        for _ in range(len(flat)):
+            v, k = flat[rng_trade.randrange(len(flat))]
+            sa += v
+            na += 1
+            if k:
+                sk += v
+                nk += 1
+        if nk:
+            trade_stats.append(sk / nk - sa / na)
+    if trade_stats:
+        trade_stats.sort()
+        out["ci_lo_trade_level"] = _percentile(trade_stats, 0.025)
+        out["ci_hi_trade_level"] = _percentile(trade_stats, 0.975)
+
+    if len(days) < min_days:
+        out["unevaluable"] = (f"{len(days)} distinct UTC days; the day-cluster bootstrap needs "
+                              f">= {min_days} before it will bound anything")
+        return out
+    blocks = [days[k] for k in sorted(days)]
+    rng = random.Random(seed)
+    stats: list[float] = []
+    for _ in range(max(draws, 2)):
+        sa = na = sk = nk = 0.0
+        for _ in range(len(blocks)):
+            b = blocks[rng.randrange(len(blocks))]
+            sa += b[0]
+            na += b[1]
+            sk += b[2]
+            nk += b[3]
+        if nk:
+            stats.append(sk / nk - sa / na)
+    if len(stats) < max(draws, 2) // 2:
+        out["unevaluable"] = f"only {len(stats)} of {draws} resamples kept any candidate decision"
+        return out
+    stats.sort()
+    out["ci_lo"] = _percentile(stats, 0.025)
+    out["ci_hi"] = _percentile(stats, 0.975)
+    return out
+
+
+def removal_share(
+    conn: sqlite3.Connection,
+    lane: str,
+    key: str,
+    incumbent: Decimal | None,
+    candidate: Decimal,
+    direction: str,
+    *,
+    since_ms: int,
+    limit: int = 20_000,
+) -> dict[str, Any]:
+    """Share of the lane's DECIDED SIGNALS (skips included) a tightening would remove.
+
+    Owner directive 2026-09-24: measure a filter on the population we scan, not only on
+    the fills we took -- a holder floor and a launchpad blocklist judged on fills removed
+    98% and 87.5% of the scanned population. Denominator: distinct signals the lane decided
+    on since ``since_ms`` that have a point-in-time feature AND pass the incumbent. One row
+    per signal: a launchpad twin repeats its skip's signal and is counted once.
+    """
+    rows = fetch_all(
+        conn,
+        "SELECT decision_id, ts_ms, signals_json, confidence, expected_return_pct, size_pct_bankroll "
+        "FROM decisions WHERE lane = ? AND ts_ms >= ? ORDER BY ts_ms DESC LIMIT ?",
+        (lane, int(since_ms), int(limit)),
+    )
+    seen: set[str] = set()
+    measured = removed = missing = unknown = 0
+    for r in rows:
+        sig = str(r.get("signals_json") or "")
+        ident = sig if sig not in ("", "[]") else str(r["decision_id"])
+        if ident in seen:
+            continue
+        seen.add(ident)
+        feature, recorded = _feature_point(conn, r, key)
+        if not recorded:
+            missing += 1  # the signal predates the feature: nothing to say about it
+            continue
+        if not _passes(feature, incumbent, direction):
+            continue  # the incumbent refuses it too; the candidate removes nothing here
+        measured += 1
+        if feature is None:
+            # RECORDED as unknown. A configured threshold refuses it live
+            # (lanes.feature_threshold_refusal), so it counts as removed: this is the
+            # holder-floor trap -- 85.9% of scanned tokens had no holder count -- and the
+            # share must show it rather than quietly dividing it away.
+            unknown += 1
+        if not _passes(feature, candidate, direction):
+            removed += 1
+    return {"signals": len(seen), "measured": measured, "removed": removed,
+            "missing_feature": missing, "recorded_unknown": unknown,
+            "share": (removed / measured) if measured else None}
+
+
 def replay_gate(
     experiment: Any,
     conn: sqlite3.Connection | None = None,
@@ -427,6 +713,7 @@ def replay_gate(
     min_trades: int = DEFAULT_MIN_TRADES,
     splits: int = DEFAULT_SPLITS,
     oos_fraction: float = DEFAULT_OOS_FRACTION,
+    max_removal_share: float = MAX_REMOVAL_SHARE,
     record: bool = True,
 ) -> GateResult:
     """Offline replay of a candidate parameter over the recorded decision stream.
@@ -468,13 +755,37 @@ def replay_gate(
             ],
         )
 
-    rows = _replay_rows(c, lane, key)
+    differ = REPLAY_SEMANTICS_DIFFER.get((lane, key))
+    if differ:
+        return GateResult(gate="replay", experiment_id=exp_id, passed=False,
+                          reasons=[f"no faithful replay for {lane}.{key}: {differ}"])
+    if _mapping_incumbent(lane, key, diff):
+        return GateResult(
+            gate="replay", experiment_id=exp_id, passed=False,
+            reasons=[f"{lane}.{key} is configured per chain; a replay compares one scalar "
+                     "threshold, so it would judge a configuration that is not running"],
+        )
+
+    all_rows = _replay_rows(c, lane, key)
+    # Decisions whose signal predates the feature (``recorded`` False) are left out of BOTH
+    # arms: the candidate did not "refuse" them, nobody measured them. Before 2026-10-03
+    # they were counted as missing; for a feature the lanes only started recording that
+    # day, every older decision would otherwise read as refused by any threshold.
+    rows = [r for r in all_rows if r.get("recorded", True)]
     m["decisions_replayed"] = len(rows)
+    m["unrecorded_feature"] = len(all_rows) - len(rows)
     missing = sum(1 for r in rows if r["feature"] is None)
     m["missing_feature"] = missing
-    if not rows:
+    if not all_rows:
         return GateResult(gate="replay", experiment_id=exp_id, passed=False,
                           reasons=["no recorded entry decisions with closed trades for this lane"])
+    if not rows:
+        return GateResult(
+            gate="replay", experiment_id=exp_id, passed=False,
+            reasons=[f"0/{len(all_rows)} decisions recorded a point-in-time value for {key!r} "
+                     f"(feature names {_feature_names(key)}): the lane did not record it when "
+                     "these trades were decided"],
+        )
     if missing / len(rows) > 0.5:
         return GateResult(
             gate="replay", experiment_id=exp_id, passed=False,
@@ -532,8 +843,24 @@ def replay_gate(
     m["trials"] = trials
     m["candidate_sharpe"] = _sharpe_raw(cand_series)
     m["incumbent_sharpe"] = _sharpe_raw(inc_series)
-    reasons.extend(dsr_notes)
 
+    if is_tightening(new_value, configs["incumbent"], direction):
+        m["criterion"] = "relative"
+        reasons.extend(f"info: {n}" for n in dsr_notes)
+        ok = _relative_replay_verdict(
+            c, rows[cut:], lane=lane, key=key, incumbent=configs["incumbent"], candidate=new_value,
+            direction=direction, since_ms=int(rows[0]["ts_ms"]), pbo=pbo, dsr=dsr,
+            cand_mdd=cand_mdd, inc_mdd=inc_mdd, min_trades=min_trades,
+            max_removal_share=max_removal_share, reasons=reasons, m=m,
+        )
+        result = GateResult(gate="replay", experiment_id=exp_id, passed=ok, reasons=reasons,
+                            metrics=json.loads(jdump(m)))
+        if record:
+            result.record(c)
+        return result
+
+    m["criterion"] = "absolute"
+    reasons.extend(dsr_notes)
     ok = True
     if len(taken[exp_id]) < min_trades:
         ok = False
@@ -568,6 +895,100 @@ def replay_gate(
     if record:
         result.record(c)
     return result
+
+
+def _relative_replay_verdict(
+    conn: sqlite3.Connection,
+    oos_rows: Sequence[Mapping[str, Any]],
+    *,
+    lane: str,
+    key: str,
+    incumbent: Decimal | None,
+    candidate: Decimal,
+    direction: str,
+    since_ms: int,
+    pbo: float | None,
+    dsr: float | None,
+    cand_mdd: Decimal,
+    inc_mdd: Decimal,
+    min_trades: int,
+    max_removal_share: float,
+    reasons: list[str],
+    m: dict[str, Any],
+) -> bool:
+    """The tightening verdict. All must hold; absolute DSR is recorded, never required.
+
+    (a) PBO < 0.5 over the sweep;
+    (b) out-of-sample EV per trade of the candidate's subset minus the incumbent's, on the
+        SAME out-of-sample decisions, is > 0 and its paired day-cluster bootstrap 95% lower
+        bound is > 0 (:func:`paired_improvement`);
+    (c) the candidate keeps >= ``min_trades`` out-of-sample trades;
+    (d) it removes <= ``max_removal_share`` of the lane's decided signals (:func:`removal_share`);
+    and, kept from the absolute rule because only DSR was replaced: the candidate's max
+    drawdown is no worse than 1.1x the incumbent's on the same stream.
+    """
+    ok = True
+    if pbo is None:
+        ok = False
+        reasons.append("PBO not computable for this shape; treated as a failure")
+    elif pbo >= PBO_MAX:
+        ok = False
+        reasons.append(f"PBO {pbo:.3f} >= {PBO_MAX}: the in-sample winner does not hold up")
+
+    stream = [
+        (int(r["ts_ms"]), float(r["return"]), _passes(r["feature"], candidate, direction))
+        for r in oos_rows
+        if _passes(r["feature"], incumbent, direction)
+    ]
+    imp = paired_improvement(stream)
+    m["oos_improvement"] = imp
+    delta, lo = imp["delta"], imp["ci_lo"]
+    if delta is None:
+        ok = False
+        reasons.append(f"OOS improvement not computable: {imp['unevaluable']}")
+    elif delta <= 0:
+        ok = False
+        reasons.append(f"OOS EV per trade {delta:+.6f} vs the incumbent: the subset does not earn more")
+    elif lo is None:
+        ok = False
+        reasons.append(f"OOS improvement {delta:+.6f} cannot be bounded: {imp['unevaluable']}")
+    elif lo <= 0:
+        ok = False
+        reasons.append(
+            f"OOS improvement {delta:+.6f} per trade, but its 95% lower bound {lo:+.6f} is not "
+            "above zero (paired day-cluster bootstrap)"
+        )
+
+    n_oos = imp["n_candidate"]
+    if n_oos < min_trades:
+        ok = False
+        reasons.append(f"candidate took {n_oos} out-of-sample trades, need >= {min_trades}")
+
+    share = removal_share(conn, lane, key, incumbent, candidate, direction, since_ms=since_ms)
+    m["removal"] = share
+    if share["share"] is None:
+        ok = False
+        reasons.append("removal share not measurable: no decided signal carries the feature")
+    elif share["share"] > max_removal_share:
+        ok = False
+        reasons.append(
+            f"removes {share['removed']}/{share['measured']} ({share['share']:.0%}) of the lane's "
+            f"decided signals, above the {max_removal_share:.0%} ceiling"
+        )
+
+    if cand_mdd > inc_mdd * MDD_TOLERANCE:
+        ok = False
+        reasons.append(
+            f"max drawdown {float(cand_mdd):.6f} exceeds 1.1x incumbent {float(inc_mdd):.6f}"
+        )
+
+    reasons.append(
+        f"info: absolute DSR {dsr:.4f}" if dsr is not None else "info: absolute DSR not computable"
+    )
+    reasons[-1] += " -- recorded, not a pass condition for a tightening (judged on EV per trade)"
+    if ok:
+        reasons.append("all relative replay criteria met")
+    return ok
 
 
 # --------------------------------------------------------------------------------------
@@ -645,6 +1066,16 @@ def shadow_gate(
     span_days = (end_ms - start_ms) / DAY_MS
     m["span_days"] = round(span_days, 3)
 
+    key = str(diff.get("key") or "")
+    direction = _direction(key)
+    new_value = _num(diff.get("new"))
+    if lane and is_tightening(new_value, _incumbent_value(lane, key, diff), direction):
+        return _relative_shadow_verdict(
+            c, exp_id, cand, span_days=span_days, min_days=min_days, min_trades=min_trades,
+            m=m, record=record,
+        )
+
+    m["criterion"] = "absolute"
     inc = _arm_trades(c, exp_id, "incumbent")
     if not inc and lane:
         inc = _incumbent_over_span(c, lane, start_ms, end_ms, {str(t["trade_id"]) for t in cand})
@@ -697,6 +1128,97 @@ def shadow_gate(
     return result
 
 
+def _relative_shadow_verdict(
+    conn: sqlite3.Connection,
+    exp_id: str,
+    cand: list[dict[str, Any]],
+    *,
+    span_days: float,
+    min_days: int,
+    min_trades: int,
+    m: dict[str, Any],
+    record: bool,
+) -> GateResult:
+    """The tightening verdict on forward trades: the replay's relative criterion, forward.
+
+    The candidate arm is the forward trades the candidate would have taken; the incumbent
+    arm (as ``kaiba.learning.experiment_loop`` labels it) is the ones it would have REFUSED.
+    The incumbent's stream is their union, and the test is the same paired day-cluster
+    bound on ``mean(candidate) - mean(stream)`` per trade, in RETURN terms. Only labelled
+    arms count: the unlabelled-span fallback of the absolute path would mix in trades of
+    other chains and modes, and a relative claim needs to know which decisions were refused.
+    Kept minimums: >= ``min_trades`` candidate trades over >= ``min_days`` days.
+    """
+    m["criterion"] = "relative"
+    reasons: list[str] = []
+    refused = fetch_all(
+        conn,
+        "SELECT t.* FROM trades t JOIN experiment_trades x ON x.trade_id = t.trade_id "
+        "WHERE x.experiment_id = ? AND x.arm = 'incumbent' ORDER BY t.closed_ms ASC, t.trade_id ASC",
+        (exp_id,),
+    )
+    m["incumbent_trades"] = len(refused)
+    ok = True
+    if len(cand) < min_trades:
+        ok = False
+        reasons.append(f"{len(cand)} shadow trades, need >= {min_trades}")
+    if span_days < min_days:
+        ok = False
+        reasons.append(f"shadow ran {span_days:.1f} days, need >= {min_days}")
+    if not refused:
+        ok = False
+        reasons.append("no refused trades are labelled: a relative comparison needs both arms")
+
+    def _obs(rows: list[dict[str, Any]], kept: bool) -> list[tuple[int, float, bool]]:
+        out = []
+        for t in rows:
+            ret = metrics.trade_return(t)
+            if ret is not None:
+                out.append((int(t["opened_ms"]), float(ret), kept))
+        return out
+
+    stream = _obs(cand, True) + _obs(refused, False)
+    imp = paired_improvement(stream)
+    m["improvement"] = imp
+    delta, lo = imp["delta"], imp["ci_lo"]
+    if delta is None:
+        ok = False
+        reasons.append(f"improvement not computable: {imp['unevaluable']}")
+    elif delta <= 0:
+        ok = False
+        reasons.append(f"forward EV per trade {delta:+.6f} vs the incumbent's stream: no improvement")
+    elif lo is None:
+        ok = False
+        reasons.append(f"forward improvement {delta:+.6f} cannot be bounded: {imp['unevaluable']}")
+    elif lo <= 0:
+        ok = False
+        reasons.append(
+            f"forward improvement {delta:+.6f} per trade, but its 95% lower bound {lo:+.6f} is "
+            "not above zero (paired day-cluster bootstrap)"
+        )
+
+    # Drawdown in return terms against the WHOLE incumbent stream (candidate + refused,
+    # time-ordered) -- not against the refused complement, which is a different question.
+    by_time = sorted(cand + refused, key=lambda t: (int(t["closed_ms"]), str(t["trade_id"])))
+    cand_ids = {str(t["trade_id"]) for t in cand}
+    cand_series = [float(metrics.trade_return(t) or 0) for t in by_time if str(t["trade_id"]) in cand_ids]
+    all_series = [float(metrics.trade_return(t) or 0) for t in by_time]
+    cand_mdd, inc_mdd = _mdd(cand_series), _mdd(all_series)
+    m["candidate_return_drawdown"] = float(cand_mdd)
+    m["incumbent_return_drawdown"] = float(inc_mdd)
+    if cand_mdd > inc_mdd * MDD_TOLERANCE:
+        ok = False
+        reasons.append(f"candidate drawdown {float(cand_mdd):.6f} exceeds 1.1x the incumbent "
+                       f"stream's {float(inc_mdd):.6f}")
+    if ok:
+        reasons.append("all relative shadow criteria met")
+    result = GateResult(gate="shadow", experiment_id=exp_id, passed=ok, reasons=reasons,
+                        metrics=json.loads(jdump(m)))
+    if record:
+        result.record(conn)
+    return result
+
+
 # --------------------------------------------------------------------------------------
 # promotion and rollback
 # --------------------------------------------------------------------------------------
@@ -722,7 +1244,12 @@ def _set_status(
     )
 
 
-def promote(experiment: Any, conn: sqlite3.Connection | None = None) -> bool:
+def promote(
+    experiment: Any,
+    conn: sqlite3.Connection | None = None,
+    *,
+    max_removal_share: float = MAX_REMOVAL_SHARE,
+) -> bool:
     """Write a candidate's parameters into ``config/risk.yaml`` — if, and only if.
 
     Both gates must pass *in this call*: they are re-run here rather than read from a
@@ -764,7 +1291,7 @@ def promote(experiment: Any, conn: sqlite3.Connection | None = None) -> bool:
         journal.append("change", f"promotion refused for {exp_id}: {reason}", subject=exp_id, conn=c)
         return False
 
-    replay = replay_gate(row, c)
+    replay = replay_gate(row, c, max_removal_share=max_removal_share)
     shadow = shadow_gate(row, c)
     if not (replay.passed and shadow.passed):
         reason = "; ".join(replay.reasons + shadow.reasons)
@@ -811,11 +1338,19 @@ def promote(experiment: Any, conn: sqlite3.Connection | None = None) -> bool:
 
 
 def rollback(experiment_id: str, conn: sqlite3.Connection | None = None) -> bool:
-    """Restore the parameter block recorded in the promotion's journal entry.
+    """Restore the promoted key's previous value, as recorded in the promotion's journal entry.
 
     The journal is the source of truth here rather than a mutable "previous value" column,
     because the journal is hash-chained: a rollback target that was tampered with fails
     :func:`kaiba.core.journal.verify`.
+
+    KEY-SCOPED since 2026-10-02. It used to write the whole recorded ``previous_params``
+    block back, which silently reverted every OTHER parameter of the lane changed since the
+    promotion -- e.g. an operator edit of ``live_launchpads_by_chain`` (the Pons-only live
+    allowlist) would vanish under a rollback of an unrelated threshold. Now only the
+    promoted key is restored, and only while it still holds the promoted value: if someone
+    has changed it since, the promotion is already superseded and a rollback would
+    overwrite a newer decision, so it refuses.
     """
     c = conn or get_conn()
     entry = None
@@ -841,12 +1376,29 @@ def rollback(experiment_id: str, conn: sqlite3.Connection | None = None) -> bool
 
     risk = get_risk()
     lane_cfg = risk.lanes.get(lane) or LaneConfig()
-    risk.lanes[lane] = lane_cfg.model_copy(update={"params": dict(evidence.get("previous_params", {}))})
+    previous = dict(evidence.get("previous_params") or {})
+    key = str(evidence.get("key") or "")
+    if key:
+        params = dict(lane_cfg.params)
+        if params.get(key) != evidence.get("new"):
+            log.warning(
+                "rollback: %s.%s is %r, not the promoted %r; superseded, not rolling back",
+                lane.value, key, params.get(key), evidence.get("new"),
+            )
+            return False
+        if key in previous:
+            params[key] = previous[key]
+        else:
+            params.pop(key, None)
+    else:  # a promotion entry written before entries named their key
+        params = previous
+    risk.lanes[lane] = lane_cfg.model_copy(update={"params": params})
     save_risk(risk)
 
     journal.append(
         "correction",
-        f"rolled back {experiment_id}: restored {lane.value} params from journal seq {entry['seq']}",
+        f"rolled back {experiment_id}: restored {lane.value}.{key or 'params'} from journal "
+        f"seq {entry['seq']}",
         subject=str(experiment_id),
         refs=[str(entry["entry_hash"])],
         conn=c,
@@ -929,8 +1481,11 @@ __all__ = [
     "PBO_MAX",
     "allocator",
     "deflated_sharpe",
+    "is_tightening",
+    "paired_improvement",
     "pbo_cscv",
     "promote",
+    "removal_share",
     "replay_gate",
     "rollback",
     "shadow_gate",

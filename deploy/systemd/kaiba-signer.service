@@ -22,9 +22,14 @@ WorkingDirectory=/opt/kaiba/current
 EnvironmentFile=/etc/kaiba/signer.env
 Environment=HOME=/var/lib/kaiba/signer
 Environment=KAIBA_CONFIG_DIR=/etc/kaiba
+# These names are the ones the code reads (kaiba/execution/signer.py ENV_*, and
+# kaiba/execution/policy.py KAIBA_SIGNER_POLICY_PATH). Until 2026-10-02 this unit set
+# KAIBA_SIGNER_KEYSTORE / KAIBA_SIGNER_POLICY, which nothing read: the signer would have
+# loaded the repo's writable config/signer-policy.yaml instead of the root-owned copy.
+# tests/test_signer_unit_env.py parses this file and fails if the names drift again.
 Environment=KAIBA_SIGNER_SOCKET=/run/kaiba/signer/signer.sock
-Environment=KAIBA_SIGNER_KEYSTORE=/etc/kaiba/signer/keys
-Environment=KAIBA_SIGNER_POLICY=/etc/kaiba/policy/signer-policy.yaml
+Environment=KAIBA_KEYSTORE_DIR=/etc/kaiba/signer/keys
+Environment=KAIBA_SIGNER_POLICY_PATH=/etc/kaiba/policy/signer-policy.yaml
 Environment=KAIBA_SIGNER_STATE=/var/lib/kaiba/signer
 Environment=PYTHONDONTWRITEBYTECODE=1
 Environment=PYTHONUNBUFFERED=1

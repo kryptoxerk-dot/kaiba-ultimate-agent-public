@@ -29,7 +29,7 @@ bar for using it on `trusted_copy` is high.
 - A source wallet you copy has sold and you need to decide whether to follow.
 - You believe a wallet has earned promotion into the cohort, or a member has earned
   removal.
-- the operator asks how a copy position was sized or why a copy was skipped.
+- The operator asks how a copy position was sized or why a copy was skipped.
 
 ## Procedure
 

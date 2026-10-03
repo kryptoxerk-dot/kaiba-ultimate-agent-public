@@ -25,9 +25,100 @@ from kaiba.learning import sweep as S
 
 
 def test_every_study_is_registered():
-    """A module nobody calls is the bug this exists to fix."""
-    assert set(S.STUDIES) >= {"entry_study", "deployer_stats", "validation",
-                              "exit_study", "hold_study"}
+    """A module nobody calls is the bug this exists to fix -- or it is excluded ON PURPOSE.
+
+    ``hold_study`` is the second kind since 2026-10-02 (see ``sweep.NOT_SWEPT``): it made
+    the sweep time out on every run and the sweep discarded what it computed.
+    """
+    assert set(S.STUDIES) >= {"entry_study", "deployer_stats", "validation", "exit_study"}
+    assert not set(S.STUDIES) & set(S.NOT_SWEPT), "a study is both swept and excluded"
+    assert all(len(reason) > 40 for reason in S.NOT_SWEPT.values()), "an exclusion needs a reason"
+
+
+# ------------------------------------------------------------------ the 2026-10-02 bound
+#
+# MEASURED on the box: 4 of 4 sweeps timed out (900 s budget, up to 1544 s). hold_study
+# alone took 1279-3237 s and returned "0 verdict(s)"; entry_study and deployer_stats
+# repeated the full scans their own scheduled jobs had just run.
+
+
+def _record_run(conn, job, status, *, result=None, error=None, age_s=60):
+    import json
+    import time as _t
+
+    now = int(_t.time() * 1000)
+    conn.execute(
+        "INSERT INTO ops_runs (job, started_ms, finished_ms, status, duration_ms, result_json, error) "
+        "VALUES (?,?,?,?,?,?,?)",
+        (job, now - age_s * 1000 - 5_000, now - age_s * 1000, status, 5_000,
+         json.dumps(result or {}), error),
+    )
+    conn.commit()
+
+
+def test_the_sweep_does_not_rerun_the_expensive_studies(tmp_db, monkeypatch):
+    """THE TIMEOUT. None of the three scans may run inside the sweep.
+
+    Each is patched to raise; the old table called all three, and every line would then
+    read FAIL. With the bound in place none of them is reached at all.
+    """
+    from kaiba.intelligence import deployer
+    from kaiba.learning import entry_study, hold_study
+
+    def forbidden(*a, **k):
+        raise AssertionError("the sweep reran an expensive study")
+
+    monkeypatch.setattr(hold_study, "run", forbidden)
+    monkeypatch.setattr(deployer, "refresh", forbidden)
+    monkeypatch.setattr(entry_study, "run_study", forbidden)
+    _record_run(tmp_db, "entry_study", "ok",
+                result={"sol": {"sample": 8026, "baseline_rate": 21.6, "cells": 12}})
+    _record_run(tmp_db, "deployer_stats", "ok",
+                result={"deployers_written": {"sol": 49129, "bsc": 511}})
+    report = S.run_sweep(tmp_db, journal_it=False)
+    text = "\n".join(report.lines())
+    assert "reran" not in text, text
+    names = {r.name for r in report.results}
+    assert "hold_study" not in names
+    assert {"entry_study", "deployer_stats"} <= names
+
+
+def test_a_scheduled_study_reports_its_jobs_latest_success(tmp_db):
+    """The digest still carries the finding; it comes from the job that computed it."""
+    _record_run(tmp_db, "entry_study", "ok", age_s=3_600,
+                result={"sol": {"sample": 111, "baseline_rate": 1.0, "cells": 1}})
+    _record_run(tmp_db, "entry_study", "ok", age_s=120,
+                result={"sol": {"sample": 8026, "baseline_rate": 21.6, "cells": 12}})
+    _record_run(tmp_db, "entry_study", "timeout", age_s=30)  # newer, but not a success
+    report = S.run_sweep(tmp_db, only="entry_study", journal_it=False)
+    assert report.failed == 0, report.lines()
+    line = report.results[0].headline
+    assert "n=8026" in line and "baseline=21.6%" in line, line
+    assert "n=111" not in line, "reported an older success than the latest"
+
+    _record_run(tmp_db, "deployer_stats", "ok",
+                result={"deployers_written": {"sol": 49129, "robinhood": 33486}})
+    report = S.run_sweep(tmp_db, only="deployer_stats", journal_it=False)
+    assert "sol=49129" in report.results[0].headline
+
+
+def test_a_stalled_scheduled_job_is_a_failed_line_not_an_old_number(tmp_db):
+    """A job that stopped succeeding must not keep reporting yesterday's finding as today's."""
+    _record_run(tmp_db, "deployer_stats", "ok", age_s=S.SCHEDULED_RESULT_MAX_AGE_S + 600,
+                result={"deployers_written": {"sol": 1}})
+    _record_run(tmp_db, "deployer_stats", "timeout", age_s=60,
+                error="timed out after 300s; thread abandoned until it returns")
+    report = S.run_sweep(tmp_db, only="deployer_stats", journal_it=False)
+    assert report.failed == 1
+    text = "\n".join(report.lines())
+    assert "FAIL" in text and "timeout" in text, text
+
+
+def test_a_job_that_never_succeeded_is_a_failed_line(tmp_db):
+    _record_run(tmp_db, "entry_study", "error", error="OperationalError: interrupted")
+    report = S.run_sweep(tmp_db, only="entry_study", journal_it=False)
+    assert report.failed == 1
+    assert "never" in report.results[0].error and "interrupted" in report.results[0].error
 
 
 def test_one_broken_study_does_not_stop_the_others(tmp_db, monkeypatch):

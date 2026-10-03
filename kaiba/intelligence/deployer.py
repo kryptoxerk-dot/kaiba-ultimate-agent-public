@@ -42,6 +42,38 @@ MEASUREMENT CAVEATS, stated because they bound how hard this may be leaned on:
 
 This module computes into a table rather than at decision time: the underlying query is a
 seven-day scan of ``swaps`` and belongs nowhere near an entry decision.
+
+2026-10-02: THE OUTCOMES COME FROM :mod:`kaiba.intelligence.price_extent`, NOT A SCAN.
+``refresh`` used to run two ``GROUP BY token`` queries over ``swaps`` per chain every 30
+minutes, and the box's plan bounded them by ``chain`` only -- every swap the chain ever had,
+token by token, with a table lookup per row (``SEARCH swaps USING INDEX idx_swaps_token
+(chain=?)``). 197 s mean, 5 of 28 runs past the 300 s timeout in 24 h, plus a second full
+copy inside ``learning_sweep``. The extent table is folded forward from a ``swaps.id``
+cursor, so a run reads only the swaps inserted since the last one.
+
+THE PEAK RULE IS UNCHANGED BY DEFAULT, AND IT IS WRONG. ``MAX(price_usd)`` on the TEXT
+column is the lexicographic maximum (``'9.1e-05' > '0.0005'``); on the box's newest 20,000
+swaps it differed from the numeric maximum for 35 of 178 tokens with eight or more prints.
+:data:`PEAK_RULE` keeps that string maximum (``price_extent.PEAK_LEGACY_TEXT``) because the
+shipped ``DEPLOYER_LADDER`` was measured with it and moving the labels under the sizer is
+not this change's call. MEASURED 2026-10-02 on the box, all 1,740 fresh sol deployers with
+11+ launches, old rule recomputed from the tape (it reproduced the stored table for 1,737):
+under the numeric rule 184 change label -- 135 ``mid/all_dud`` and 39 ``spam/all_dud``
+become ``runner``, 3 become ``no_prior``, 6 ``mid/runner`` become ``mid/all_dud``. That is
+177 deployers OUT of the charged buckets (727 -> 556) and 6 in. Flip :data:`PEAK_RULE` to
+``PEAK_NUMERIC`` only with the ladder's bucket rates re-measured under it.
+
+Two smaller differences from the scan, both deliberate and both present under either rule:
+
+* **A token is an outcome of the week it was FIRST priced in.** The scan clipped every
+  token's tape to the window, so a token born before the window was scored from whatever
+  price it happened to show seven days ago -- a mid-life price, not the launch price this
+  table is defined on. Such a token is no longer scored; its launch is outside the window,
+  which is also where ``launches`` (``tokens.first_seen_ms``) already put it.
+* A print whose price does not parse as a finite positive number is not a print.
+
+Launch counts still come from ``tokens``: MEASURED 370k rows in all, and the newest eight
+days read in 0.75 s, so that half was never the cost.
 """
 
 from __future__ import annotations
@@ -55,6 +87,7 @@ from typing import Any
 
 from kaiba.core.db import fetch_all, fetch_one, get_conn, tx
 from kaiba.core.schemas import Chain, EvidenceBasis
+from kaiba.intelligence import price_extent
 
 log = logging.getLogger(__name__)
 
@@ -75,6 +108,19 @@ MID_LAUNCHES = 11
 #: launch count does not change meaningfully inside an hour -- and a stale record is far
 #: cheaper than a seven-day scan on the entry path.
 STALE_AFTER_S = 3600
+
+#: Deployer rows upserted per write transaction. The table is ~83,000 rows across the three
+#: chains on the box and was written in ONE transaction, holding the single WAL writer for
+#: the whole upsert while protection waits behind a 10 s busy timeout.
+WRITE_BATCH = 5_000
+
+#: Which peak a launch's outcome is measured on. See the module docstring: LEGACY_TEXT is
+#: the string maximum the ladder was measured with; NUMERIC is the correct one.
+PEAK_RULE = price_extent.PEAK_LEGACY_TEXT
+
+
+#: Raised instead of writing a record from a half-folded extent. See price_extent.
+ExtentNotReady = price_extent.ExtentNotReady
 
 
 @dataclass(frozen=True)
@@ -145,39 +191,28 @@ def refresh(
     *,
     window_days: int = WINDOW_DAYS,
     now_ms: int | None = None,
+    deadline: float | None = None,
 ) -> int:
     """Recompute every deployer's record on ``chain``. Returns rows written.
 
-    Deliberately a batch job. See the module docstring: this is a seven-day scan.
+    Folds the swaps inserted since the last call into the price extent first (bounded by
+    ``deadline``, epoch seconds), then reads outcomes from it. Raises
+    :class:`ExtentNotReady` rather than write a record from a half-folded extent.
     """
     c = conn or get_conn()
     ensure_table(c)
     now = now_ms if now_ms is not None else int(time.time() * 1000)
     since = now - window_days * 86_400_000
 
-    peaks = fetch_all(
-        c,
-        "SELECT token, MAX(price_usd) AS pk, COUNT(*) AS n FROM swaps "
-        "WHERE chain=? AND price_usd IS NOT NULL AND ts_ms > ? "
-        "GROUP BY token HAVING n >= ?",
-        (chain.value, since, MIN_PRINTS),
-    )
-    firsts = {
-        row["token"]: row["px"]
-        for row in fetch_all(
-            c,
-            "SELECT token, price_usd AS px FROM swaps "
-            "WHERE chain=? AND price_usd IS NOT NULL AND ts_ms > ? "
-            "GROUP BY token HAVING ts_ms = MIN(ts_ms)",
-            (chain.value, since),
-        )
-    }
+    progress = price_extent.advance(c, deadline=deadline)
+    if not progress.caught_up:
+        raise ExtentNotReady(progress.as_dict())
+
     multiples: dict[str, Decimal] = {}
-    for row in peaks:
-        first = _dec(firsts.get(row["token"]))
-        peak = _dec(row["pk"])
-        if first and peak and first > 0 and peak > 0:
-            multiples[str(row["token"])] = peak / first
+    for ext in price_extent.first_seen_since(c, chain.value, since, min_prints=MIN_PRINTS):
+        multiple = _extent_multiple(ext)
+        if multiple is not None:
+            multiples[ext.token] = multiple
 
     creators = {
         str(row["address"]): str(row["creator"])
@@ -216,20 +251,31 @@ def refresh(
         )
     if not rows:
         return 0
-    with tx(c) as conn2:
-        conn2.executemany(
-            "INSERT INTO deployer_stats (chain, wallet, launches, scored, runners, "
-            "best_multiple, computed_ms) VALUES (?,?,?,?,?,?,?) "
-            "ON CONFLICT(chain, wallet) DO UPDATE SET launches=excluded.launches, "
-            "scored=excluded.scored, runners=excluded.runners, "
-            "best_multiple=excluded.best_multiple, computed_ms=excluded.computed_ms",
-            rows,
-        )
+    for offset in range(0, len(rows), WRITE_BATCH):
+        with tx(c) as conn2:
+            conn2.executemany(
+                "INSERT INTO deployer_stats (chain, wallet, launches, scored, runners, "
+                "best_multiple, computed_ms) VALUES (?,?,?,?,?,?,?) "
+                "ON CONFLICT(chain, wallet) DO UPDATE SET launches=excluded.launches, "
+                "scored=excluded.scored, runners=excluded.runners, "
+                "best_multiple=excluded.best_multiple, computed_ms=excluded.computed_ms",
+                rows[offset:offset + WRITE_BATCH],
+            )
     log.info("deployer_stats: %d wallets on %s", len(rows), chain.value)
     return len(rows)
 
 
 # ---------------------------------------------------------------------------- lookup
+
+
+def _extent_multiple(ext: price_extent.Extent) -> Decimal | None:
+    """Peak over first price as a Decimal, under :data:`PEAK_RULE`."""
+    first = _dec(repr(ext.first_px))
+    peak_f = ext.peak_for(PEAK_RULE)
+    peak = _dec(repr(peak_f)) if peak_f is not None else None
+    if not first or not peak or first <= 0 or peak <= 0:
+        return None
+    return peak / first
 
 
 def _dec(value: Any) -> Decimal | None:
@@ -316,24 +362,14 @@ def lookup(
 def _this_token_multiple(
     conn: sqlite3.Connection, chain: Chain, token: str, now_ms: int
 ) -> Decimal | None:
-    """The multiple this token itself contributed to the aggregate, if it contributed one."""
+    """The multiple this token itself contributed to the aggregate, if it contributed one.
+
+    Read from the same extent row ``refresh`` aggregated, under the same rule (first priced
+    in the window, at least :data:`MIN_PRINTS` prints), so the subtraction in :func:`lookup`
+    takes back exactly what was added. One primary-key seek; no swap is read.
+    """
     since = now_ms - WINDOW_DAYS * 86_400_000
-    row = fetch_one(
-        conn,
-        "SELECT MAX(price_usd) AS pk, MIN(ts_ms) AS tf, COUNT(*) AS n FROM swaps "
-        "WHERE chain=? AND token=? AND price_usd IS NOT NULL AND ts_ms > ?",
-        (chain.value, token, since),
-    )
-    if row is None or not row["n"] or int(row["n"]) < MIN_PRINTS:
+    ext = price_extent.get(conn, chain.value, token)
+    if ext is None or ext.prints < MIN_PRINTS or ext.first_ts_ms <= since:
         return None
-    first = fetch_one(
-        conn,
-        "SELECT price_usd AS px FROM swaps WHERE chain=? AND token=? AND price_usd IS NOT NULL "
-        "AND ts_ms > ? ORDER BY ts_ms LIMIT 1",
-        (chain.value, token, since),
-    )
-    start = _dec(first["px"]) if first else None
-    peak = _dec(row["pk"])
-    if not start or not peak or start <= 0:
-        return None
-    return peak / start
+    return _extent_multiple(ext)

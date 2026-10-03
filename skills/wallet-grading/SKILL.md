@@ -28,7 +28,7 @@ reach A no matter how good those three look.
 
 ## When to use it
 
-- the operator asks `/grade <address>` or "is this wallet any good?".
+- The operator asks `/grade <address>` or "is this wallet any good?".
 - A new cohort landed from a gather run and needs scoring before it can feed a lane.
 - A `confluence-5` or `sm-trenches` signal fired and you want to know whether the wallets
   behind it are real or a farm.
@@ -152,6 +152,12 @@ are looking at before you touch a threshold.
 - **Do not grade from a leaderboard's top five.** Mine ranks 20–100 and repeat early
   buyers across 20× tokens instead (`docs/research/03-wallet-clustering.md`,
   anti-gaming).
+
+## Hourly-cycle preflight
+
+- Inspect the installed seed implementation before running it: an all-history max/first-price pass is not a rolling 30-day graduation-or-5x pass. Verify the outcome timestamp filter and graduation union; count failures inside successful job envelopes. Do not certify seed compliance from the job name alone.
+- Check live scheduler ownership before invoking `ops run --once`: startup recovery may touch unrelated running-job state even with `--only`. Prefer scoped tools while the daemon is alive; do not bypass quotas or cron approval denials.
+- Treat empty `wallet.graded` / `entity.updated` event windows as event absence, not proof of no database changes. Verify bulk-grader event coverage and compare saved grade/member snapshots before calling a change new.
 
 ## Grading a wallet on demand
 

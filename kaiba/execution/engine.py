@@ -407,8 +407,149 @@ def _copy_source_refusal(
     return None
 
 
-def decide(signal: Signal, conn: sqlite3.Connection | None = None) -> Decision:
-    """Turn one signal into a decision and persist it, whatever the answer is."""
+# --------------------------------------------------------------------------------------
+# launchpad allowlist for live money
+#
+# OWNER-APPROVED 2026-10-01 (docs/research/audit-20261001-strategy.md section 2). On all
+# 89 Robinhood live fills, pons/pons_v2 n=42 mean +1.0% (18 wins); every other launchpad
+# n=31 mean -23.7% (3 wins); unknown n=17 mean -9.9%. Permutation p=0.024, same sign in
+# both halves of the record.
+#
+# MEASURED on the scanned population before shipping (box, read-only, RH sm-trenches
+# signals 09-23..10-01, launchpad as the `tokens` row read at decision time): the rule
+# moves 171 of 481 signals (35.6%) and 38 of 94 enters (40.4%) off live money -- 127/28
+# from named non-pons launchpads, 44/10 unknown. Of 312 signals on tokens later known to
+# be pons, 0 were unknown at decision time, so "unknown is not live" costs no pons entry.
+#
+# An ALLOWLIST, not a blocklist: `sm-trenches.params.blocked_launchpads` names what is
+# known to be bad, and a launchpad that appears next week walks straight past it.
+#
+# Those refused entries are not discarded. The evidence is on FILLS only, so the outcome
+# of the signals we stop taking is unmeasured; each one becomes a SHADOW twin, paper
+# traded by the ordinary paper broker and exited by the ordinary protection path. That
+# is the forward outcome the rule needs to be confirmed or withdrawn.
+# --------------------------------------------------------------------------------------
+
+#: Lane param: ``{chain: [launchpad, ...]}``. A chain absent from the mapping is
+#: unrestricted; a chain present enters live ONLY the launchpads listed for it.
+LIVE_LAUNCHPADS_PARAM = "live_launchpads_by_chain"
+
+#: Blocker head. The launchpad (lower-cased, or ``unknown``) follows the colon.
+LAUNCHPAD_NOT_LIVE = "launchpad_not_live"
+
+#: Folded into the twin's decision id so it is deterministic per signal and can never
+#: collide with the live decision's own id.
+SHADOW_TWIN_VERSION = PARAMS_VERSION + ":shadow_twin"
+
+
+def shadow_twin_id(signal_id: str) -> str:
+    """The paper twin's decision id for ``signal_id``. Deterministic, like the live one."""
+    return decision_id_for(signal_id, SHADOW_TWIN_VERSION)
+
+
+def _live_launchpads(cfg: Any, signal: Signal) -> frozenset[str] | None:
+    """The live allowlist for this signal's lane and chain; ``None`` when unrestricted.
+
+    Malformed configuration FAILS CLOSED -- an empty allowlist -- because the failure this
+    guards against is a typo quietly opening the chain to every launchpad again. A bare
+    string is read as one launchpad, never as its letters.
+    """
+    try:
+        params = cfg.lane(signal.lane).params or {}
+    except Exception as exc:  # noqa: BLE001 - an unreadable lane config admits nothing new
+        log.error("lane params unreadable for %s; launchpad allowlist fails closed: %s",
+                  signal.lane.value, exc)
+        return frozenset()
+    if LIVE_LAUNCHPADS_PARAM not in params:
+        return None
+    by_chain = params[LIVE_LAUNCHPADS_PARAM]
+    if not isinstance(by_chain, dict):
+        log.error("%s.%s is %r, not a mapping; failing closed on every chain",
+                  signal.lane.value, LIVE_LAUNCHPADS_PARAM, type(by_chain).__name__)
+        return frozenset()
+    keyed = {str(k).strip().lower(): v for k, v in by_chain.items()}
+    if signal.chain.value not in keyed:
+        return None
+    names = keyed[signal.chain.value]
+    if isinstance(names, str):
+        names = [names]
+    if not isinstance(names, (list, tuple, set, frozenset)):
+        log.error("%s.%s.%s is %r, not a list; failing closed", signal.lane.value,
+                  LIVE_LAUNCHPADS_PARAM, signal.chain.value, names)
+        return frozenset()
+    return frozenset(str(n).strip().lower() for n in names if isinstance(n, str) and n.strip())
+
+
+def _token_launchpad(chain: Chain, token: str, conn: sqlite3.Connection) -> str | None:
+    """``tokens.launchpad``, lower-cased; ``None`` when unknown or unreadable.
+
+    The same row the lane read (``scanner.load_token_meta`` -> ``ctx.token_meta``), so the
+    lane and this rule cannot disagree about a token. An unreadable row is unknown, and
+    unknown is not on any allowlist: the refusal is the safe direction.
+    """
+    try:
+        row = fetch_one(conn, "SELECT launchpad FROM tokens WHERE chain=? AND address=?",
+                        (chain.value, token))
+    except sqlite3.Error as exc:
+        log.warning("tokens row unreadable for %s; launchpad unknown: %s", token[:12], exc)
+        return None
+    name = str((row or {}).get("launchpad") or "").strip().lower()
+    return name or None
+
+
+def _launchpad_refusal(
+    signal: Signal, mode: LaneMode, cfg: Any, conn: sqlite3.Connection
+) -> str | None:
+    """``launchpad_not_live:<name>`` when real money may not enter this token's launchpad.
+
+    LIVE and CANARY only. A SHADOW lane records exactly as before -- the rule is about
+    whose money takes the trade, not about what the lane is allowed to see.
+    """
+    if mode not in (LaneMode.LIVE, LaneMode.CANARY):
+        return None
+    allowed = _live_launchpads(cfg, signal)
+    if allowed is None:
+        return None
+    launchpad = _token_launchpad(signal.chain, signal.token, conn)
+    if launchpad is not None and launchpad in allowed:
+        return None
+    return f"{LAUNCHPAD_NOT_LIVE}:{launchpad or 'unknown'}"
+
+
+def _twin_refusal(signal: Signal, conn: sqlite3.Connection) -> str | None:
+    """Why no paper twin should be opened for this signal, or ``None`` to open one.
+
+    One open twin per token: the paper broker ADDS to an open position of the same
+    lane and mode, so every repeat signal on a token would otherwise pile another full
+    size into one paper position and blur what a single entry earns.
+    """
+    try:
+        row = fetch_one(
+            conn,
+            "SELECT position_id FROM positions WHERE chain=? AND token=? AND lane=? "
+            "AND mode=? AND closed_ms IS NULL LIMIT 1",
+            (signal.chain.value, signal.token, signal.lane.value, LaneMode.SHADOW.value),
+        )
+    except sqlite3.Error as exc:
+        return f"positions unreadable: {exc}"[:120]
+    if row:
+        return f"shadow twin {row['position_id']} already open on this token"
+    return None
+
+
+def decide(
+    signal: Signal,
+    conn: sqlite3.Connection | None = None,
+    *,
+    twins: list[Decision] | None = None,
+) -> Decision:
+    """Turn one signal into a decision and persist it, whatever the answer is.
+
+    ``twins``: a caller that will hand a paper twin off passes a list; when a LIVE/CANARY
+    entry is refused only because its launchpad is not on the lane's live allowlist, the
+    SHADOW twin decision is persisted and appended to it. A caller that passes nothing
+    gets no twin, so a twin row never exists without someone to open its position.
+    """
     c = conn or get_conn()
     cfg = get_risk()
     # Record the configuration this decision ran under, before deciding anything.
@@ -529,6 +670,46 @@ def decide(signal: Signal, conn: sqlite3.Connection | None = None) -> Decision:
         if budget.bankroll_base_units
         else None
     )
+
+    # 7. launchpad allowlist for real money. LAST on purpose: everything above has
+    # already said yes, so a refusal here is exactly "the trade we would have taken",
+    # and that is what the paper twin records. See `_launchpad_refusal`.
+    lp_blocker = _launchpad_refusal(signal, mode, cfg, c)
+    if lp_blocker is not None:
+        twin_id = shadow_twin_id(signal.signal_id)
+        no_twin = "not requested by this caller" if twins is None else _twin_refusal(signal, c)
+        skipped = _skip(
+            [lp_blocker],
+            f"{lp_blocker}: {signal.lane.value} enters only allowlisted launchpads live on "
+            f"{signal.chain.value}; "
+            + (f"paper twin {twin_id}" if no_twin is None else f"no paper twin: {no_twin}"),
+            dossier=dossier,
+        )
+        if no_twin is None and twins is not None:
+            twins.append(_persist(Decision(
+                decision_id=twin_id,
+                ts_ms=ts,
+                lane=signal.lane,
+                mode=LaneMode.SHADOW,
+                chain=signal.chain,
+                token=signal.token,
+                action=Action.ENTER,
+                thesis=f"shadow twin of {skipped.decision_id} ({lp_blocker}): "
+                + ("; ".join(signal.reasons) or f"{signal.lane.value} fired"),
+                confidence=signal.strength,
+                signals=[signal.signal_id],
+                dossier_grade=dossier.grade,
+                size_base_units=size,
+                size_pct_bankroll=pct,
+                invalidation=_invalidation(signal),
+                # On an ENTER this is not a refusal: it is WHY this entry is paper and
+                # not live, and what tells a twin apart from an ordinary shadow entry
+                # if the lane is ever switched to shadow as a whole.
+                blockers=[lp_blocker],
+                params_version=PARAMS_VERSION,
+            ), c))
+        return skipped
+
     return _persist(
         Decision(
             decision_id=decision_id_for(signal.signal_id),
@@ -660,13 +841,23 @@ def run_once(conn: sqlite3.Connection | None = None, *, limit: int = 200) -> lis
     decisions: list[Decision] = []
     for row in rows:
         signal = signal_from_row(row)
-        decision = decide(signal, c)
+        twins: list[Decision] = []
+        decision = decide(signal, c, twins=twins)
         decisions.append(decision)
         if decision.action is Action.ENTER:
             try:
                 handoff(decision, signal, c)
             except Exception:  # noqa: BLE001 - one bad handoff must not stall the watermark
                 log.exception("handoff failed for %s", decision.decision_id)
+        # A live entry refused for its launchpad is paper-traded instead (see
+        # `_launchpad_refusal`). The twin is SHADOW, so `handoff` sends it to the paper
+        # broker and never to the executor. Not appended to `decisions`: one decision
+        # per signal is what callers count, and the twin has its own row and event.
+        for twin in twins:
+            try:
+                handoff(twin, signal, c)
+            except Exception:  # noqa: BLE001 - a paper twin must never stall the watermark
+                log.exception("shadow twin handoff failed for %s", twin.decision_id)
         wm_ms, wm_id = int(row["created_ms"]), str(row["signal_id"])
     if rows:
         _set_watermark(c, wm_ms, wm_id)
@@ -1067,8 +1258,19 @@ def _plan_min_out(decision: Decision, conn: sqlite3.Connection) -> MinOutPlan:
             budget_s=DOSSIER_MAX_AGE_S,
         )
     token_usd = dossier.price_usd.value if dossier.price_usd.known else None
-    if token_usd is None or token_usd <= 0:
+    if token_usd is None or not token_usd.is_finite() or token_usd <= 0:
         return _unpriceable("token_price_unavailable", basis=dossier.price_usd.basis.value)
+    # The dossier build clock is not the price observation clock. A refresh of
+    # unrelated fields must not renew a cached/expired price for a funded plan.
+    price = dossier.price_usd
+    if price.receipt is None or price.freshness_budget_s <= 0:
+        return _unpriceable("token_price_time_unavailable")
+    price_age_ms = at_ms - price.receipt.observed_at_ms
+    if price_age_ms < 0:
+        return _unpriceable("token_price_future", observed_ms=price.receipt.observed_at_ms)
+    if price.basis is EvidenceBasis.STALE or price_age_ms > price.freshness_budget_s * 1000:
+        return _unpriceable("token_price_stale", age_s=price_age_ms / 1000,
+                            budget_s=price.freshness_budget_s)
 
     decimals, dec_basis, dec_note = _token_decimals(decision.chain, decision.token, conn)
     if decimals is None:
@@ -1081,6 +1283,12 @@ def _plan_min_out(decision: Decision, conn: sqlite3.Connection) -> MinOutPlan:
     if native_usd is None:
         return _unpriceable(
             "native_price_unavailable", pricing_chain=pricing_chain.value, note=native_note,
+        )
+    final_price_age_ms = now_ms() - price.receipt.observed_at_ms
+    if not 0 <= final_price_age_ms <= price.freshness_budget_s * 1000:
+        return _unpriceable(
+            "token_price_future" if final_price_age_ms < 0 else "token_price_stale",
+            age_s=final_price_age_ms / 1000, budget_s=price.freshness_budget_s,
         )
 
     value = _min_out_atoms(
@@ -1101,6 +1309,10 @@ def _plan_min_out(decision: Decision, conn: sqlite3.Connection) -> MinOutPlan:
         reason="derived_from_dossier_price_and_native_sample",
         detail={
             "token_usd": str(token_usd),
+            "token_price_observed_ms": price.receipt.observed_at_ms,
+            "token_price_freshness_budget_s": price.freshness_budget_s,
+            "token_price_basis": price.basis.value,
+            "token_price_provider": price.receipt.provider,
             "native_usd": str(native_usd),
             "native_pricing_chain": pricing_chain.value,
             "native_note": native_note,

@@ -1,34 +1,15 @@
-# TEST FIXTURE ONLY (tests/conftest.py points KAIBA_RISK_PATH here). Fake wallets, round
-# bankrolls. The runtime reads config/risk.yaml, which ships as a paper-mode template.
+# TEST FIXTURE ONLY (tests/conftest.py points KAIBA_RISK_PATH here). Fake wallets. The runtime
+# reads config/risk.yaml, which ships as a paper-mode template.
 version: v1
 global_mode: live
 kill_switch: false
 entries_paused: false
 reduce_only: false
 bounds:
-  # RAISED 5.0 -> 30.0 on 2026-09-24. OWNER's decision, asked and confirmed with the
-  # numbers in front of him: "100 dollars minimum per trade ... preferably more".
-  # This is the envelope ceiling every position is clamped to, so the lane band and the
-  # per-chain caps could never reach $100 while it stood at 5%: sol equity has fallen to
-  # 3.684 SOL on realised losses, and $100 is 23.6% of that.
-  # AGAINST THE MEASUREMENT, recorded as such: 175 closed sm-trenches trades show a 25.14%
-  # win rate and -12.44% mean per trade, needing ~38.10% wins to break even. Size
-  # multiplies that. At 30% a position the 70% total-exposure cap allows ~2 concurrent
-  # positions, which is also about what the protection tick can service.
   max_size_pct_bankroll: 30.0
   max_total_exposure_pct: 70.0
   max_daily_loss_pct: 10.0
   max_slippage_bps: 2500
-  # OWNER 2026-09-24: "Make sure the agent uses 88% slippage anti mev". Scoped to EXITS.
-  # 97 of 104 failed sells in 24h were the venue refusing with GEvmInsufficientSlippage:
-  # min_out is derived from our last MARK, and on a token that has fallen since, 75% of a
-  # stale mark is still above anything the pool will pay. One position demanded 0.0045 ETH
-  # for a token with ZERO trades in 24h and retried 90 times; positions sat 26-41h
-  # unsellable, which is what stopped entries. Entries stay at 2500 deliberately: at 8800
-  # a BUY would accept 12% of the tokens it expected. --anti-mev is on every swap.
-  # EXIT-1 2026-09-24: policy now requires trusted SELL context and token-to-native
-  # direction for this ceiling. All 50 quote-provenance tests pass at 8800 unchanged;
-  # entry, recipient, floor and withdrawal checks remain enforced. No fill guarantee.
   max_exit_slippage_bps: 8800
   max_lane_mode: live
   allow_self_promotion: true
@@ -36,31 +17,31 @@ bounds:
 chains:
   sol:
     enabled: true
-    bankroll_base_units: 5000000000
-    max_position_base_units: 1303214000
-    min_position_base_units: 560000000
+    bankroll_base_units: 8000000000
+    max_position_base_units: 830000000
+    min_position_base_units: 830000000
     gas_reserve_base_units: 50000000
-    daily_loss_stop_base_units: 1124891000
+    daily_loss_stop_base_units: 800000000
     max_exposure_pct: 90.0
-    wallet: 62EbtFbmJATT94Y6Uguf6a1kdaJuZWAu8ycqbg3xKfQg
+    wallet: rUHrovRbRDoCmn9ojmZ2Pi3bLPUJ15kGjmLfGm6MdTo
   robinhood:
     enabled: true
-    bankroll_base_units: 400000000000000000
-    max_position_base_units: 55555555555555555
+    bankroll_base_units: 360000000000000000
+    max_position_base_units: 37037037037037037
     min_position_base_units: 37037037037037037
     gas_reserve_base_units: 10000000000000000
-    daily_loss_stop_base_units: 97500000000000000
+    daily_loss_stop_base_units: 36000000000000000
     max_exposure_pct: 90.0
-    wallet: '0x72430877378522d1b759ac721561aa9eb9e25c2b'
+    wallet: '0xcc4450c80735778e9f5eaa7a4ea47990e57807c2'
   bsc:
-    enabled: true
-    bankroll_base_units: 1000000000000000000
-    max_position_base_units: 194130000000000000
+    enabled: false
+    bankroll_base_units: 0
+    max_position_base_units: 155773349776075800
     min_position_base_units: 129420000000000000
     gas_reserve_base_units: 30000000000000000
-    daily_loss_stop_base_units: 249997000000000000
+    daily_loss_stop_base_units: 71444693575628210
     max_exposure_pct: 90.0
-    wallet: '0x72430877378522d1b759ac721561aa9eb9e25c2b'
+    wallet: '0xcc4450c80735778e9f5eaa7a4ea47990e57807c2'
   base:
     enabled: false
     bankroll_base_units: 0
@@ -83,19 +64,27 @@ lanes:
     params:
       require_thesis: true
   confluence-5:
+    # 2026-10-03: re-pointed at PROVEN wallets (kaiba.learning.proven; daily job proven_wallets).
+    # First freeze: robinhood 5 wallets (4 entities) with out-of-sample copy returns > 0 at
+    # our lag + fees; sol none. SHADOW (paper) only; flat size at the chain floor; the
+    # confluence level is recorded per signal for kaiba.learning.confluence_size.
     mode: shadow
-    size_pct_min: 1.0
-    size_pct_max: 5.0
+    size_pct_min: 26.0
+    size_pct_max: 29.0
     chains:
     - sol
     - robinhood
-    - bsc
-    - base
     params:
-      min_entities: 5
-      window_s: 120
-      min_buy_usd: 50
-      max_signal_age_s: 30
+      wallet_source: proven
+      proven_max_cohort_age_s: 259200
+      proven_strength: 0.75
+      min_entities: 2
+      window_s: 1800
+      min_buy_usd: 20
+      max_signal_age_s:
+        sol: 180
+        robinhood: 60
+        default: 120
       require_wallet_grade: B
   trusted-copy:
     mode: shadow
@@ -124,7 +113,7 @@ lanes:
       min_graded_wallets: 1
   sm-trenches:
     mode: live
-    size_pct_min: 19.3
+    size_pct_min: 26.0
     size_pct_max: 29.0
     chains:
     - sol
@@ -132,18 +121,15 @@ lanes:
     - robinhood
     params:
       min_smart_degen: 3
-      # The lane loads 1800 s of buys (`scanner.recent_buys_window_s`) and used to
-      # throw 25 minutes of it away: `window_s` defaulted to 300 s. MEASURED
-      # 2026-09-24: at 300 s there were ZERO sol tokens with >=3 tagged smart buyers,
-      # 13 at 1800 s. Over six hours 221 tokens across the three chains reached the
-      # bar and the lane made 26 decisions. This is the same sampler failure recorded
-      # in AGENTS.md, fixed then for token AGE and still open for the confluence
-      # WINDOW. Costs no extra provider call: the data is already loaded.
       window_s: 1800
       min_independent_entities: 2
       max_rug_ratio: 0.3
       min_holder_count: 0
       blocked_launchpads: []
+      live_launchpads_by_chain:
+        robinhood:
+        - pons
+        - pons_v2
   migration-fade:
     mode: shadow
     size_pct_min: 1.0
@@ -183,6 +169,9 @@ lanes:
       max_age_s: 1800
       min_liquidity_usd: 5000
 protection:
+  onchain_price_log: true
+  onchain_price_log_min_interval_s: 10
+  onchain_price_log_retention_days: 14
   poll_interval_s: 12
   price_source: venue
   use_provider_orders: false

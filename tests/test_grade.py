@@ -45,7 +45,7 @@ from kaiba.intelligence.grade import (
 
 FIXTURES = Path(__file__).parent / "fixtures" / "grade"
 
-SOL_WALLET = "CJF7MNqb9xv1XrTs5St1Du5JuQXLsfFBB137vmYRKpnb"
+SOL_WALLET = "Bnd5oBSWpPpXoaWTckgXTVx9TCKkX5GyVqxcrwBzUYsB"
 EVM_WALLET = "0x68EEE5c2FE8883A63CD9E5F0e71a3116FB728B3a"
 
 

@@ -11,7 +11,7 @@
 
 model:
   provider: anthropic
-  default: claude-opus-5
+  default: claude-opus-5-5
 
 fallback_providers:
   - provider: openai-codex

@@ -24,7 +24,7 @@ from kaiba.intelligence.hubs import JITO_TIP_ACCOUNTS
 FIXTURES = Path(__file__).parent / "fixtures" / "backfill"
 
 #: The wallet the recorded page belongs to.
-WALLET = "23qkpvizekhMNbvHpCXLfBeFzjHuKdaPZj2HpTMsczsM"
+WALLET = "6gFyhzmVVW5Stv6pPZok59i9Xox3GCctpvNujbbLeJHS"
 
 
 def fixture(name: str) -> Any:
@@ -396,6 +396,64 @@ def test_fresh_mode_asks_only_for_newer_transactions(tmp_db, monkeypatch, page):
     backfill.backfill_wallet(WALLET, Chain.SOL, tmp_db, with_meta=False, fresh=True)
     assert fake.enhanced_calls[-1]["until"] == page[0]["signature"]
     assert fake.enhanced_calls[-1]["before"] is None
+
+
+def test_a_fresh_top_up_keeps_the_backward_walk_exhausted(tmp_db, monkeypatch, page):
+    """``exhausted`` is about how far BACK the walk reached. A forward top-up used to
+    overwrite it with its own result -- False for any non-empty page -- so a complete
+    history read as truncated after its next top-up, and the grader's A gate now reads
+    this flag (grade.history_truncated). MUTATION: writing ``cursor["exhausted"] =
+    bool(result.exhausted)`` in fresh mode again fails the second assertion."""
+    FakeHelius([page, page], None).install(monkeypatch)
+    backfill.backfill_wallet(WALLET, Chain.SOL, tmp_db, with_meta=False)
+    assert backfill.load_cursor(tmp_db, Chain.SOL, WALLET)["exhausted"] is True
+    backfill.backfill_wallet(WALLET, Chain.SOL, tmp_db, with_meta=False, fresh=True)
+    cursor = backfill.load_cursor(tmp_db, Chain.SOL, WALLET)
+    assert cursor["exhausted"] is True
+    assert not cursor.get("forward_gap")  # a short forward page left no hole
+
+
+def test_a_full_forward_page_records_a_possible_hole(tmp_db, monkeypatch, page):
+    """A forward page that comes back FULL may have skipped transactions between the old
+    ``newest_sig`` and its own oldest one, and the cursor jumps past them. That is a gap
+    in a history that otherwise reads complete, so it is recorded and the grader treats
+    it as truncated. MUTATION: dropping the ``forward_gap`` write fails here."""
+    FakeHelius([page, page], None).install(monkeypatch)
+    backfill.backfill_wallet(WALLET, Chain.SOL, tmp_db, with_meta=False)
+    backfill.backfill_wallet(WALLET, Chain.SOL, tmp_db, with_meta=False, fresh=True,
+                             page_limit=len(page))
+    cursor = backfill.load_cursor(tmp_db, Chain.SOL, WALLET)
+    assert cursor["exhausted"] is True and cursor["forward_gap"] is True
+
+
+def test_the_first_buyer_rebuild_touches_only_tokens_this_walk_bought(tmp_db, monkeypatch, page):
+    """Brought over from the box (backfill.py there since 2026-09-27, untested): a walk
+    re-ranks the buyers of the tokens it wrote BUYS for, not every buy on the chain.
+    MUTATION: calling ``rebuild_first_buyers(c, chain)`` unscoped again ranks the
+    unrelated token below."""
+    tmp_db.execute(
+        "INSERT INTO swaps (chain, tx, ts_ms, wallet, token, side, amount_token, source) "
+        "VALUES ('sol', 'other-tx', 1, 'someone-else', 'UNRELATED', 'buy', '1', 'pumpfun:trades')"
+    )
+    FakeHelius([page], None).install(monkeypatch)
+    report = backfill.backfill_wallets(tmp_db, Chain.SOL, wallets=[WALLET], with_meta=False)
+    bought = {r["token"] for r in fetch_all(
+        tmp_db, "SELECT DISTINCT token FROM swaps WHERE wallet = ? AND side = 'buy'", (WALLET,))}
+    ranked = {r["token"] for r in fetch_all(tmp_db, "SELECT DISTINCT token FROM first_buyers")}
+    assert bought and report.results[0].buy_tokens == bought
+    assert ranked == bought and report.first_buyers_written >= 1
+
+
+def test_an_empty_wallet_list_backfills_nobody(tmp_db, monkeypatch, page):
+    """Also from the box: ``wallets=[]`` used to fall through to ``tracked_wallets`` and
+    pay for the registry's least-recently-touched rows instead of nobody."""
+    tmp_db.execute(
+        "INSERT INTO wallets (chain, address, source, cohort, first_seen_ms, last_seen_ms) "
+        "VALUES ('sol', ?, 'test', 'research', 0, 0)", (WALLET,),
+    )
+    fake = FakeHelius([page], None).install(monkeypatch)
+    report = backfill.backfill_wallets(tmp_db, Chain.SOL, wallets=[], with_meta=False)
+    assert report.wallets == 0 and fake.enhanced_calls == []
 
 
 def test_an_exhausted_budget_stops_the_run_cleanly(tmp_db, monkeypatch, page):

@@ -3,7 +3,7 @@
  "recorded_at_ms": 1789897131776,
  "token": {
   "label": "BRETT",
-  "address": "0x532f27101965dd16442e59d40670faf5ebb142e4",
+  "address": "0x6e2c8d79c1c1d44ad2ff7196ea7e09bb3b82906f",
   "chain": "base",
   "why": "Renounced, not mintable, not pausable: the EVM positive control."
  },
@@ -34,7 +34,7 @@
     "name": "UniswapV3",
     "liquidity": "45597.565946303366923632100000000000",
     "pool_fee": "0.003",
-    "pair": "0x76bf0abd20f1e0155ce40a62615a90a709a6c3d8"
+    "pair": "0x4f9cd28a579d7909c09a2b349f412fd246c77b6d"
    },
    {
     "liquidity_type": "UniV2",
@@ -304,7 +304,7 @@
     "is_locked": 0
    },
    {
-    "address": "0x971a8115a573f9ccf10f9147c835a10698fba57a",
+    "address": "0xed42df279dfa19abf864e7dffa35d8e33728f34d",
     "tag": "",
     "is_contract": 0,
     "balance": "113936611.763532181936140598",

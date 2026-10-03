@@ -1,3 +1,4 @@
+# Codex 2026-09-27: owner-requested repair integration; see docs/TASKS.md REPAIR-INTEGRATION-20260927.
 """Airdrop and points-programme hunter.
 
 There is no clean machine-readable airdrop feed in 2026 (research 06), so this module
@@ -36,11 +37,15 @@ import logging
 import re
 import sqlite3
 import xml.etree.ElementTree as ET
+from collections import Counter
 from collections.abc import Callable, Iterable
+from contextvars import ContextVar
 from datetime import datetime
 from decimal import Decimal
 from enum import StrEnum
+from html.parser import HTMLParser
 from typing import Any
+from urllib.parse import unquote, urljoin, urlsplit
 
 import httpx
 from pydantic import BaseModel, Field
@@ -64,17 +69,26 @@ from kaiba.hunters.ev import (
 
 log = logging.getLogger(__name__)
 
+# Collectors retain their list API. Capture errors in this invocation's context,
+# not by racing an events-table query or sharing mutable process-global state.
+_COLLECT_ERRORS: ContextVar[list[str] | None] = ContextVar("hunter_collect_errors", default=None)
+
 AIRDROPS_IO_URL = "https://t.me/s/airdrops_io"
 AIRDROPALERT_RSS_URL = "https://airdropalert.com/feed/rssfeed"
 #: DefiLlama's airdrops page has no documented endpoint; it is the protocol list filtered
 #: to tokenless protocols (``symbol == "-"``), which /protocols does expose.
 DEFILLAMA_PROTOCOLS_URL = "https://api.llama.fi/protocols"
 DEFILLAMA_MIN_TVL_USD = 1_000_000.0
-#: Unverified layout (research 06 says "scrape"); parsed defensively, both shapes tolerated.
+#: Legacy JSON/table and current server-rendered programme cards are tolerated.
 ALPHADROPS_URL = "https://alphadrops.net/points-programs"
 
 USER_AGENT = "kaiba-hunter/1.0 (+https://github.com/kaiba; contact via operator)"
-MAX_BODY_CHARS = 4_000_000
+# Limits apply to decoded response bytes, not a slice of an already-buffered document.
+# /protocols was 8.9MB at the adapter audit; JSON gets headroom, HTML keeps its old budget.
+# Callers may select a smaller ceiling via max_body_bytes, never an unbounded read.
+MAX_BODY_BYTES = 4_000_000
+MAX_JSON_BODY_BYTES = 16_000_000
+HTTP_CHUNK_BYTES = 64_000
 
 
 # ------------------------------------------------------------------- shared http helpers
@@ -88,6 +102,9 @@ def provider_error(
     **extra: Any,
 ) -> None:
     log.warning("hunter provider error %s %s: %s", provider, endpoint, detail)
+    errors = _COLLECT_ERRORS.get()
+    if errors is not None:
+        errors.append(f"{provider} {endpoint}: {detail}"[:500])
     emit(
         EventKind.PROVIDER_ERROR,
         {"provider": provider, "endpoint": endpoint, "detail": detail[:500], **extra},
@@ -105,16 +122,37 @@ def fetch_text(
     timeout: float = 20.0,
     headers: dict[str, str] | None = None,
     conn: sqlite3.Connection | None = None,
+    max_body_bytes: int = MAX_BODY_BYTES,
 ) -> str | None:
-    """GET through the limiter. Returns ``None`` (never raises) when the provider is down."""
+    """GET a complete bounded body through the limiter; overflow is an explicit failure.
+
+    The ceiling is enforced while streaming decoded bytes, even without Content-Length
+    or with compression. A partial document is never returned to a downstream parser.
+    """
     hdrs = {"user-agent": USER_AGENT, **(headers or {})}
+    received = 0
+    status: int | None = None
     try:
+        if not isinstance(max_body_bytes, int) or isinstance(max_body_bytes, bool) or max_body_bytes <= 0:
+            raise ValueError("max_body_bytes must be a positive integer")
         with guarded(provider, endpoint, priority, conn=conn):
-            resp = httpx.get(url, timeout=timeout, headers=hdrs, follow_redirects=True)
-            resp.raise_for_status()
-            return resp.text[:MAX_BODY_CHARS]
+            with httpx.stream("GET", url, timeout=timeout, headers=hdrs, follow_redirects=True) as resp:
+                status = resp.status_code
+                resp.raise_for_status()
+                body = bytearray()
+                for chunk in resp.iter_bytes(chunk_size=HTTP_CHUNK_BYTES):
+                    received += len(chunk)
+                    if received > max_body_bytes:
+                        raise ValueError(
+                            f"response body exceeds {max_body_bytes} decoded bytes (received {received})"
+                        )
+                    body.extend(chunk)
+                return body.decode(resp.encoding or "utf-8", errors="replace")
     except Exception as exc:  # noqa: BLE001 - a provider being down is not our exception
-        provider_error(provider, endpoint, f"{type(exc).__name__}: {exc}", conn=conn, url=url)
+        provider_error(
+            provider, endpoint, f"{type(exc).__name__}: {exc}", conn=conn, url=url,
+            http_status=status, received_body_bytes=received, max_body_bytes=max_body_bytes,
+        )
         return None
 
 
@@ -127,9 +165,11 @@ def fetch_json(
     timeout: float = 20.0,
     headers: dict[str, str] | None = None,
     conn: sqlite3.Connection | None = None,
+    max_body_bytes: int = MAX_JSON_BODY_BYTES,
 ) -> Any | None:
     raw = fetch_text(
-        provider, endpoint, url, priority=priority, timeout=timeout, headers=headers, conn=conn
+        provider, endpoint, url, priority=priority, timeout=timeout, headers=headers, conn=conn,
+        max_body_bytes=max_body_bytes,
     )
     if raw is None:
         return None
@@ -218,12 +258,60 @@ def telegram_posts(page_html: str) -> list[TelegramPost]:
 # ------------------------------------------------------------------ text classification
 
 _CONFIRMED_RE = re.compile(
-    r"(token confirmed|confirmed token|tge confirmed|airdrop confirmed|token is live|"
-    r"tge (?:date|on|is)|snapshot taken|claim (?:is )?(?:now )?(?:live|open))",
+    r"\b(token confirmed|confirmed token|tge confirmed|airdrop confirmed|token is live|"
+    r"tge (?:date|on|is)|snapshot taken|claim (?:is )?(?:now )?(?:live|open))\b",
+    re.I,
+)
+_CONFIRMATION_DOUBT_RE = re.compile(
+    r"\b(no|not|never|unconfirmed|unverified|denied|false|fake|rumou?rs?|speculative|"
+    r"may|might|could|whether|if|pending|unlikely)\b|n['’]t\b",
     re.I,
 )
 _POINTS_RE = re.compile(r"(points? (?:program|programme|campaign)|season \d|\bxp\b|\bpoints\b)", re.I)
 _SYBIL_HARD_RE = re.compile(r"(sybil|anti-?bot|kyc|verification|human passport|gitcoin)", re.I)
+_PROGRAMME_RE = re.compile(
+    r"\b(airdrops?|points?|rewards?|quests?|claims?|snapshot|tge|testnet|season\s+\d|"
+    r"token confirmed|confirmed token)\b", re.I,
+)
+_NON_PROGRAMME_TITLE_RE = re.compile(
+    r"\b(pinned|compilations?|round[- ]?up|recap|(?:market|price)\s+(?:update|news|analysis))\b|"
+    r"^(photo|video|image|gm)$", re.I,
+)
+_MEDIA_PATH_RE = re.compile(r"\.(jpe?g|png|gif|webp|avif|svg|bmp|ico|mp4|webm|mov|mp3|wav)$", re.I)
+
+
+def _programme_url(url: str | None) -> str | None:
+    """Keep web discovery links, never media attachments or unsafe URL schemes.
+
+    Passing this filter does not attest that a URL is official, safe to sign, or live.
+    """
+    if not isinstance(url, str):
+        return None
+    try:
+        parts = urlsplit(html_lib.unescape(url))
+        if parts.scheme not in {"http", "https"} or not parts.hostname or parts.username is not None:
+            return None
+        if _MEDIA_PATH_RE.search(unquote(parts.path).rstrip("/")):
+            return None
+        if parts.hostname.lower() in {"t.me", "telegram.me", "www.t.me", "www.telegram.me"}:
+            return None
+    except ValueError:
+        return None
+    return html_lib.unescape(url)
+
+
+def _has_confirmation(text: str) -> bool:
+    """A positive phrase is a source claim, never independent programme verification.
+
+    Negation/uncertainty in its clause vetoes the match. Separate sentences about KYC
+    must not erase a positive claim; questions must not become promises.
+    """
+    return any(
+        _CONFIRMED_RE.search(clause)
+        and not _CONFIRMATION_DOUBT_RE.search(clause)
+        and "?" not in clause
+        for clause in re.findall(r"[^.!?;\n]+[.!?;\n]?", text or "")
+    )
 
 _CHAIN_WORDS: dict[str, Chain] = {
     "solana": Chain.SOL,
@@ -237,6 +325,8 @@ _CHAIN_WORDS: dict[str, Chain] = {
     "binance smart chain": Chain.BSC,
 }
 
+_ROBINHOOD_CHAIN_RE = re.compile(r"\brobinhood[\s-]+chain\b")
+
 #: Chains we cannot trade but can still farm; kept as a hint string, not a fake Chain.
 _KNOWN_OTHER_CHAINS = (
     "arbitrum", "optimism", "zksync", "linea", "scroll", "starknet", "monad", "megaeth",
@@ -249,6 +339,10 @@ _GAS_ESTIMATE_USD: dict[str | None, Decimal] = {
     Chain.ETH.value: Decimal("12.00"),
     Chain.BASE.value: Decimal("0.80"),
     Chain.BSC.value: Decimal("0.60"),
+    # Robinhood Chain is an Arbitrum Orbit L2 with ETH gas. Before 2026-10-02 it had no
+    # entry here, so gas_estimate(Chain.ROBINHOOD) raised KeyError -- latent only because
+    # detect_chain never returned it. The OpenSea NFT source does.
+    Chain.ROBINHOOD.value: Decimal("0.10"),
     None: Decimal("3.00"),
 }
 
@@ -256,6 +350,11 @@ _GAS_ESTIMATE_USD: dict[str | None, Decimal] = {
 def detect_chain(text: str) -> tuple[Chain | None, str | None]:
     """(tradeable chain, hint). A chain we cannot trade still matters for gas and plans."""
     low = (text or "").lower()
+    # A funded chain is checked first: Robinhood Chain is an Arbitrum Orbit chain, so its
+    # announcements routinely mention Arbitrum too. Only the two-word name counts --
+    # "investment from Robinhood Crypto" is not a chain.
+    if _ROBINHOOD_CHAIN_RE.search(low):
+        return Chain.ROBINHOOD, Chain.ROBINHOOD.value
     for word in _KNOWN_OTHER_CHAINS:
         if re.search(rf"\b{word}\b", low):
             return None, word
@@ -292,10 +391,10 @@ def _evidence_from_text(
     kind: OpportunityKind | None = None,
 ) -> OpportunityEvidence | None:
     name = _clean_name(name)
-    if len(name) < 3:
+    if len(name) < 3 or _NON_PROGRAMME_TITLE_RE.search(name) or not _PROGRAMME_RE.search(text):
         return None
     chain, hint = detect_chain(text)
-    confirmed = bool(_CONFIRMED_RE.search(text))
+    confirmed = _has_confirmation(text)
     points = bool(_POINTS_RE.search(text))
     return OpportunityEvidence(
         kind=kind or (OpportunityKind.POINTS if points and not confirmed else OpportunityKind.AIRDROP),
@@ -309,9 +408,10 @@ def _evidence_from_text(
         sybil_risk=SybilRisk.HIGH if _SYBIL_HARD_RE.search(text) else SybilRisk.MEDIUM,
         source_count=1,
         sources=[source],
-        url=url,
+        url=_programme_url(url),
         first_seen_ms=ts_ms or now_ms(),
-        meta={"cost_basis": "estimated", "excerpt": text[:280], "source": source},
+        meta={"cost_basis": "estimated", "excerpt": text[:280], "source": source,
+              "publication_ms": ts_ms},
     )
 
 
@@ -325,16 +425,21 @@ def from_airdrops_io_telegram(
         return []
     try:
         out: list[OpportunityEvidence] = []
-        for post in telegram_posts(page):
+        posts = telegram_posts(page)
+        if not posts:
+            raise ValueError("unrecognized Telegram preview: no parseable posts")
+        for post in posts:
             first_line = post.text.split("\n", 1)[0]
+            links = [url for link in post.links if (url := _programme_url(link)) is not None]
             ev = _evidence_from_text(
                 name=first_line,
                 text=post.text,
-                url=post.links[0] if post.links else f"https://t.me/{post.post}",
+                url=links[0] if links else None,
                 source=source,
                 ts_ms=post.ts_ms,
             )
             if ev is not None:
+                ev.meta["source_url"] = f"https://t.me/{post.post}"
                 out.append(ev)
         return out
     except Exception as exc:  # noqa: BLE001 - layout change, not a bug we may crash on
@@ -357,6 +462,8 @@ def from_airdropalert_rss(
         return []
     try:
         out: list[OpportunityEvidence] = []
+        if root.tag != "rss" or root.find("channel") is None:
+            raise ValueError("unrecognized RSS feed: expected rss/channel")
         for item in root.iter("item"):
             title = (item.findtext("title") or "").strip()
             link = (item.findtext("link") or "").strip() or None
@@ -406,6 +513,8 @@ def from_defillama(
         return []
     out: list[OpportunityEvidence] = []
     try:
+        if data and not any(isinstance(row, dict) and row.get("name") and "tvl" in row for row in data):
+            raise ValueError("unrecognized protocols list: no protocol records")
         for row in data:
             if not isinstance(row, dict):
                 continue
@@ -432,7 +541,13 @@ def from_defillama(
                     time_cost_hours=1.5,
                     sybil_risk=SybilRisk.MEDIUM,
                     sources=[source],
-                    url=(row.get("url") or None),
+                    url=_programme_url(row.get("url")),
+                    # DefiLlama's registry `url` is the protocol's own site, the one field
+                    # here that IS an official source. Until 2026-10-02 no collector set
+                    # official_url at all, so qualification reported
+                    # official_source_unavailable on 1080/1080 rows. Same value as `url`,
+                    # so the opportunity key (name + link) is unchanged.
+                    official_url=_programme_url(row.get("url")),
                     meta={
                         "cost_basis": "estimated",
                         "tvl_usd": float(tvl),
@@ -483,13 +598,56 @@ _ROW_RE = re.compile(r"<tr[^>]*>(?P<row>.*?)</tr>", re.S)
 _CELL_RE = re.compile(r"<t[dh][^>]*>(?P<cell>.*?)</t[dh]>", re.S)
 
 
+class _AlphaDropsCards(HTMLParser):
+    """Extract only linked h3 programme titles, not navigation or Next Flight code.
+
+    These are aggregator discovery URLs, not verified official participation URLs.
+    Reward, token promises, chains and dates stay unknown when absent from this shape.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.rows: list[dict[str, Any]] = []
+        self._heading = False
+        self._href: str | None = None
+        self._text: list[str] = []
+        self._seen: set[str] = set()
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag == "h3":
+            self._heading = True
+        if tag == "a" and self._heading:
+            href = dict(attrs).get("href") or ""
+            if re.fullmatch(r"/airdrops/[a-zA-Z0-9][a-zA-Z0-9_-]*/?", href):
+                self._href = href
+                self._text = []
+
+    def handle_data(self, data: str) -> None:
+        if self._href is not None:
+            self._text.append(data)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag == "a" and self._href is not None:
+            url = urljoin(ALPHADROPS_URL, self._href)
+            name = _clean_name("".join(self._text))
+            if name and url not in self._seen:
+                self.rows.append({"name": name, "url": url, "source_page": ALPHADROPS_URL})
+                self._seen.add(url)
+            self._href = None
+            self._text = []
+        if tag == "h3":
+            self._heading = False
+            self._href = None
+            self._text = []
+
+
 def from_alphadrops(
     raw: str | None = None, conn: sqlite3.Connection | None = None
 ) -> list[OpportunityEvidence]:
     """Alpha Drops points-programmes page (48+ programmes, perp-DEX heavy).
 
-    Two shapes are accepted: an embedded ``__NEXT_DATA__`` blob, or a plain HTML table.
-    Neither is a documented contract, so both failures are silent-and-reported.
+    Accept legacy ``__NEXT_DATA__``/tables and current linked-title programme cards.
+    None is a documented API contract; parsing yields discovery evidence only.
     """
     source = "alphadrops"
     page = raw if raw is not None else fetch_text(source, "points.list", ALPHADROPS_URL, conn=conn)
@@ -497,15 +655,34 @@ def from_alphadrops(
         return []
     try:
         rows: list[dict[str, Any]] = []
+        explicit_empty = False
+        json_error = False
         blob = _NEXT_DATA_RE.search(page)
         if blob:
             try:
-                rows = _largest_record_list(json.loads(blob.group("json")))
+                data = json.loads(blob.group("json"))
+                rows = _largest_record_list(data)
+                # Only the known legacy programme container can attest to emptiness.
+                # An empty shell, unrelated JSON list or new layout cannot.
+                props = data.get("props") if isinstance(data, dict) else None
+                page_props = props.get("pageProps") if isinstance(props, dict) else None
+                explicit_empty = isinstance(page_props, dict) and page_props.get("programs") == []
             except ValueError as exc:
                 provider_error(source, "points.list", f"invalid __NEXT_DATA__: {exc}", conn=conn)
+                json_error = True
                 rows = []
         if not rows:
             rows = _alphadrops_table_rows(page)
+        if not rows:
+            cards = _AlphaDropsCards()
+            cards.feed(page)
+            cards.close()
+            rows = cards.rows
+        if not rows and not explicit_empty and not json_error:
+            provider_error(
+                source, "points.list", "unrecognized points page: no programme rows or explicit empty list",
+                conn=conn, body_chars=len(page),
+            )
         out: list[OpportunityEvidence] = []
         for row in rows:
             name = _clean_name(str(row.get("name") or ""))
@@ -514,11 +691,11 @@ def from_alphadrops(
             blurb = " ".join(
                 str(row.get(k)) for k in ("chain", "status", "category", "description") if row.get(k)
             )
-            chain, hint = detect_chain(blurb or name)
-            confirmed = bool(_CONFIRMED_RE.search(blurb)) or str(row.get("status", "")).lower() in {
-                "confirmed",
-                "token confirmed",
-            }
+            chain, hint = detect_chain(blurb)
+            status = str(row.get("status", "")).strip().lower()
+            confirmed = _has_confirmation(blurb) or (
+                status == "confirmed" and not _CONFIRMATION_DOUBT_RE.search(blurb)
+            )
             out.append(
                 OpportunityEvidence(
                     kind=OpportunityKind.POINTS,
@@ -532,7 +709,7 @@ def from_alphadrops(
                     capital_required_usd=_as_decimal(row.get("capital_usd")) or Decimal("0"),
                     sybil_risk=SybilRisk.HIGH if row.get("sybil") else SybilRisk.MEDIUM,
                     sources=[source],
-                    url=(row.get("url") or None),
+                    url=_programme_url(row.get("url")),
                     deadline_ms=parse_iso_ms(row.get("end_date")) if row.get("end_date") else None,
                     meta={"cost_basis": "estimated", "raw": row, "source": source},
                 )
@@ -589,12 +766,14 @@ def record_source(
     kind: str,
     count: int,
     error: str | None = None,
+    *,
+    empty_ok: bool = False,
 ) -> None:
     """Per-collector health. A source that silently went to zero must be visible."""
     ts = now_ms()
     row = fetch_one(conn, "SELECT fail_streak FROM hunter_sources WHERE name=?", (name,))
     streak = int(row["fail_streak"]) if row else 0
-    failed = error is not None or count == 0
+    failed = error is not None or (count == 0 and not empty_ok)
     upsert(
         conn,
         "hunter_sources",
@@ -620,14 +799,19 @@ def collect(
     """Run every collector, deduping across them. One dead source never stops the rest."""
     c = conn or get_conn()
     found: list[OpportunityEvidence] = []
-    for name, fn in (collectors or COLLECTORS).items():
+    for name, fn in (COLLECTORS if collectors is None else collectors).items():
+        errors: list[str] = []
+        token = _COLLECT_ERRORS.set(errors)
         try:
             items = fn(conn=c) or []
-            record_source(c, name, "airdrop", len(items))
+            record_source(c, name, "airdrop", len(items),
+                          error="; ".join(errors)[:500] or None, empty_ok=True)
         except Exception as exc:  # noqa: BLE001 - a collector must never take down refresh
             provider_error(name, "collect", f"{type(exc).__name__}: {exc}", conn=c)
             record_source(c, name, "airdrop", 0, error=f"{type(exc).__name__}: {exc}")
             continue
+        finally:
+            _COLLECT_ERRORS.reset(token)
         found.extend(items)
     return dedupe(found)
 
@@ -675,6 +859,8 @@ def refresh(
     conn: sqlite3.Connection | None = None,
     collectors: dict[str, Callable[..., list[OpportunityEvidence]]] | None = None,
     cfg: HunterConfig | None = None,
+    *,
+    report: dict[str, Any] | None = None,
 ) -> int:
     """Collect, dedupe, score, store. Returns the number of opportunities written.
 
@@ -685,12 +871,19 @@ def refresh(
     c = conn or get_conn()
     cfg = cfg or hunter_config()
     written = 0
+    ids: set[str] = set()
+    new_ids: set[str] = set()
+    from kaiba.hunters.qualification import qualification
+
     for opp in collect(c, collectors):
         score = score_opportunity(opp, cfg)
-        before = fetch_one(c, "SELECT ev_score FROM opportunities WHERE opportunity_id=?", (opp.key,))
-        was_above = before is not None and before["ev_score"] is not None and (
-            Decimal(str(before["ev_score"])) >= cfg.ev_threshold_usd
-        )
+        before = fetch_one(c, "SELECT * FROM opportunities WHERE opportunity_id=?", (opp.key,))
+        ids.add(opp.key)
+        if before is None:
+            new_ids.add(opp.key)
+        was_above = before is not None and qualification(
+            before, at_ms=now_ms(), ev_floor=cfg.ev_threshold_usd,
+        )["qualified"]
         # Only worth planning what clears the floor; planning the rest is the time cost the
         # EV model just told us not to spend.
         plan = (
@@ -700,7 +893,8 @@ def refresh(
         )
         store_opportunity(c, opp, score, plan=plan)
         written += 1
-        if score.ev_usd >= cfg.ev_threshold_usd and not was_above and not score.refused:
+        if (score.ev_usd >= cfg.ev_threshold_usd and not was_above and not score.refused
+                and plan is not None and plan.get("refused") is False):
             emit(
                 EventKind.HUNTER_FOUND,
                 {
@@ -718,7 +912,74 @@ def refresh(
                 subject=opp.key,
                 conn=c,
             )
+    if report is not None:
+        report.update(refresh_summary(c, ids, new_ids, written, cfg,
+                                      COLLECTORS if collectors is None else collectors))
     return written
+
+
+def refresh_summary(
+    conn: sqlite3.Connection, ids: set[str], new_ids: set[str], written: int,
+    cfg: HunterConfig, source_names: Iterable[str],
+    *, source_states: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """Exact per-pass registry receipt; neither an upsert nor a fetch is a fresh lead.
+
+    Qualification runs on persisted evidence. Historical start dates and actual ends
+    are counted separately; missing lifecycle/eligibility/value remains unavailable.
+    """
+    from kaiba.hunters.qualification import qualification
+
+    at = now_ms()
+    rows: list[dict[str, Any]] = []
+    keys = sorted(ids)
+    for start in range(0, len(keys), 200):
+        batch = keys[start:start + 200]
+        rows.extend(fetch_all(conn, "SELECT * FROM opportunities WHERE opportunity_id IN ("
+                              + ",".join("?" for _ in batch) + ")", batch))
+    verdicts = [qualification(row, at_ms=at, ev_floor=cfg.ev_threshold_usd) for row in rows]
+    sources = {}
+    for name in source_names:
+        row = fetch_one(conn, "SELECT * FROM hunter_sources WHERE name=?", (name,))
+        state = (source_states or {}).get(name)
+        if state is None:
+            state = "unavailable" if row is None else "error" if row["last_error"] else "ok" if row["last_count"] else "empty"
+        sources[name] = {"state": state, "parsed_count": row["last_count"] if row else None,
+                         "error": row["last_error"] if row else None}
+    qualified = sum(v["qualified"] for v in verdicts)
+    errors = sum(s["state"] == "error" for s in sources.values())
+    unavailable = any(s["state"] == "unavailable" for s in sources.values())
+    outcome = ("partial_source_error" if errors and written else "source_error" if errors
+               else "partial_source_unavailable" if unavailable and written else "source_unavailable" if unavailable
+               else "qualified_research" if qualified else "unqualified_leads" if new_ids
+               else "duplicate_only" if written else "healthy_empty" if sources else "no_sources")
+    facts = [json.loads(row["evidence_json"]) for row in rows]
+    starts = [e.get("meta", {}).get("launch_ms") for e in facts]
+    publications = [e.get("meta", {}).get("publication_ms") for e in facts]
+    return {
+        "outcome": outcome, "written": written, "distinct_count": len(rows),
+        "new_count": len(new_ids), "refreshed_count": len(rows) - len(new_ids),
+        "qualified_count": qualified, "unqualified_count": len(rows) - qualified,
+        "refused_count": sum(row["status"] == "refused" or json.loads(row["plan_json"]).get("refused") is True for row in rows),
+        "known_expired_count": sum("participation_deadline_passed" in v["reasons"] for v in verdicts),
+        "past_start_count": sum(isinstance(t, int) and t <= at for t in starts),
+        "publication_recent_count": sum(isinstance(t, int) and 0 <= at - t <= 86_400_000 for t in publications),
+        "publication_unavailable_count": sum(t is None for t in publications),
+        "unqualified_reason_counts": dict(Counter(reason for v in verdicts for reason in v["reasons"])),
+        "sources": sources, "funded_action_authorized": False,
+        "note": "New means first registry insertion, not verified freshness or eligibility. Past start is not expiry.",
+    }
+
+
+def refresh_report(
+    conn: sqlite3.Connection | None = None,
+    collectors: dict[str, Callable[..., list[OpportunityEvidence]]] | None = None,
+    cfg: HunterConfig | None = None,
+) -> dict[str, Any]:
+    """Structured scheduler entry point; legacy refresh still returns integer upserts."""
+    report: dict[str, Any] = {}
+    refresh(conn, collectors, cfg, report=report)
+    return report
 
 
 # ----------------------------------------------------------------------------------- plans
@@ -870,13 +1131,21 @@ def build_plan(
     """
     c = conn or get_conn()
     cfg = cfg or hunter_config()
+    stored: dict[str, Any] = {}
+    if isinstance(opportunity, str):
+        row = fetch_one(c, "SELECT * FROM opportunities WHERE opportunity_id=?", (opportunity,))
+        if row is None:
+            raise KeyError(f"unknown opportunity {opportunity}")
+        opportunity = row
+    if isinstance(opportunity, dict) and "evidence_json" in opportunity:
+        stored = opportunity
     opp = _as_evidence(opportunity, c)
     plan = ParticipationPlan(
         opportunity_id=opp.key,
         name=opp.name,
         kind=opp.kind,
         wallet_count=opp.wallet_count,
-        total_capital_usd=opp.capital_required_usd,
+        total_capital_usd=Decimal("0"),
     )
 
     if opp.wallet_count > cfg.max_wallets:
@@ -888,6 +1157,33 @@ def build_plan(
         plan.warnings.append(plan.refusal_reason)
         return plan
 
+    from kaiba.hunters.qualification import qualification
+
+    score = score_opportunity(opp, cfg)
+    verdict = qualification(
+        {
+            "kind": stored.get("kind", opp.kind.value),
+            "chain": stored.get("chain", opp.chain.value if opp.chain else opp.chain_hint),
+            "status": "refused" if score.refused else stored.get("status", "open"),
+            "ev_score": str(score.ev_usd),
+            "cost_usd": str(score.cost_usd),
+            "deadline_ms": stored.get("deadline_ms", opp.deadline_ms),
+            "evidence_json": opp.model_dump(mode="json"),
+            "plan_json": stored.get("plan_json", {}),
+        },
+        at_ms=now_ms(), ev_floor=cfg.ev_threshold_usd,
+    )
+    if score.ev_usd <= 0:
+        verdict["qualified"] = False
+        verdict["reasons"].append("non_positive_ev")
+    if not verdict["qualified"]:
+        plan.refused = True
+        plan.refusal_reason = "; ".join(verdict["reasons"])
+        plan.warnings.extend(score.warnings)
+        plan.warnings.append(plan.refusal_reason)
+        return plan
+
+    plan.total_capital_usd = opp.capital_required_usd
     meta = opp.meta or {}
     capital = opp.capital_required_usd
     chain, hint = opp.chain, opp.chain_hint
@@ -1069,6 +1365,7 @@ __all__ = [
     "ranked_evidence",
     "record_source",
     "refresh",
+    "refresh_report",
     "store_opportunity",
     "strip_tags",
     "telegram_posts",

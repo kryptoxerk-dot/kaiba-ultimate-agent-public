@@ -90,12 +90,19 @@ sudo -u kaiba-core /opt/kaiba/venv/bin/python -m kaiba.cli.main probe
 On the box, by the signer, never imported from a laptop:
 
 ```sh
-sudo systemctl start kaiba-signer
-sudo -u kaiba-signer /opt/kaiba/venv/bin/python -m kaiba.cli.main signer keygen --chain sol
+sudo -u kaiba-signer /opt/kaiba/venv/bin/python -m kaiba.cli.main signer keygen --chain sol --keystore /etc/kaiba/signer/keys
+sudo -u kaiba-signer /opt/kaiba/venv/bin/python -m kaiba.cli.main signer keygen --chain evm --keystore /etc/kaiba/signer/keys
 ```
 
-The private key never leaves the signer process. The command prints an address; that is
-all you get, and all you need for `chains.<chain>.wallet` in `risk.yaml`.
+`--keystore` is required: `sudo -u` does not inherit the unit's `KAIBA_KEYSTORE_DIR`, and a
+default would file the key where the running signer never looks. The key is written 0600
+with O_EXCL (an existing key is never overwritten). The command prints an address; that is
+all you get, and all you need for `chains.<chain>.wallet` in `risk.yaml`. One evm key
+serves every EVM chain.
+
+To store a key that already exists, `signer import --chain sol|evm --keystore DIR` reads it
+from a hidden prompt (or one line of piped stdin), never from the command line, and prints
+only the address.
 
 ### Backups do not contain them
 
@@ -108,6 +115,10 @@ The consequence, stated so it is not a surprise later: **rebuilding this host me
 wallets.** Plan the migration, do not plan the restore.
 
 ### Rotating the keystore passphrase
+
+> **NOT IMPLEMENTED (2026-10-02).** The keystore is plain 0600 files in a 0700 directory;
+> nothing encrypts it, `KAIBA_SIGNER_PASSPHRASE` is read by no code, and `signer rekey` /
+> `signer retire` do not exist. The steps below describe intended behaviour only.
 
 ```sh
 sudo deploy/rotate-keys.sh KAIBA_SIGNER_PASSPHRASE

@@ -437,7 +437,24 @@ def test_healthy_zero_is_not_a_failure(tmp_db) -> None:
 def test_source_health_lists_sources_that_have_never_run(tmp_db) -> None:
     health = {h["source"]: h for h in S.source_health(tmp_db)}
     assert set(health) == set(S.SOURCES)
-    assert all(h["state"] == "never_run" for h in health.values())
+    disabled = set(S.SignalsConfig().disabled)
+    assert all(h["state"] == "never_run" for n, h in health.items() if n not in disabled)
+    # 2026-10-02: a retired source is listed, as disabled, with the measurement that retired it.
+    assert all(health[n]["state"] == "disabled" and health[n]["disabled_reason"] for n in disabled)
+
+
+def test_disabled_sources_are_not_polled_and_do_not_page(tmp_db) -> None:
+    cfg = S.SignalsConfig()
+    assert {"upbit", "discourse"} <= set(cfg.disabled)
+    assert not set(S.due_sources(tmp_db, cfg)) & set(cfg.disabled)
+    assert not set(S.due_sources(tmp_db, cfg, force=True)) & set(cfg.disabled)
+    # An explicit probe still reaches it, and the operator can re-enable it in config.
+    assert S.due_sources(tmp_db, cfg, only=["upbit"]) == ["upbit"]
+    assert "upbit" in S.due_sources(tmp_db, S.SignalsConfig(disabled={}))
+    # A disabled source that last failed is not reported dead every hour.
+    S.record_health(tmp_db, "upbit", "venue", ok=False, count=0, new=0, interval_s=180, error="403")
+    assert "upbit" not in [b["source"] for b in S.check_health(tmp_db, cfg)]
+    assert "upbit" in [b["source"] for b in S.check_health(tmp_db, S.SignalsConfig(disabled={}))]
 
 
 def test_source_health_states(tmp_db) -> None:
@@ -484,7 +501,7 @@ def test_a_source_that_has_never_succeeded_is_dead_not_quiet(tmp_db) -> None:
 
 def test_due_sources_respects_each_interval(tmp_db) -> None:
     cfg = S.SignalsConfig()
-    assert set(S.due_sources(tmp_db, cfg)) == set(S.SOURCES)
+    assert set(S.due_sources(tmp_db, cfg)) == set(S.SOURCES) - set(cfg.disabled)
     S.record_health(tmp_db, "okx", "venue", ok=True, count=1, new=0, interval_s=180)
     assert "okx" not in S.due_sources(tmp_db, cfg)
     assert "okx" in S.due_sources(tmp_db, cfg, force=True)

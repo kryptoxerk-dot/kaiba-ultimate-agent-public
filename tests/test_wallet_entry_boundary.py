@@ -22,7 +22,7 @@ from kaiba.core.schemas import (
 )
 from kaiba.execution import engine, lanes
 
-TOKEN = "CJF7MNqb9xv1XrTs5St1Du5JuQXLsfFBB137vmYRKpnb"
+TOKEN = "Bnd5oBSWpPpXoaWTckgXTVx9TCKkX5GyVqxcrwBzUYsB"
 WALLET = "srcWa11etTrustedAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 
 

@@ -1,0 +1,386 @@
+{
+ "source": "https://api.opensea.io/api/v2/drops?type={featured,upcoming,recently_minted}&limit=100 and /api/v2/collections/{slug}/stats",
+ "captured": "2026-10-02, keyless, trimmed to 7 drops; rare-friends-genesis stats copied from the same day's response",
+ "kind": "json",
+ "body": {
+  "drops": {
+   "featured": {
+    "drops": [
+     {
+      "collection_slug": "rare-friends-genesis",
+      "collection_name": "Rare Friends Genesis",
+      "chain": "robinhood",
+      "contract_address": "0x116eaa62241751e0c98da43d458600c6c17cd361",
+      "drop_type": "seadrop_v1_erc721",
+      "is_minting": false,
+      "image_url": "https://i2c.seadn.io/collection/rare-friends-genesis/image_type_logo/dfd32c74ec72b8be55ac425277dc8f/44dfd32c74ec72b8be55ac425277dc8f.png",
+      "opensea_url": "https://opensea.io/collection/rare-friends-genesis",
+      "active_stage": null,
+      "next_stage": null
+     },
+     {
+      "collection_slug": "jpeg-frens",
+      "collection_name": "JPEG Frens",
+      "chain": "ethereum",
+      "contract_address": "0xe31703379e32cad7502a594a854a76f9bb0be0e5",
+      "drop_type": "seadrop_v1_erc721",
+      "is_minting": false,
+      "image_url": "https://i2c.seadn.io/collection/jpeg-frens-546720645/image_type_logo/523c224251f0bda12b5fec4b771b87/7c523c224251f0bda12b5fec4b771b87.jpeg",
+      "opensea_url": "https://opensea.io/collection/jpeg-frens",
+      "active_stage": {
+       "uuid": "3d6e3db90b544450a5c433181f9fcd0e",
+       "stage_type": "public_sale",
+       "label": "EVERYONE IS A FREN",
+       "price": "3800000000000000",
+       "price_currency_address": "0x0000000000000000000000000000000000000000",
+       "start_time": "2026-09-23T21:30:00Z",
+       "end_time": "2026-10-03T21:30:00Z",
+       "max_per_wallet": "99",
+       "allowlist_wallet_count": null
+      },
+      "next_stage": null
+     },
+     {
+      "collection_slug": "officialmooncats",
+      "collection_name": "Mooncats",
+      "chain": "robinhood",
+      "contract_address": "0x99b10b280c1fd3625737c51590ddf7191963c5f6",
+      "drop_type": "seadrop_v1_erc721",
+      "is_minting": true,
+      "image_url": "https://i2c.seadn.io/collection/officialmooncats/image_type_logo/8e1088486d82d3df2d995b58c77ec7/678e1088486d82d3df2d995b58c77ec7.gif",
+      "opensea_url": "https://opensea.io/collection/officialmooncats",
+      "active_stage": {
+       "uuid": "aff75d619aaf43d5adde979ced67ea1b",
+       "stage_type": "public_sale",
+       "label": "Public",
+       "price": "10000000000000000",
+       "price_currency_address": "0x0000000000000000000000000000000000000000",
+       "start_time": "2026-09-26T15:00:00Z",
+       "end_time": "2026-10-26T15:00:00Z",
+       "max_per_wallet": "50",
+       "allowlist_wallet_count": null
+      },
+      "next_stage": null
+     },
+     {
+      "collection_slug": "early-men-origins",
+      "collection_name": "Early Men",
+      "chain": "robinhood",
+      "contract_address": "0x143e2b4be0fe46e6318ecf42054a46a46e3e1241",
+      "drop_type": "seadrop_v1_erc721",
+      "is_minting": false,
+      "image_url": "https://i2c.seadn.io/collection/early-men-origins/image_type_logo/327caaddd23691b229b9ab7ef15e7b/76327caaddd23691b229b9ab7ef15e7b.jpeg",
+      "opensea_url": "https://opensea.io/collection/early-men-origins",
+      "active_stage": {
+       "uuid": "3229d2a03eb944ddbfe77a81c76b14ee",
+       "stage_type": "public_sale",
+       "label": "Public Stage",
+       "price": "1200000000000000",
+       "price_currency_address": "0x0000000000000000000000000000000000000000",
+       "start_time": "2026-09-26T21:30:00Z",
+       "end_time": "2026-10-08T21:30:00Z",
+       "max_per_wallet": "5",
+       "allowlist_wallet_count": null
+      },
+      "next_stage": null
+     }
+    ],
+    "next": null
+   },
+   "upcoming": {
+    "drops": [
+     {
+      "collection_slug": "ottoclubhouse",
+      "collection_name": "OTTO CLUB HOUSE",
+      "chain": "ethereum",
+      "contract_address": "0xa1a94e5aded62fa865b2c30052d32c01c0e250f5",
+      "drop_type": "seadrop_v1_erc721",
+      "is_minting": false,
+      "image_url": "https://i2c.seadn.io/collection/otto-club-house-14943345/image_type_logo/8a40c43a8a5d04581b02dd524f14ea/f48a40c43a8a5d04581b02dd524f14ea.png",
+      "opensea_url": "https://opensea.io/collection/ottoclubhouse",
+      "active_stage": null,
+      "next_stage": {
+       "uuid": "8e9275657f96479ab20c2f11822a4821",
+       "stage_type": "signed_presale",
+       "label": "Team Treasury",
+       "price": "0",
+       "price_currency_address": "0x0000000000000000000000000000000000000000",
+       "start_time": "2026-10-03T18:30:00Z",
+       "end_time": "2026-10-03T19:00:00Z",
+       "max_per_wallet": "150",
+       "allowlist_wallet_count": 1
+      }
+     }
+    ],
+    "next": null
+   },
+   "recently_minted": {
+    "drops": [
+     {
+      "collection_slug": "eternal-blades-world",
+      "collection_name": "Eternal Blades",
+      "chain": "ape_chain",
+      "contract_address": "0xe0c9a8f7206a5d44067e2653d7c2a32a686aaa57",
+      "drop_type": "seadrop_v1_erc721",
+      "is_minting": true,
+      "image_url": "https://i2c.seadn.io/collection/eternal-blades-756887231/image_type_logo/b089cbbb7aed30413734e66cf9a2be/85b089cbbb7aed30413734e66cf9a2be.jpeg",
+      "opensea_url": "https://opensea.io/collection/eternal-blades-world",
+      "active_stage": {
+       "uuid": "53a51288653c4bb495eb34ac84866c0f",
+       "stage_type": "public_sale",
+       "label": "PUBLIC PHASE",
+       "price": "25000000000000000000",
+       "price_currency_address": "0x0000000000000000000000000000000000000000",
+       "start_time": "2026-09-29T21:00:00Z",
+       "end_time": "2026-10-09T21:00:00Z",
+       "max_per_wallet": "5555",
+       "allowlist_wallet_count": null
+      },
+      "next_stage": null
+     },
+     {
+      "collection_slug": "early-men-origins",
+      "collection_name": "Early Men",
+      "chain": "robinhood",
+      "contract_address": "0x143e2b4be0fe46e6318ecf42054a46a46e3e1241",
+      "drop_type": "seadrop_v1_erc721",
+      "is_minting": false,
+      "image_url": "https://i2c.seadn.io/collection/early-men-origins/image_type_logo/327caaddd23691b229b9ab7ef15e7b/76327caaddd23691b229b9ab7ef15e7b.jpeg",
+      "opensea_url": "https://opensea.io/collection/early-men-origins",
+      "active_stage": {
+       "uuid": "3229d2a03eb944ddbfe77a81c76b14ee",
+       "stage_type": "public_sale",
+       "label": "Public Stage",
+       "price": "1200000000000000",
+       "price_currency_address": "0x0000000000000000000000000000000000000000",
+       "start_time": "2026-09-26T21:30:00Z",
+       "end_time": "2026-10-08T21:30:00Z",
+       "max_per_wallet": "5",
+       "allowlist_wallet_count": null
+      },
+      "next_stage": null
+     },
+     {
+      "collection_slug": "officialmooncats",
+      "collection_name": "Mooncats",
+      "chain": "robinhood",
+      "contract_address": "0x99b10b280c1fd3625737c51590ddf7191963c5f6",
+      "drop_type": "seadrop_v1_erc721",
+      "is_minting": true,
+      "image_url": "https://i2c.seadn.io/collection/officialmooncats/image_type_logo/8e1088486d82d3df2d995b58c77ec7/678e1088486d82d3df2d995b58c77ec7.gif",
+      "opensea_url": "https://opensea.io/collection/officialmooncats",
+      "active_stage": {
+       "uuid": "aff75d619aaf43d5adde979ced67ea1b",
+       "stage_type": "public_sale",
+       "label": "Public",
+       "price": "10000000000000000",
+       "price_currency_address": "0x0000000000000000000000000000000000000000",
+       "start_time": "2026-09-26T15:00:00Z",
+       "end_time": "2026-10-26T15:00:00Z",
+       "max_per_wallet": "50",
+       "allowlist_wallet_count": null
+      },
+      "next_stage": null
+     },
+     {
+      "collection_slug": "jpeg-frens",
+      "collection_name": "JPEG Frens",
+      "chain": "ethereum",
+      "contract_address": "0xe31703379e32cad7502a594a854a76f9bb0be0e5",
+      "drop_type": "seadrop_v1_erc721",
+      "is_minting": false,
+      "image_url": "https://i2c.seadn.io/collection/jpeg-frens-546720645/image_type_logo/523c224251f0bda12b5fec4b771b87/7c523c224251f0bda12b5fec4b771b87.jpeg",
+      "opensea_url": "https://opensea.io/collection/jpeg-frens",
+      "active_stage": {
+       "uuid": "3d6e3db90b544450a5c433181f9fcd0e",
+       "stage_type": "public_sale",
+       "label": "EVERYONE IS A FREN",
+       "price": "3800000000000000",
+       "price_currency_address": "0x0000000000000000000000000000000000000000",
+       "start_time": "2026-09-23T21:30:00Z",
+       "end_time": "2026-10-03T21:30:00Z",
+       "max_per_wallet": "99",
+       "allowlist_wallet_count": null
+      },
+      "next_stage": null
+     },
+     {
+      "collection_slug": "robbin-hood-2026",
+      "collection_name": "ROBBIN HOOD",
+      "chain": "robinhood",
+      "contract_address": "0x3750eda69bf4ce9c999ddf328be48c35be8a94ba",
+      "drop_type": "seadrop_v1_erc721",
+      "is_minting": false,
+      "image_url": "https://i2c.seadn.io/collection/robbin-hood-379494841/image_type_logo/8c7ab4ad1a06662f94897ea974cf63/b48c7ab4ad1a06662f94897ea974cf63.jpeg",
+      "opensea_url": "https://opensea.io/collection/robbin-hood-2026",
+      "active_stage": {
+       "uuid": "28a30f1f8b3c4dc4b4a7df783ca479fe",
+       "stage_type": "public_sale",
+       "label": "Public stage",
+       "price": "10000000000000000",
+       "price_currency_address": "0x0000000000000000000000000000000000000000",
+       "start_time": "2026-09-21T12:00:00Z",
+       "end_time": "2026-10-12T12:00:00Z",
+       "max_per_wallet": "30",
+       "allowlist_wallet_count": null
+      },
+      "next_stage": null
+     },
+     {
+      "collection_slug": "rare-friends-genesis",
+      "collection_name": "Rare Friends Genesis",
+      "chain": "robinhood",
+      "contract_address": "0x116eaa62241751e0c98da43d458600c6c17cd361",
+      "drop_type": "seadrop_v1_erc721",
+      "is_minting": false,
+      "image_url": "https://i2c.seadn.io/collection/rare-friends-genesis/image_type_logo/dfd32c74ec72b8be55ac425277dc8f/44dfd32c74ec72b8be55ac425277dc8f.png",
+      "opensea_url": "https://opensea.io/collection/rare-friends-genesis",
+      "active_stage": null,
+      "next_stage": null
+     }
+    ],
+    "next": null
+   }
+  },
+  "stats": {
+   "officialmooncats": {
+    "total": {
+     "volume": 1.966000000000001,
+     "volume_symbol": "ETH",
+     "sales": 231,
+     "num_owners": 36,
+     "floor_price": 0.015,
+     "floor_price_symbol": "ETH"
+    },
+    "intervals": [
+     {
+      "interval": "one_day",
+      "volume": 0.0,
+      "volume_symbol": "ETH",
+      "sales": 0
+     },
+     {
+      "interval": "seven_day",
+      "volume": 1.9660000000000009,
+      "volume_symbol": "ETH",
+      "sales": 231
+     },
+     {
+      "interval": "thirty_day",
+      "volume": 1.9660000000000009,
+      "volume_symbol": "ETH",
+      "sales": 231
+     }
+    ]
+   },
+   "robbin-hood-2026": {
+    "total": {
+     "volume": 0.16000000000000003,
+     "volume_symbol": "ETH",
+     "sales": 27,
+     "num_owners": 15,
+     "floor_price": 77.0,
+     "floor_price_symbol": "USDG"
+    },
+    "intervals": [
+     {
+      "interval": "one_day",
+      "volume": 0.0,
+      "volume_symbol": "ETH",
+      "sales": 0
+     },
+     {
+      "interval": "seven_day",
+      "volume": 0.0,
+      "volume_symbol": "ETH",
+      "sales": 0
+     },
+     {
+      "interval": "thirty_day",
+      "volume": 0.11,
+      "volume_symbol": "ETH",
+      "sales": 22
+     }
+    ]
+   },
+   "early-men-origins": {
+    "total": {
+     "volume": 3.2753890677841246,
+     "volume_symbol": "ETH",
+     "sales": 2193,
+     "num_owners": 334,
+     "floor_price": 0.000899999996,
+     "floor_price_symbol": "ETH"
+    },
+    "intervals": [
+     {
+      "interval": "one_day",
+      "volume": 0.01669689999977,
+      "volume_symbol": "ETH",
+      "sales": 22
+     },
+     {
+      "interval": "seven_day",
+      "volume": 3.2753890677841286,
+      "volume_symbol": "ETH",
+      "sales": 2201
+     },
+     {
+      "interval": "thirty_day",
+      "volume": 3.2753890677841286,
+      "volume_symbol": "ETH",
+      "sales": 2201
+     }
+    ]
+   },
+   "jpeg-frens": {
+    "total": {
+     "volume": 104.54059617227674,
+     "volume_symbol": "ETH",
+     "sales": 19076,
+     "num_owners": 1518,
+     "floor_price": 0.0069,
+     "floor_price_symbol": "ETH"
+    },
+    "intervals": [
+     {
+      "interval": "one_day",
+      "volume": 2.876023446541761,
+      "volume_symbol": "ETH",
+      "sales": 357
+     },
+     {
+      "interval": "seven_day",
+      "volume": 27.321801536029753,
+      "volume_symbol": "ETH",
+      "sales": 3475
+     },
+     {
+      "interval": "thirty_day",
+      "volume": 104.54059617228259,
+      "volume_symbol": "ETH",
+      "sales": 19078
+     }
+    ]
+   },
+   "rare-friends-genesis": {
+    "total": {
+     "volume": 1062.8365709622083,
+     "volume_symbol": "ETH",
+     "sales": 1890,
+     "num_owners": 326,
+     "floor_price": 1298.5,
+     "floor_price_symbol": "USDG"
+    },
+    "intervals": [
+     {
+      "interval": "one_day",
+      "volume": 1.8173575248267018,
+      "volume_symbol": "ETH",
+      "sales": 4
+     }
+    ]
+   }
+  }
+ }
+}

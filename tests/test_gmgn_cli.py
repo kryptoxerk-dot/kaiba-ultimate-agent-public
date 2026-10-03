@@ -286,8 +286,8 @@ def test_market_search_uses_the_query_flag(replay):
 
 def test_portfolio_stats_accepts_a_single_wallet(replay):
     calls = replay("portfolio_stats")
-    result = g.portfolio_stats("EnQdeYsyhacWWDuWfFJvtyk1ehD1cB511ujxJpUtiiWA")
-    assert result.data["wallet_address"].startswith("EnQ")
+    result = g.portfolio_stats("5gfn3DiSwaxXHk3miXKz7MoapN3UmAh3TDnXoKCvVQL4")
+    assert result.data["wallet_address"].startswith("5gf")
     assert calls[0].count("--wallet") == 1
 
 
@@ -300,13 +300,13 @@ def test_portfolio_stats_repeats_the_wallet_flag(replay):
 
 def test_portfolio_profits_unwraps_list(replay):
     replay("portfolio_profits")
-    result = g.portfolio_profits(["EnQdeYsyhacWWDuWfFJvtyk1ehD1cB511ujxJpUtiiWA"])
+    result = g.portfolio_profits(["5gfn3DiSwaxXHk3miXKz7MoapN3UmAh3TDnXoKCvVQL4"])
     assert isinstance(result.data, list) and result.data[0]["buy"] == 752
 
 
 def test_portfolio_activity_unwraps_activities(replay):
     replay("portfolio_activity")
-    result = g.portfolio_activity("EnQdeYsyhacWWDuWfFJvtyk1ehD1cB511ujxJpUtiiWA", limit=3)
+    result = g.portfolio_activity("5gfn3DiSwaxXHk3miXKz7MoapN3UmAh3TDnXoKCvVQL4", limit=3)
     assert isinstance(result.data, list)
     assert result.data[0]["event_type"] in {"buy", "sell"}
 
@@ -813,7 +813,7 @@ def test_quote_refused_for_plan_says_so_plainly(replay, tmp_db):
         input_token="So11111111111111111111111111111111111111112",
         output_token="CVoNMSYK9mVd3TzAutnrRTKmptQUQ7r9qBg1ejb7vVd2",
         amount=100_000_000,
-        from_address="EnQdeYsyhacWWDuWfFJvtyk1ehD1cB511ujxJpUtiiWA",
+        from_address="5gfn3DiSwaxXHk3miXKz7MoapN3UmAh3TDnXoKCvVQL4",
     )
     assert result.data is None
     note = result.receipt.note
@@ -841,7 +841,7 @@ def test_the_recorded_quote_is_the_real_thing_now(replay):
         input_token="So11111111111111111111111111111111111111112",
         output_token="EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
         amount=100_000_000,
-        from_address="EnQdeYsyhacWWDuWfFJvtyk1ehD1cB511ujxJpUtiiWA",
+        from_address="5gfn3DiSwaxXHk3miXKz7MoapN3UmAh3TDnXoKCvVQL4",
     )
     assert result.ok
     assert set(result.data) >= {"input_amount", "output_amount", "min_output_amount"}
@@ -862,7 +862,7 @@ def test_quote_is_never_cached(replay):
         input_token="So11111111111111111111111111111111111111112",
         output_token="CVoNMSYK9mVd3TzAutnrRTKmptQUQ7r9qBg1ejb7vVd2",
         amount=100_000_000,
-        from_address="EnQdeYsyhacWWDuWfFJvtyk1ehD1cB511ujxJpUtiiWA",
+        from_address="5gfn3DiSwaxXHk3miXKz7MoapN3UmAh3TDnXoKCvVQL4",
     )
     first = g.order_quote(**kwargs)
     second = g.order_quote(**kwargs)
@@ -1010,7 +1010,7 @@ def test_credential_source_diagnoses_without_disclosing(monkeypatch, tmp_path):
 
 def test_signed_endpoint_auth_failure_names_the_fix(replay, tmp_db):
     replay("auth_signature_invalid")
-    result = g.portfolio_holdings("EnQdeYsyhacWWDuWfFJvtyk1ehD1cB511ujxJpUtiiWA")
+    result = g.portfolio_holdings("5gfn3DiSwaxXHk3miXKz7MoapN3UmAh3TDnXoKCvVQL4")
     assert result.data is None
     assert "gmgn-cli config" in result.receipt.note
     assert "Ed25519" in result.receipt.note

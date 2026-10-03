@@ -34,13 +34,13 @@ they are far cheaper to fix.
 
 ## Procedure
 
-1. **Read the limiter.** `kaiba_status()` returns `providers`, one row per provider:
+1. **Read the limiter.** Treat the settings and prices below as historical examples; read the live configuration before interpreting capacity or concurrency. `spent_today` is a UTC-day reservation counter, not rolling-24-hour consumption or a provider invoice. Obtain timestamp-filtered call accounting for a true 24-hour total; if unavailable, report the coverage gap rather than relabeling the counter. `kaiba_status()` returns `providers`, one row per provider:
    `credit` (current bucket, refilled by elapsed time), `capacity`, `inflight`,
    `penalty_level`, `spent_today`, `daily_cap`, `banned`, and `family_bans` with
    `banned_until_ms` per endpoint family.
 2. **Read the errors, not just the state.**
    `kaiba_events(kinds=["provider.error","provider.budget"])` shows what happened and in
-   what order. A ban is the end of a story that started with retries.
+   what order. A ban is the end of a story that started with retries. Verify event timestamps and pagination: `after_id=0` can return oldest-first records, and the server may cap the requested limit. Rolling feed-latency snapshots overlap and may retain samples predating the audit window; do not sum their samples or average percentiles into a daily percentile. Local limiter denials, upstream HTTP 429s, and listener `no attempt made` messages are distinct observations.
 3. **Interpret the numbers** (table below). `credit` near zero with `inflight` at
    `max_inflight` is saturation. `penalty_level` above 0 means we have already been
    told to slow down. `spent_today` against `daily_cap` is the money question.
@@ -53,7 +53,7 @@ they are far cheaper to fix.
    feature that is actually blocked, and the measured benefit. "We hit the cap" is not a
    justification; "quote and swap are structurally impossible on this tier" is.
 7. **Journal the audit.** `kaiba_journal_append("observation", ...)` with per-provider
-   burn, bans, and any recommendation. the operator decides on spending; you present the case.
+   burn, bans, and any recommendation. Keep each body below 380 characters on the restricted research surface: an outer wrapper can truncate at 400 even when server source says 4000. Split findings into separately titled entries and read every entry back, allowing for concurrent writers. Do not claim bus emission from a journal append; it does not emit an event. If no permitted event writer exists, record that limitation. The operator decides on spending; you present the case.
 8. **Reduce load if needed.** `kaiba_pause` stops entries (and their quote traffic);
    `kaiba_set_lane_mode(lane, "off")` retires a lane's feed consumption entirely.
    The limiter's `reset` is an operator action and is deliberately not on your surface.

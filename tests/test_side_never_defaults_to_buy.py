@@ -29,7 +29,7 @@ import pytest
 from kaiba.execution import lanes
 
 WALLET = "wa11etAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
-TOKEN = "CJF7MNqb9xv1XrTs5St1Du5JuQXLsfFBB137vmYRKpnb"
+TOKEN = "Bnd5oBSWpPpXoaWTckgXTVx9TCKkX5GyVqxcrwBzUYsB"
 
 
 def row(**over) -> dict:

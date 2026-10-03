@@ -227,7 +227,7 @@ REFERENCE: tuple[ReferenceToken, ...] = (
         "token with millions of holders.",
     ),
     ReferenceToken(
-        "BRETT", "0x532f27101965dd16442e59d40670faf5ebb142e4", Chain.BASE,
+        "BRETT", "0x6e2c8d79c1c1d44ad2ff7196ea7e09bb3b82906f", Chain.BASE,
         "Renounced, not mintable, not pausable: the EVM positive control.",
         {"owner_renounced": True},
     ),

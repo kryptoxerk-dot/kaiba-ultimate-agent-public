@@ -49,7 +49,7 @@ owned_addresses:
   # it, which is re-proved in tests/test_policy.py after every change to this file.
   robinhood: []   # add YOUR wallet address here before arming
   bsc: []   # add YOUR wallet address here before arming
-  base: []
+  base: []   # add YOUR wallet address here before arming
 
 solana:
   # Program ids the signer will sign an instruction for. Anything else is `unknown program`.

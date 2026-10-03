@@ -141,7 +141,7 @@ from __future__ import annotations
 import logging
 import sqlite3
 from collections.abc import Callable, Iterable, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Any
@@ -1408,10 +1408,40 @@ class Outcome:
     rank_score: Decimal | None = None
 
 
+def _launchlab_meta(cand: Candidate, previous: dict[str, Any], *,
+                    preserve_census: bool, now: int) -> dict[str, Any]:
+    """Keep sample metadata separate from the earliest pool we have ever observed."""
+    meta = dict(previous if preserve_census else cand.meta)
+    if not preserve_census:
+        priced = cand.layer == "launchlab_census" and cand.value is not None
+        # last_seen_ms is identity liveness, not the clock of the retained value.
+        meta["value_observed_ms"] = now if priced else None
+        meta["value_sample_day"] = utc_day(now) if priced else None
+        meta["sample_first_pool_ms"] = cand.meta.get("first_pool_ms")
+
+    pools = [
+        (previous.get("first_pool_ms"), previous.get("first_pool_source_layer"),
+         previous.get("first_pool_observed_ms")),
+        (cand.meta.get("first_pool_ms"), cand.layer, now),
+    ]
+    known = [(int(ms), layer, observed) for value, layer, observed in pools
+             if (ms := dec(value)) is not None and ms > 0 and ms == ms.to_integral_value()]
+    # Ties keep the earlier observation and its provenance. Legacy provenance stays
+    # unknown: neither registry last_seen_ms nor this new poll establishes its origin.
+    earliest = min(known, key=lambda item: item[0]) if known else (None, None, None)
+    meta["first_pool_ms"], meta["first_pool_source_layer"], meta["first_pool_observed_ms"] = earliest
+    return meta
+
+
 def observe(conn: sqlite3.Connection, cand: Candidate, *, cfg: RadarConfig | None = None,
             oracles: OracleSets | None = None, now: int | None = None,
             baseline_mode: bool = False, may_report: bool = True) -> Outcome:
     """Fold one observation into the registry and decide whether it is news.
+
+    Registry-only LaunchLab discovery retains census evidence, updating only identity
+    liveness and earliest-pool provenance. Its Outcome carries the retained tier and
+    confirmation, but the incoming candidate stays unpriced and has no rank. Value
+    freshness lives in meta_json.value_observed_ms/value_sample_day, not last_seen_ms.
 
     The four gates, in the order they apply:
 
@@ -1432,6 +1462,29 @@ def observe(conn: sqlite3.Connection, cand: Candidate, *, cfg: RadarConfig | Non
     tier = tier_for(cand.value, floor, config.tier_multipliers)
 
     row = fetch_one(conn, "SELECT * FROM radar_registry WHERE radar_key=?", (key,))
+    registry_only = (cand.kind == KIND_PLATFORM_CONFIG
+                     and cand.layer == "launchlab_discover"
+                     and cand.silent and cand.value is None
+                     and cand.basis is EvidenceBasis.UNAVAILABLE)
+    preserve_census = registry_only and row is not None and row["layer"] == "launchlab_census"
+    meta = cand.meta
+    if cand.kind == KIND_PLATFORM_CONFIG and cand.layer in {"launchlab_census", "launchlab_discover"}:
+        previous_meta = jload(row["meta_json"], {}) if row else {}
+        meta = _launchlab_meta(cand, previous_meta if isinstance(previous_meta, dict) else {},
+                               preserve_census=preserve_census, now=ts)
+    if preserve_census:
+        # Discovery saw the identity, not another daily value. Do not feed its missing
+        # proxy into confirmation or replace the census's evidence with a short window.
+        conn.execute(
+            "UPDATE radar_registry SET last_seen_ms=?, observations=observations+1, meta_json=? "
+            "WHERE radar_key=?",
+            (ts, jdump(meta), key),
+        )
+        reason = ("baseline" if baseline_mode else "reporting_disabled" if not may_report
+                  else "layer_is_registry_only")
+        return Outcome(cand, int(row["tier"]), int(row["reported_tier"]), False,
+                       bool(row["baseline"]), False, int(row["confirm_days"]), reason)
+
     new_row = row is None
     prev_days = int(row["confirm_days"]) if row else 0
     prev_day = row["confirm_last_day"] if row else None
@@ -1504,7 +1557,7 @@ def observe(conn: sqlite3.Connection, cand: Candidate, *, cfg: RadarConfig | Non
         "tier": tier,
         "reported_tier": max(prev_reported_tier, tier) if reported else prev_reported_tier,
         "tractability": tract.verdict if tract else (row["tractability"] if row else None),
-        "meta_json": jdump(cand.meta),
+        "meta_json": jdump(meta),
     }
     if reported:
         fields["reported_ms"] = ts
@@ -1514,6 +1567,10 @@ def observe(conn: sqlite3.Connection, cand: Candidate, *, cfg: RadarConfig | Non
     headroom = None if cand.value is None or floor <= 0 else cand.value / floor
     weight = config.tractability_weights[tract.weight_index] if tract else config.tractability_weights[2]
     rank = None if headroom is None else headroom * weight
+    # Findings must carry the same normalized sample/provenance as the registry,
+    # not the parser's moving pool window. Keep the caller's candidate immutable.
+    if meta is not cand.meta:
+        cand = replace(cand, meta=meta)
     return Outcome(cand, tier, prev_reported_tier, new_row, baseline, reported,
                    confirm_days, reason, tract, headroom, rank)
 
@@ -1549,6 +1606,9 @@ def record_find(conn: sqlite3.Connection, outcome: Outcome, *, cfg: RadarConfig 
     first_report = not (prior and int(prior["n"]))
     verdict = _verdict_sentence(cand, outcome.tier, tract, outcome.headroom, first_report)
     actionable = bool(tract.actionable) if tract else False
+    evidence = {**cand.meta, "first_report": first_report,
+                "tractability": tract.as_dict() if tract else None,
+                "confirm_days": outcome.confirm_days}
     cur = conn.execute(
         "INSERT INTO radar_finds (radar_key, reported_ms, kind, layer, identity, display_name, "
         "chain_slug, tier, value, unit, basis, floor, headroom, rank_score, tractability, "
@@ -1562,9 +1622,7 @@ def record_find(conn: sqlite3.Connection, outcome: Outcome, *, cfg: RadarConfig 
             str(outcome.rank_score) if outcome.rank_score is not None else None,
             tract.verdict if tract else UNKNOWN,
             1 if actionable else 0, verdict,
-            jdump({**cand.meta, "first_report": first_report,
-                   "tractability": tract.as_dict() if tract else None,
-                   "confirm_days": outcome.confirm_days}),
+            jdump(evidence),
         ),
     )
     emit(
@@ -1591,6 +1649,8 @@ def record_find(conn: sqlite3.Connection, outcome: Outcome, *, cfg: RadarConfig 
             "actionable": actionable,
             "verdict": verdict,
             "first_report": first_report,
+            # Keep source metadata nested: it cannot overwrite identity or scoring.
+            "evidence": evidence,
         },
         # `chain=` takes a Chain, so a chain with no lane rides as None and the slug
         # travels in the payload. This is the enum blocker, handled rather than worked

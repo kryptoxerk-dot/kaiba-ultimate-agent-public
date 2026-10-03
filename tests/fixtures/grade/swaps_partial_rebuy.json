@@ -1,6 +1,6 @@
 {
   "note": "One wallet, two tokens. AAA is a partial exit followed by a rebuy and a full exit (one episode, two buys, two sells). BBB is a clean 10x round trip that clears the 6x big-win bar.",
-  "wallet": "CJF7MNqb9xv1XrTs5St1Du5JuQXLsfFBB137vmYRKpnb",
+  "wallet": "Bnd5oBSWpPpXoaWTckgXTVx9TCKkX5GyVqxcrwBzUYsB",
   "swaps": [
     {
       "chain": "sol",

@@ -13,7 +13,7 @@ from kaiba.core.config import get_risk, load_risk, save_risk
 from kaiba.core.schemas import EventKind, Lane, LaneMode
 from kaiba.mcp import server
 
-SOL = "CJF7MNqb9xv1XrTs5St1Du5JuQXLsfFBB137vmYRKpnb"
+SOL = "Bnd5oBSWpPpXoaWTckgXTVx9TCKkX5GyVqxcrwBzUYsB"
 
 
 @pytest.fixture
@@ -257,7 +257,9 @@ def test_every_tool_is_callable_and_documented():
 
 def test_tool_count_is_what_the_profiles_expect():
     # hermes/profiles/*/config.yaml pin this list; keep them in step.
-    assert len(server.TOOLS) == 27
+    # 27 -> 31 on 2026-10-01: kaiba_copy_manager, kaiba_health, kaiba_wallet_grade_counts,
+    # kaiba_live_ev (operator read-outs; the profiles carry no include filter).
+    assert len(server.TOOLS) == 31
 
 
 def test_module_entrypoint_runs_after_final_tool_registration():

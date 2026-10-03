@@ -50,6 +50,7 @@ from kaiba.core.schemas import (
     WalletTag,
     normalize_address,
 )
+from kaiba.intelligence import feed_tags
 from kaiba.intelligence.pnl import MATH, ZERO, Episode, WalletPnl, ratio
 
 log = logging.getLogger(__name__)
@@ -288,6 +289,11 @@ class WalletEvidence(BaseModel):
     #: keep counting the open ones for the ``no_sells`` penalty, where "never sells" belongs.
     closed_buys: int | None = None
     closed_sells: int | None = None
+    #: Closed, clean episodes whose USD result was priced at the wallet's own observed
+    #: native/USD rate because their rows carried no ``usd_value`` (see
+    #: :func:`complete_realized_usd`). ``None`` when nobody replayed the swaps; 0 when every
+    #: closed episode carried its own USD.
+    realized_usd_imputed: int | None = None
 
     # Signals the grader consumes but does not compute itself.
     trade_count_lifetime: int | None = None
@@ -487,6 +493,10 @@ def _realized_profit(ev: WalletEvidence) -> ScoreFactor | None:
         detail = (
             f"basis=reconstructed realized ${usd:,.0f} over {pnl.closed_episodes} closed episodes"
         )
+        if ev.realized_usd_imputed:
+            detail += (
+                f" ({ev.realized_usd_imputed} priced at the wallet's own observed native/USD rate)"
+            )
         return _factor("realized_profit", frac, detail)
     ps = ev.provider_stats
     if ps is not None and ps.realized_profit_usd is not None:
@@ -910,7 +920,10 @@ def _a_gate_failures(ev: WalletEvidence, evidence_weight: float) -> list[str]:
     elif tokens < A_MIN_DISTINCT_TOKENS:
         out.append(f"capped to B: {tokens} distinct tokens < {A_MIN_DISTINCT_TOKENS} (basis={basis})")
     if ev.sample_capped:
-        out.append("capped to B: sample was truncated by a provider page limit")
+        out.append(
+            "capped to B: sample was truncated -- the wallet's history was not walked back to "
+            "its first transaction (provider page limit, or no paid walk at all)"
+        )
     return out
 
 
@@ -923,6 +936,9 @@ def _write_score_row(
     score: WalletScore, c: sqlite3.Connection, *, protect_full: bool = False
 ) -> bool:
     """The two writes one grade makes. Caller owns the transaction.
+
+    ``wallet_scores`` is always upserted; the ``wallet_score_history`` row is appended
+    only when the grade moved (:func:`_history_moved`, 2026-10-01).
 
     ``protect_full`` refuses to replace a paid full-history grade (``MODEL_ID``), decided
     by the row as it is NOW. The tape pass used to decide from a snapshot taken when the
@@ -962,23 +978,59 @@ def _write_score_row(
             return False
     else:
         upsert(c, "wallet_scores", row, ["chain", "address"])
-    c.execute(
-        "INSERT INTO wallet_score_history (chain, address, score, grade, scored_at_ms, model_version) "
-        "VALUES (?,?,?,?,?,?)",
-        (
-            score.chain.value,
-            score.address,
-            float(score.score),
-            score.grade.value,
-            score.scored_at_ms,
-            score.model_version,
-        ),
-    )
+    if _history_moved(score, c):
+        c.execute(
+            "INSERT INTO wallet_score_history (chain, address, score, grade, scored_at_ms, model_version) "
+            "VALUES (?,?,?,?,?,?)",
+            (
+                score.chain.value,
+                score.address,
+                float(score.score),
+                score.grade.value,
+                score.scored_at_ms,
+                score.model_version,
+            ),
+        )
     return True
 
 
+#: A history row is written only when the grade MOVED against the wallet's latest
+#: history row: another letter, another ``model_version``, or a score at least this far
+#: away. MEASURED on the live box 2026-10-01: ``wallet_score_history`` grew ~1.41M rows a
+#: day, one per wallet per regrade whether or not anything changed; of the last 2,000 rows
+#: (all ``kaiba-wallet-tape-v1``) 1,948 were unchanged against that wallet's previous row
+#: and only 52 (2.6%) would be written under this rule (44 first rows, 5 grade changes,
+#: 3 score moves of a point or more). The 1.0 is INVENTED -- the audit's number -- and is
+#: compared with the latest WRITTEN row, not the previous regrade, so a slow drift of
+#: 0.3 a regrade still lands once it adds up to a point. ``kaiba.ops.retention`` prunes
+#: old rows under the same rule; tests/test_wallet_history_on_change.py pins the two equal.
+HISTORY_MIN_SCORE_DELTA = 1.0
+
+
+def _history_moved(score: WalletScore, c: sqlite3.Connection) -> bool:
+    """Whether ``score`` differs from the wallet's latest history row (or it has none).
+
+    One seek on ``idx_wsh (chain, address, scored_at_ms)``; the ``id`` tie-break is the
+    rowid the index already carries, so the plan has no sort step. The as-of readers
+    (replay, the operator's grading-coverage query: latest row at or before T) still get
+    the grade in force at T, because a skipped row would have repeated the one before it.
+    """
+    prev = c.execute(
+        "SELECT grade, score, model_version FROM wallet_score_history "
+        "WHERE chain = ? AND address = ? ORDER BY scored_at_ms DESC, id DESC LIMIT 1",
+        (score.chain.value, score.address),
+    ).fetchone()
+    if prev is None:
+        return True
+    return (
+        prev[0] != score.grade.value
+        or prev[2] != score.model_version
+        or abs(float(score.score) - float(prev[1])) >= HISTORY_MIN_SCORE_DELTA
+    )
+
+
 def store_score(score: WalletScore, conn: sqlite3.Connection | None = None) -> None:
-    """Upsert the latest grade, append to history, and announce it on the bus.
+    """Upsert the latest grade, append to history if it moved, and announce it on the bus.
 
     One grade, one transaction, one event. For a whole tape use :func:`store_scores`,
     which shares a transaction across many and does not announce each one.
@@ -1162,6 +1214,7 @@ def build_evidence(
 
     episodes = reconstruct(swaps) if swaps else []
     wallet_pnl = summarize(episodes) if swaps else None
+    wallet_pnl, usd_imputed = complete_realized_usd(episodes, swaps, wallet_pnl)
     closed_tokens = closed_token_count(episodes) if swaps else None
     closed_buys, closed_sells = closed_side_counts(episodes) if swaps else (None, None)
     # Raw counts for the sell-only filter, taken before reconstruction discards the
@@ -1205,17 +1258,60 @@ def build_evidence(
         seed_confluence=meta.get("seed_confluence"),
         reputation=reputation,
         created_token_count=int(created or 0),
-        sample_capped=bool(meta.get("sample_capped", False)),
+        sample_capped=bool(meta.get("sample_capped", False)) or history_truncated(c, chain, addr),
         observed_buys=observed_buys,
         observed_sells=observed_sells,
         closed_distinct_tokens=closed_tokens,
         closed_buys=closed_buys,
         closed_sells=closed_sells,
+        realized_usd_imputed=usd_imputed if swaps else None,
         trade_count_lifetime=meta.get("trade_count_lifetime"),
         tokens_30d=meta.get("tokens_30d"),
         lead_lag_of=meta.get("lead_lag_of"),
         fomo_flag=bool(meta.get("fomo_flag", False)),
     )
+
+
+#: ``kv`` key prefix of the paid history walk's cursor: ``kaiba.ingest.backfill.cursor_key``
+#: for kind ``swaps``, spelled here so the grader does not import a provider client.
+#: tests/test_wallet_deepen.py pins the two equal.
+BACKFILL_CURSOR_PREFIX = "backfill:swaps:"
+
+
+def history_truncated(conn: sqlite3.Connection, chain: Chain, address: str) -> bool:
+    """Whether ``address``'s history was NOT walked back to its first transaction.
+
+    This is the writer ``WalletEvidence.sample_capped`` never had. The A gate "capped to
+    B: sample was truncated by a provider page limit" (:func:`_a_gate_failures`) read a
+    ``wallets.meta_json`` key that nothing in the tree writes, so it could not fire.
+    MEASURED 2026-10-02 on the live box: the sol ``kaiba-wallet-v1`` grades rest on a
+    Helius walk of ``pages: 1`` (100 transactions) plus our tape, and GMGN's all-time
+    counts for 100 of them (32 B, 68 D) put the median wallet at 9,500-11,100 buys --
+    graded on about 1% of its history while the gate that exists for exactly this case
+    stayed silent.
+
+    Truncated means the backward walk has not reached the wallet's first transaction
+    (``exhausted`` false), a forward top-up left a hole (``forward_gap``, see
+    ``backfill.backfill_wallet``), or no walk was ever made. The last case is the
+    commonest off Solana: the Helius walk is the only full-history source in the tree, so
+    a ``kaiba-wallet-v1`` grade with no cursor rests on our partial tape alone (MEASURED
+    2026-10-02: 121 of the sol v1 grades and all 204 robinhood ones) -- the same sample
+    the tape model caps at B by name, wearing the full-history label.
+
+    Only :func:`build_evidence` calls this, and only the A gate reads ``sample_capped``, so
+    no grade below A can move because of it; tape and provider evidence is built elsewhere
+    and is A-capped already.
+    """
+    row = fetch_one(
+        conn, "SELECT value FROM kv WHERE key = ?", (f"{BACKFILL_CURSOR_PREFIX}{chain.value}:{address}",)
+    )
+    if row is None:
+        return True
+    cursor = jload(row["value"], {})
+    if not isinstance(cursor, dict):
+        # A cursor we cannot read cannot vouch for a complete history.
+        return True
+    return not bool(cursor.get("exhausted")) or bool(cursor.get("forward_gap"))
 
 
 def _tags_from(raw: Iterable[Any]) -> list[WalletTag]:
@@ -1385,6 +1481,12 @@ TAPE_THRESHOLD_PROVENANCE: dict[str, str] = {
         "holding the lock that long starves the services keeping live stops on time."
     ),
     "TAPE_MIN_ROWS": "DEFINITIONAL. A round trip needs a buy and a sell.",
+    "TAPE_RESTAMP_AFTER_MS": (
+        "OPERATIONAL, INVENTED. How old an UNCHANGED stored tape grade may get (plus a "
+        "per-wallet jitter of up to the same again) before the pass rewrites it anyway, so "
+        "scored_at_ms still bounds the staleness of the detail columns. Not a threshold on "
+        "any measurement: a grade that moved is always rewritten."
+    ),
 }
 
 #: Components whose inputs come from the reconstructed tape and therefore shrink with n.
@@ -1513,6 +1615,59 @@ def closed_side_counts(episodes: Iterable[Episode]) -> tuple[int, int]:
     return sum(e.buys for e in closed), sum(e.sells for e in closed)
 
 
+def complete_realized_usd(
+    episodes: Sequence[Episode], rows: Sequence[Mapping[str, Any]], pnl: WalletPnl | None
+) -> tuple[WalletPnl | None, int]:
+    """Realized USD over EVERY closed episode, not only the ones whose rows carried USD.
+
+    ``pnl.summarize`` sums ``realized_pnl_usd`` over the closed episodes that have USD on
+    both legs and silently leaves the rest out, so one wallet's figure can rest on 1 of
+    41 round trips while :func:`_realized_profit` reports it "over 41 closed episodes" and
+    :func:`_loss_detail` charges or waives the 35-point loss penalty on its sign. The mix
+    is ordinary: ``pumpfun:trades`` rows carry ``usd_value``, ``helius:backfill`` rows do
+    not (the backfill refuses to stamp a historical swap with today's price).
+
+    MEASURED 2026-10-02 on the live box, read-only replay of 150 random sol
+    ``kaiba-wallet-v1`` grades: 110 held a partial USD sum; on 17 its sign was the
+    opposite of the same wallet's native result over all its closed episodes (one: +$18
+    from 1 of 41 round trips against -4.79 SOL over all 41, so no loss penalty). With
+    this function 16 of the 150 grades move, in both directions (D->B 1, D->C 7, C->D 8);
+    robinhood 5 of 60 (C->D 3, D->C 1, D->B 1); tape B/C grades 0 of 150 sol and 1 of
+    100 robinhood, because their USD was already complete.
+
+    The missing episodes are priced at the wallet's OWN observed native/USD rate -- sum of
+    ``usd_value`` over sum of ``amount_native`` across its rows that carry both, i.e. what
+    SOL (or ETH) was worth when this wallet traded -- not at a current price. On the tape's
+    ``usd_micro`` axis ``amount_native`` already IS micro-dollars and the rate comes out
+    as 1e-6 by construction. With no row carrying both there is no honest rate and the
+    figure becomes ``None``: :func:`_realized_profit` is then unmeasured and the loss
+    penalty falls back to the native sign, which covers every closed episode.
+
+    Returns ``(pnl, imputed)`` where ``imputed`` counts the closed episodes priced here.
+    """
+    if pnl is None:
+        return None, 0
+    closed = [e for e in episodes if e.scorable]
+    unknown = [e for e in closed if e.realized_pnl_usd is None]
+    if not closed or not unknown:
+        return pnl, 0
+    usd_sum = ZERO
+    native_sum = 0
+    for r in rows:
+        native = _dec_or_none(r.get("amount_native"))
+        usd = _dec_or_none(r.get("usd_value"))
+        if native is None or usd is None or native <= 0 or usd <= 0:
+            continue
+        native_sum += int(native)
+        usd_sum += usd
+    if native_sum <= 0:
+        return pnl.model_copy(update={"realized_pnl_usd": None}), len(unknown)
+    rate = MATH.divide(usd_sum, Decimal(native_sum))
+    known = sum((e.realized_pnl_usd for e in closed if e.realized_pnl_usd is not None), ZERO)
+    imputed = sum((MATH.multiply(Decimal(e.realized_pnl_native), rate) for e in unknown), ZERO)
+    return pnl.model_copy(update={"realized_pnl_usd": known + imputed}), len(unknown)
+
+
 @dataclass
 class _NormalisedTape:
     rows: list[dict[str, Any]]
@@ -1601,13 +1756,26 @@ def normalise_tape_rows(raw_rows: Sequence[Mapping[str, Any]], chain: Chain) -> 
 def provider_tags_from_events(
     conn: sqlite3.Connection, chain: Chain, address: str
 ) -> list[str]:
-    """Raw GMGN cohort labels for one wallet, read back off the ``wallet.trade`` events.
+    """Raw GMGN cohort labels for one wallet.
 
-    ``gmgn_feeds.write_swap`` does not store tags in ``swaps``; it emits them on the event
-    bus. This is the only place on disk they exist, so if the events table is ever pruned
-    the labels go with it — the returned list is then empty, which the caller records as
-    UNAVAILABLE rather than "no tags".
+    ``gmgn_feeds.write_swap`` does not store tags in ``swaps``; they ride on its
+    ``wallet.trade`` event and, since 2026-10, in the ``wallet_feed_tags`` rollup written in
+    the same transaction. The rollup is read once ``feed_tags.table_ready`` says it is
+    complete and parity-checked -- after that, old events may be deleted and the rollup is
+    the only copy. Until then the events are read exactly as before. An empty list is
+    recorded by the caller as UNAVAILABLE rather than "no tags".
     """
+    if feed_tags.table_ready(conn):
+        rows = feed_tags.wallet_rows(conn, chain.value, [address]).get(address, [])
+        return feed_tags.provider_tags(rows)
+    return provider_tags_from_event_rows(conn, chain, address)
+
+
+def provider_tags_from_event_rows(
+    conn: sqlite3.Connection, chain: Chain, address: str
+) -> list[str]:
+    """The pre-rollup reader: labels off the wallet's ``wallet.trade`` events. Kept for the
+    not-yet-ready path and for ``feed_tags.parity_check``, which holds it against the table."""
     rows = fetch_all(
         conn,
         "SELECT payload FROM events WHERE kind = ? AND chain = ? AND subject = ?",
@@ -1629,7 +1797,17 @@ def _collect_tags(payloads: Iterable[Any]) -> list[str]:
 
 
 def provider_tag_index(conn: sqlite3.Connection, chain: Chain) -> dict[str, list[str]]:
-    """``address -> raw tags`` for every wallet with a tagged ``wallet.trade`` event."""
+    """``address -> raw tags`` for every wallet with a tagged ``wallet.trade`` event.
+
+    From ``wallet_feed_tags`` once it is ready (one primary-key prefix scan of a small
+    table); otherwise the full scan of the chain's ``wallet.trade`` events it always was.
+    """
+    if feed_tags.table_ready(conn):
+        by_wallet: dict[str, list[feed_tags.TagRow]] = defaultdict(list)
+        for row in feed_tags.chain_rows(conn, chain.value):
+            by_wallet[row.address].append(row)
+        tagged = {addr: feed_tags.provider_tags(rows) for addr, rows in by_wallet.items()}
+        return {addr: tags for addr, tags in tagged.items() if tags}
     grouped: dict[str, list[Any]] = defaultdict(list)
     for r in conn.execute(
         "SELECT subject, payload FROM events WHERE kind = ? AND chain = ?",
@@ -1692,6 +1870,7 @@ def tape_evidence_from_rows(
 
     episodes = reconstruct(tape.rows, as_of_ms=as_of_ms) if tape.rows else []
     wallet_pnl = summarize(episodes) if tape.rows else None
+    wallet_pnl, usd_imputed = complete_realized_usd(episodes, tape.rows, wallet_pnl)
     closed_tokens = closed_token_count(episodes) if tape.rows else None
     closed_buys, closed_sells = closed_side_counts(episodes) if tape.rows else (None, None)
 
@@ -1729,6 +1908,7 @@ def tape_evidence_from_rows(
         closed_distinct_tokens=closed_tokens,
         closed_buys=closed_buys,
         closed_sells=closed_sells,
+        realized_usd_imputed=usd_imputed if tape.rows else None,
         tape=coverage,
         receipts=receipts,
     )
@@ -1836,6 +2016,12 @@ class TapeRunReport:
     #: see TAPE_STORE_BATCH for the lock contention this exists to make visible.
     store_failed: int = 0
     kept_full_grade: int = 0
+    #: Stored tape grades left alone because nothing that matters moved. See
+    #: :func:`unchanged_tape_scores`.
+    unchanged_skipped: int = 0
+    #: The pass stopped at its deadline; ``resume_after`` is the last wallet it finished.
+    truncated: bool = False
+    resume_after: str | None = None
     elapsed_s: float = 0.0
 
     def as_dict(self) -> dict[str, Any]:
@@ -1857,6 +2043,9 @@ class TapeRunReport:
             "stored": self.stored,
             "store_failed": self.store_failed,
             "kept_full_grade": self.kept_full_grade,
+            "unchanged_skipped": self.unchanged_skipped,
+            "truncated": self.truncated,
+            "resume_after": self.resume_after,
             "elapsed_s": round(self.elapsed_s, 2),
         }
 
@@ -1884,9 +2073,14 @@ def _early_metrics_index(conn: sqlite3.Connection, chain: Chain) -> dict[str, Ea
 
 
 def _iter_wallet_rows(
-    conn: sqlite3.Connection, chain: Chain, wallets: Sequence[str] | None
+    conn: sqlite3.Connection, chain: Chain, wallets: Sequence[str] | None,
+    start_after: str | None = None,
 ) -> Iterator[tuple[str, list[dict[str, Any]]]]:
-    """Yield ``(wallet, rows)`` groups. One ordered scan when no wallet list is given."""
+    """Yield ``(wallet, rows)`` groups. One ordered scan when no wallet list is given.
+
+    ``start_after`` resumes the ordered scan after that wallet: the plan is then
+    ``idx_swaps_wallet (chain=? AND wallet>?)``, a range, not a walk from the start.
+    """
     if wallets is not None:
         for w in wallets:
             rows = fetch_all(
@@ -1896,10 +2090,17 @@ def _iter_wallet_rows(
             )
             yield w, rows
         return
-    cur = conn.execute(
-        f"SELECT wallet, {_TAPE_COLUMNS} FROM swaps WHERE chain = ? ORDER BY wallet, ts_ms, id",
-        (chain.value,),
-    )
+    if start_after:
+        cur = conn.execute(
+            f"SELECT wallet, {_TAPE_COLUMNS} FROM swaps WHERE chain = ? AND wallet > ? "
+            "ORDER BY wallet, ts_ms, id",
+            (chain.value, start_after),
+        )
+    else:
+        cur = conn.execute(
+            f"SELECT wallet, {_TAPE_COLUMNS} FROM swaps WHERE chain = ? ORDER BY wallet, ts_ms, id",
+            (chain.value,),
+        )
     names = [d[0] for d in cur.description][1:]
     current: str | None = None
     bucket: list[dict[str, Any]] = []
@@ -1914,6 +2115,98 @@ def _iter_wallet_rows(
         yield current, bucket
 
 
+#: A stored tape grade that has not moved is still rewritten once it is this old, plus a
+#: per-wallet jitter of up to the same again (:func:`_restamp_due`), so ``scored_at_ms``
+#: stays a bound on how stale the detail columns are (``median_hold_s`` of open episodes,
+#: ``factors_json``, ``receipts_json``) and the restamps spread over days instead of
+#: landing on one run. INVENTED; three days is half the interval at which a weekly reader
+#: would see a stamp it could call old.
+TAPE_RESTAMP_AFTER_MS = 3 * 86_400_000
+
+#: Grades that are rewritten on every pass, moved or not. A and B are the grades readers
+#: hold a freshness budget on (``watchlist_policy``'s ``max_grade_age_s``), and there are
+#: few of them: MEASURED 2026-10-02, 82 tape-model A/B rows across the three chains.
+TAPE_ALWAYS_RESTAMP: frozenset[str] = frozenset({"A", "B"})
+
+
+def _restamp_due(address: str, scored_at_ms: Any, now: int) -> bool:
+    import zlib
+
+    try:
+        stamp = int(scored_at_ms)
+    except (TypeError, ValueError):
+        return True
+    jitter = zlib.crc32(address.encode("utf-8")) % TAPE_RESTAMP_AFTER_MS
+    return now - stamp >= TAPE_RESTAMP_AFTER_MS + jitter
+
+
+def _round(value: Any, places: int) -> float | None:
+    if value is None:
+        return None
+    try:
+        return round(float(value), places)
+    except (TypeError, ValueError):
+        return None
+
+
+def _tape_fingerprint(
+    grade: Any, model_version: Any, archetype: Any, score: Any, evidence_weight: Any,
+    closed_trades: Any, distinct_tokens: Any, win_rate: Any, realized_pnl_usd: Any,
+    penalties_json: Any, blockers_json: Any,
+) -> tuple[Any, ...]:
+    """The columns a reader acts on. Equal fingerprints mean nothing that matters moved."""
+    return (
+        str(grade), str(model_version), str(archetype), _round(score, 2),
+        _round(evidence_weight, 2), closed_trades, distinct_tokens, _round(win_rate, 4),
+        None if realized_pnl_usd is None else str(realized_pnl_usd),
+        str(penalties_json), str(blockers_json),
+    )
+
+
+def unchanged_tape_scores(
+    conn: sqlite3.Connection, scores: Sequence[WalletScore], *, now_ms: int | None = None,
+) -> set[str]:
+    """Addresses in ``scores`` whose stored row already says the same thing.
+
+    WHY (MEASURED 2026-10-02 on the box): every tape pass upserted every scored wallet --
+    424k sol + 100k robinhood rows a run, each with its JSON payloads -- and the 09-24
+    measurement put storing at ~1.8 ms a row, so the writes were most of a run that now
+    times out at 1,500 s on three runs in four. Of the history rows the same passes
+    appended, 97.4% repeated the wallet's previous grade (see HISTORY_MIN_SCORE_DELTA).
+
+    A row is unchanged when its decision columns (:func:`_tape_fingerprint`) are equal, its
+    grade is not in :data:`TAPE_ALWAYS_RESTAMP`, and it is not due a restamp. One indexed
+    ``IN`` read per call (``sqlite_autoindex_wallet_scores_1``); callers pass one store batch.
+    """
+    if not scores:
+        return set()
+    now = now_ms if now_ms is not None else int(time.time() * 1000)
+    chain = scores[0].chain.value
+    wanted = {s.address: s for s in scores if s.chain.value == chain}
+    qs = ",".join("?" * len(wanted))
+    out: set[str] = set()
+    for r in conn.execute(
+        "SELECT address, grade, model_version, archetype, score, evidence_weight, closed_trades, "
+        "distinct_tokens, win_rate, realized_pnl_usd, penalties_json, blockers_json, scored_at_ms "
+        f"FROM wallet_scores WHERE chain = ? AND address IN ({qs})",
+        (chain, *wanted),
+    ):
+        s = wanted.get(str(r[0]))
+        if s is None or s.grade.value in TAPE_ALWAYS_RESTAMP:
+            continue
+        if _restamp_due(s.address, r[12], now):
+            continue
+        new = _tape_fingerprint(
+            s.grade.value, s.model_version, s.archetype.value, s.score, s.evidence_weight,
+            s.closed_trades, s.distinct_tokens, s.win_rate,
+            str(s.realized_pnl_usd) if s.realized_pnl_usd is not None else None,
+            jdump(s.penalties), jdump(s.blockers),
+        )
+        if new == _tape_fingerprint(*r[1:12]):
+            out.add(s.address)
+    return out
+
+
 def grade_tape(
     conn: sqlite3.Connection | None = None,
     chain: Chain | str = Chain.SOL,
@@ -1925,6 +2218,10 @@ def grade_tape(
     candidate_limit: int = TAPE_CANDIDATE_LIMIT,
     as_of_ms: int | None = None,
     on_score: Any = None,
+    skip_unchanged: bool = False,
+    start_after: str | None = None,
+    deadline: float | None = None,
+    clock: Any = time.time,
 ) -> TapeRunReport:
     """Grade every wallet on one chain's tape, or the given ones, and report the shape.
 
@@ -1932,6 +2229,11 @@ def grade_tape(
     full-history grade (``model_version == MODEL_ID``) is left alone unless
     ``overwrite_full`` says otherwise — a provisional grade must not replace a measured one.
     ``on_score(evidence, score)`` is called for every scored wallet when given.
+
+    ``skip_unchanged`` stores only grades that moved (:func:`unchanged_tape_scores`).
+    ``start_after`` resumes the ordered pass after that wallet; ``deadline`` (a
+    ``clock()`` value) stops it between wallets, flushes what is pending, and reports
+    ``truncated`` with ``resume_after`` set to the last wallet finished.
     """
     ch = chain if isinstance(chain, Chain) else Chain(str(chain))
     c = conn or ensure_db()
@@ -1990,7 +2292,15 @@ def grade_tape(
     ))
     full_graded = {str(r[0]) for r in full_rows if r is not None}
 
-    candidates: list[tuple[tuple[int, int], dict[str, Any]]] = []
+    # A bounded min-heap of (key, -seq, row): only the best ``candidate_limit`` are ever
+    # held. The list it replaces kept a dict for EVERY qualifying wallet on the chain until
+    # the end of the pass, then sorted and kept 200. ``-seq`` makes the tie order the
+    # stable sort's: on an equal key the wallet met first is kept and listed first.
+    import heapq
+
+    candidates: list[tuple[tuple[Any, Any], int, dict[str, Any]]] = []
+    cap = max(0, int(candidate_limit))
+    seq = 0
     pending: list[WalletScore] = []
     # A DEDICATED WRITE CONNECTION, and the reason is not tidiness.
     #
@@ -2009,7 +2319,26 @@ def grade_tape(
         from kaiba.core.db import connect as _connect
 
         write_conn = _connect()
-    for address, rows in _iter_wallet_rows(c, ch, wallets):
+
+    def flush() -> None:
+        batch = list(pending)
+        pending.clear()
+        if skip_unchanged and batch:
+            same = unchanged_tape_scores(write_conn, batch)
+            if same:
+                report.unchanged_skipped += len(same)
+                batch = [s for s in batch if s.address not in same]
+        if batch:
+            ok, bad = store_scores(batch, write_conn, protect_full=not overwrite_full)
+            report.stored += ok
+            report.store_failed += bad
+
+    walk = _iter_wallet_rows(c, ch, wallets, start_after=start_after if wallets is None else None)
+    for address, rows in walk:
+        if deadline is not None and clock() >= deadline:
+            report.truncated = True
+            break
+        report.resume_after = address
         report.wallets_seen += 1
         report.rows_read += len(rows)
         if len(rows) < min_rows:
@@ -2046,11 +2375,14 @@ def grade_tape(
 
         if address not in full_graded:
             reason = tape_candidate_reason(ev, score)
-            if reason is not None and ev.pnl is not None:
+            if reason is not None and ev.pnl is not None and cap > 0:
                 key = (ev.pnl.closed_episodes, ev.pnl.realized_pnl_native)
-                candidates.append(
-                    (
+                seq += 1
+                # Skip building the row when it cannot displace the worst one kept.
+                if len(candidates) < cap or (key, -seq) > candidates[0][:2]:
+                    entry = (
                         key,
+                        -seq,
                         {
                             "address": address,
                             "grade": score.grade.value,
@@ -2065,7 +2397,10 @@ def grade_tape(
                             "reason": reason,
                         },
                     )
-                )
+                    if len(candidates) < cap:
+                        heapq.heappush(candidates, entry)
+                    else:
+                        heapq.heapreplace(candidates, entry)
 
         if on_score is not None:
             on_score(ev, score)
@@ -2075,22 +2410,18 @@ def grade_tape(
             else:
                 pending.append(score)
                 if len(pending) >= TAPE_STORE_BATCH:
-                    ok, bad = store_scores(pending, write_conn, protect_full=not overwrite_full)
-                    report.stored += ok
-                    report.store_failed += bad
-                    pending.clear()
+                    flush()
 
+    walk.close()
+    if not report.truncated:
+        report.resume_after = None
     if pending:
-        ok, bad = store_scores(pending, write_conn, protect_full=not overwrite_full)
-        report.stored += ok
-        report.store_failed += bad
-        pending.clear()
+        flush()
 
     if write_conn is not None:
         write_conn.close()
 
-    candidates.sort(key=lambda item: item[0], reverse=True)
-    report.candidates = [row for _, row in candidates[: max(0, candidate_limit)]]
+    report.candidates = [row for _, _, row in sorted(candidates, key=lambda c: c[:2], reverse=True)]
     report.elapsed_s = time.perf_counter() - started
     return report
 
@@ -2147,6 +2478,7 @@ __all__ = [
     "normalise_tape_rows",
     "penalties_for",
     "provider_tag_index",
+    "provider_tags_from_event_rows",
     "provider_tags_from_events",
     "score_history",
     "score_wallet",

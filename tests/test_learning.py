@@ -25,7 +25,7 @@ from kaiba.learning import gates, metrics, playbook, reflect
 
 BASE_MS = 1_700_000_000_000
 DAY_MS = 86_400_000
-SOL_TOKEN = "CJF7MNqb9xv1XrTs5St1Du5JuQXLsfFBB137vmYRKpnb"
+SOL_TOKEN = "Bnd5oBSWpPpXoaWTckgXTVx9TCKkX5GyVqxcrwBzUYsB"
 SOL_TOKEN_B = "9n4nbM75f5Ui33ZbPYXn59EwSgE8CGsHtAeTH5YFeJ9E"
 
 
@@ -161,13 +161,18 @@ def risk_file(tmp_path, monkeypatch) -> Path:
     return path
 
 
-def build_replay_stream(conn, *, pattern: str, lane: str = "confluence-5", blocks: int = 8, per_block: int = 8) -> None:
+def build_replay_stream(conn, *, pattern: str, lane: str = "confluence-5", blocks: int = 8, per_block: int = 30) -> None:
     """Decisions + point-in-time signals + closed trades, laid out in equal time blocks.
 
     ``clean``   high-entity entries always win, low-entity ones always lose.
     ``overfit`` the sign flips every block, so whichever configuration looks best
                 in-sample is the one that loses out-of-sample — the exact pathology CSCV
                 is designed to catch.
+
+    One entry every 10 hours, 240 by default (2026-10-02): a tightening is now judged on a
+    day-clustered bound that needs >= 20 distinct days out of sample (the last 30% = 30
+    days here) and >= 30 candidate trades there (36). The old 64 hourly rows put the whole
+    out-of-sample window inside one day.
     """
     idx = 0
     for b in range(blocks):
@@ -179,7 +184,7 @@ def build_replay_stream(conn, *, pattern: str, lane: str = "confluence-5", block
                 good_block = b % 2 == 0
                 high_wins = good_block
                 pnl = 300 if (entities == 6) == high_wins else -300
-            ts = BASE_MS + idx * 3_600_000
+            ts = BASE_MS + idx * 10 * 3_600_000
             sid = f"sig_{idx}"
             insert_signal(conn, sid, created_ms=ts - 1000, payload={"entities": entities}, lane=lane)
             did = insert_decision(conn, f"dec_{idx}", lane=lane, ts_ms=ts, signals=(sid,))

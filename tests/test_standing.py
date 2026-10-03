@@ -32,7 +32,7 @@ from kaiba.core.schemas import Chain, EvidenceBasis, Lane, LaneMode, Position, n
 from kaiba.execution import standing as st
 from kaiba.execution.protection import ProtectionConfig, evaluate, initial_state
 
-TOKEN = "CJF7MNqb9xv1XrTs5St1Du5JuQXLsfFBB137vmYRKpnb"
+TOKEN = "Bnd5oBSWpPpXoaWTckgXTVx9TCKkX5GyVqxcrwBzUYsB"
 WALLET = "8Kk2Yy7Y6PY7dLuLkVrbYpHn5iFPveiSRvsTjBpHfFRj"
 POSITION = "pos_standing_1"
 

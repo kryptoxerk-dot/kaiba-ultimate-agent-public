@@ -33,10 +33,32 @@ TWO THINGS THIS IS CAREFUL ABOUT.
 Writes on its own connection, in bounded batches, for the reason recorded in
 ``grade.TAPE_STORE_BATCH``: the read that feeds this is still streaming, and a live box
 refuses a write that shares its connection.
+
+2026-10-02 -- WHAT A RUN COSTS NOW. MEASURED on the box before this change, each 4-hourly
+run rewrote ``wallets.meta_json`` for EVERY wallet on the tape (sol 762,993 + robinhood
+151,767 rows a run) because ``seed_confluence_ms`` was restamped whether or not the count
+moved; it ran 489-1047 s, one run timed out at 2,207 s and one lost a 200-wallet batch to
+``database is locked``. And the seed set came from an unbounded ``GROUP BY token`` walk of
+the chain's whole tape whose ``MAX(price_usd)`` compared TEXT, so the "5x" test ran on the
+string maximum. Now:
+
+* seeds come from :mod:`kaiba.intelligence.price_extent` (cursor-folded), under
+  :data:`SEED_PEAK_RULE` -- by default the SAME string-maximum peak as before, because
+  correcting it moves 12 grader points for many wallets and is the lead's decision.
+  MEASURED 2026-10-02 on the box over all 14,058 sol tokens traded in the newest 2M swaps:
+  the string rule finds 335 seeds, the numeric rule 532 (+197, none lost). The string rule
+  under-counts seeds by 37%;
+* the stored value is READ first, and only a wallet whose count differs -- or that has no
+  measured value yet, which is still written as a measured 0 -- is written;
+  ``seed_confluence_ms`` therefore records when the count last CHANGED (nothing reads it);
+* a pass that reaches its deadline stops between chunks and the next run resumes after the
+  last wallet it finished (``kv`` :data:`KV_RESUME`), so a slow day cannot pin the tail of
+  the address space at a stale count forever.
 """
 
 from __future__ import annotations
 
+import bisect
 import logging
 import sqlite3
 import time
@@ -44,6 +66,7 @@ from typing import Any
 
 from kaiba.core.db import connect, get_conn, jdump, jload
 from kaiba.core.schemas import Chain, now_ms
+from kaiba.intelligence import price_extent
 
 log = logging.getLogger(__name__)
 
@@ -60,31 +83,55 @@ SEED_WRITE_BATCH = 200
 #: Retries per batch when the live writers hold the lock.
 SEED_WRITE_RETRIES = 3
 
+#: Which peak decides "ran 5x". LEGACY_TEXT reproduces the old ``MAX(price_usd)`` string
+#: maximum; ``price_extent.PEAK_NUMERIC`` is the correct one. See the module docstring.
+SEED_PEAK_RULE = price_extent.PEAK_LEGACY_TEXT
 
-def seed_tokens(conn: sqlite3.Connection, chain: Chain) -> set[str]:
-    """Tokens on ``chain``'s tape that demonstrably ran. Never raises on a bad row."""
+#: Wallets whose stored value is read per query (an ``IN`` list on the primary key).
+SEED_READ_CHUNK = 500
+
+#: ``kv`` key (per chain) for the last wallet a deadline-cut pass finished.
+KV_RESUME = "seeds:resume:{chain}"
+
+
+def seed_tokens(
+    conn: sqlite3.Connection, chain: Chain, *, deadline: float | None = None,
+    clock: Any = time.time,
+) -> set[str]:
+    """Tokens on ``chain``'s tape that demonstrably ran.
+
+    Folds the swaps inserted since the last call into the price extent first (bounded by
+    ``deadline``, ``clock()`` seconds) and raises :class:`price_extent.ExtentNotReady`
+    rather than answer from a half-folded table.
+    """
     c = conn or get_conn()
-    out: set[str] = set()
-    for row in c.execute(
-        "SELECT token, COUNT(*) n, MAX(price_usd) hi FROM swaps "
-        "WHERE chain = ? AND price_usd IS NOT NULL AND price_usd > 0 "
-        "GROUP BY token HAVING n >= ?",
-        (chain.value, MIN_PRINTS),
-    ):
-        first = c.execute(
-            "SELECT price_usd FROM swaps WHERE chain = ? AND token = ? AND price_usd > 0 "
-            "ORDER BY ts_ms LIMIT 1",
-            (chain.value, row[0]),
-        ).fetchone()
-        if not first:
-            continue
-        try:
-            lo, hi = float(first[0]), float(row[2])
-        except (TypeError, ValueError):
-            continue
-        if lo > 0 and hi / lo >= SEED_MULTIPLE:
-            out.add(str(row[0]))
-    return out
+    progress = price_extent.advance(c, deadline=deadline, clock=clock)
+    if not progress.caught_up:
+        raise price_extent.ExtentNotReady(progress.as_dict())
+    return price_extent.ran(c, chain.value, min_prints=MIN_PRINTS, multiple=SEED_MULTIPLE,
+                            rule=SEED_PEAK_RULE)
+
+
+def _stored_value(meta_json: Any) -> int | None:
+    """The measured ``seed_confluence`` in a wallet's meta, or ``None`` if never measured."""
+    meta = jload(meta_json, {}) or {}
+    if not isinstance(meta, dict):
+        return None
+    value = meta.get("seed_confluence")
+    if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+        return value
+    return None
+
+
+def _stored_values(conn: sqlite3.Connection, chain: Chain, chunk: list[str]) -> dict[str, int | None]:
+    qs = ",".join("?" * len(chunk))
+    return {
+        str(r[0]): _stored_value(r[1])
+        for r in conn.execute(
+            f"SELECT address, meta_json FROM wallets WHERE chain = ? AND address IN ({qs})",
+            (chain.value, *chunk),
+        )
+    }
 
 
 def seed_counts(conn: sqlite3.Connection, chain: Chain, seeds: set[str]) -> dict[str, int]:
@@ -105,82 +152,146 @@ def seed_counts(conn: sqlite3.Connection, chain: Chain, seeds: set[str]) -> dict
     return counts
 
 
+def _write_counts(
+    w: sqlite3.Connection, chain: Chain, chunk: list[str], counts: dict[str, int],
+    stamp: int, report: dict[str, Any],
+) -> None:
+    """Write ``seed_confluence`` for ``chunk`` in one transaction, with retries."""
+    for attempt in range(1, SEED_WRITE_RETRIES + 1):
+        try:
+            w.execute("BEGIN")
+            for addr in chunk:
+                row = w.execute(
+                    "SELECT meta_json FROM wallets WHERE chain = ? AND address = ?",
+                    (chain.value, addr),
+                ).fetchone()
+                meta = (jload(row[0], {}) if row else {}) or {}
+                if not isinstance(meta, dict):
+                    meta = {}
+                meta["seed_confluence"] = int(counts.get(addr, 0))
+                meta["seed_confluence_ms"] = stamp
+                if row:
+                    w.execute(
+                        "UPDATE wallets SET meta_json = ? WHERE chain = ? AND address = ?",
+                        (jdump(meta), chain.value, addr),
+                    )
+                else:
+                    w.execute(
+                        "INSERT INTO wallets (chain, address, meta_json, first_seen_ms, "
+                        "last_seen_ms) VALUES (?,?,?,?,?)",
+                        (chain.value, addr, jdump(meta), stamp, stamp),
+                    )
+            w.commit()
+            report["written"] += len(chunk)
+            return
+        except sqlite3.Error as exc:
+            w.rollback()
+            if attempt >= SEED_WRITE_RETRIES:
+                report["failed"] += len(chunk)
+                log.warning("seed batch of %d failed: %s", len(chunk), exc)
+            else:
+                time.sleep(1.5)
+
+
+def _set_resume(conn: sqlite3.Connection, chain: Chain, address: str | None) -> None:
+    key = KV_RESUME.format(chain=chain.value)
+    if address is None:
+        conn.execute("DELETE FROM kv WHERE key = ?", (key,))
+    else:
+        conn.execute(
+            "INSERT INTO kv (key, value, updated_ms) VALUES (?,?,?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_ms = excluded.updated_ms",
+            (key, address, now_ms()),
+        )
+
+
 def run(
     chain: Chain,
     conn: sqlite3.Connection | None = None,
     *,
     limit: int | None = None,
     dry_run: bool = False,
+    deadline: float | None = None,
+    clock: Any = time.time,
 ) -> dict[str, Any]:
-    """Compute and persist ``seed_confluence`` for every wallet on ``chain``'s tape."""
+    """Compute ``seed_confluence`` for every wallet on ``chain``'s tape; write what changed.
+
+    ``deadline`` (``clock()`` seconds) bounds the extent fold and the comparison pass; a
+    cut pass resumes after its last finished wallet on the next call. While the extent is
+    still bootstrapping nothing is written and the report says ``not_ready``.
+    """
     c = conn or get_conn()
     started = time.perf_counter()
-    seeds = seed_tokens(c, chain)
+    report: dict[str, Any] = {
+        "chain": chain.value,
+        "seeds": 0,
+        "wallets_considered": 0,
+        "wallets_with_a_seed": 0,
+        "unchanged": 0,
+        "written": 0,
+        "failed": 0,
+        "truncated": False,
+        "dry_run": bool(dry_run),
+    }
+    try:
+        seeds = seed_tokens(c, chain, deadline=deadline, clock=clock)
+    except price_extent.ExtentNotReady as exc:
+        report.update(not_ready=True, price_extent=exc.progress,
+                      elapsed_s=time.perf_counter() - started)
+        return report
     counts = seed_counts(c, chain, seeds)
-    considered = [
+    considered = sorted(
         str(r[0]) for r in c.execute(
             "SELECT DISTINCT wallet FROM swaps WHERE chain = ? AND wallet IS NOT NULL",
             (chain.value,),
         )
-    ]
-    if limit is not None:
+    )
+    resumable = limit is None
+    if not resumable:
         considered = considered[: max(0, int(limit))]
-    report: dict[str, Any] = {
-        "chain": chain.value,
-        "seeds": len(seeds),
-        "wallets_considered": len(considered),
-        "wallets_with_a_seed": sum(1 for a in considered if counts.get(a)),
-        "written": 0,
-        "failed": 0,
-        "dry_run": bool(dry_run),
-    }
-    if dry_run or not considered:
+    report.update(
+        seeds=len(seeds),
+        wallets_considered=len(considered),
+        wallets_with_a_seed=sum(1 for a in considered if counts.get(a)),
+    )
+    # Resume after the last wallet a cut pass finished, wrapping round to the start.
+    order = considered
+    if resumable:
+        row = c.execute("SELECT value FROM kv WHERE key = ?",
+                        (KV_RESUME.format(chain=chain.value),)).fetchone()
+        if row is not None and row[0]:
+            at = bisect.bisect_right(considered, str(row[0]))
+            order = considered[at:] + considered[:at]
+            report["resumed_after"] = str(row[0])
+    if not order:
         report["elapsed_s"] = time.perf_counter() - started
         return report
 
     stamp = now_ms()
     # A dedicated connection: the scan above may still be streaming on `c`, and a write
     # through the connection being read loses the lock on a live box every time.
-    w = connect()
+    w = None if dry_run else connect()
+    last_done: str | None = None
     try:
-        for i in range(0, len(considered), SEED_WRITE_BATCH):
-            chunk = considered[i:i + SEED_WRITE_BATCH]
-            for attempt in range(1, SEED_WRITE_RETRIES + 1):
-                try:
-                    w.execute("BEGIN")
-                    for addr in chunk:
-                        row = w.execute(
-                            "SELECT meta_json FROM wallets WHERE chain = ? AND address = ?",
-                            (chain.value, addr),
-                        ).fetchone()
-                        meta = (jload(row[0], {}) if row else {}) or {}
-                        if not isinstance(meta, dict):
-                            meta = {}
-                        meta["seed_confluence"] = int(counts.get(addr, 0))
-                        meta["seed_confluence_ms"] = stamp
-                        if row:
-                            w.execute(
-                                "UPDATE wallets SET meta_json = ? WHERE chain = ? AND address = ?",
-                                (jdump(meta), chain.value, addr),
-                            )
-                        else:
-                            w.execute(
-                                "INSERT INTO wallets (chain, address, meta_json, first_seen_ms, "
-                                "last_seen_ms) VALUES (?,?,?,?,?)",
-                                (chain.value, addr, jdump(meta), stamp, stamp),
-                            )
-                    w.commit()
-                    report["written"] += len(chunk)
-                    break
-                except sqlite3.Error as exc:
-                    w.rollback()
-                    if attempt >= SEED_WRITE_RETRIES:
-                        report["failed"] += len(chunk)
-                        log.warning("seed batch of %d failed: %s", len(chunk), exc)
-                    else:
-                        time.sleep(1.5)
+        for i in range(0, len(order), SEED_READ_CHUNK):
+            if deadline is not None and clock() >= deadline:
+                report["truncated"] = True
+                break
+            chunk = order[i:i + SEED_READ_CHUNK]
+            stored = _stored_values(c, chain, chunk)
+            changed = [a for a in chunk if stored.get(a) != int(counts.get(a, 0))]
+            report["unchanged"] += len(chunk) - len(changed)
+            if w is None:
+                report["would_write"] = report.get("would_write", 0) + len(changed)
+            else:
+                for j in range(0, len(changed), SEED_WRITE_BATCH):
+                    _write_counts(w, chain, changed[j:j + SEED_WRITE_BATCH], counts, stamp, report)
+            last_done = chunk[-1]
+        if w is not None and resumable:
+            _set_resume(w, chain, last_done if report["truncated"] else None)
     finally:
-        w.close()
+        if w is not None:
+            w.close()
     report["elapsed_s"] = time.perf_counter() - started
     return report
 
@@ -190,6 +301,9 @@ __all__ = [
     "SEED_MULTIPLE",
     "SEED_WRITE_BATCH",
     "SEED_WRITE_RETRIES",
+    "SEED_READ_CHUNK",
+    "SEED_PEAK_RULE",
+    "KV_RESUME",
     "run",
     "seed_counts",
     "seed_tokens",

@@ -27,7 +27,7 @@ That is precisely why it starts in shadow and why the journal decides.
 - A `confluence-5` signal appears in `kaiba_signals(lane="confluence-5")`.
 - `kaiba_events(kinds=["signal.fired"])` shows the lane firing and you are deciding
   whether to act.
-- the operator asks why a token with five smart-money buyers was not entered.
+- The operator asks why a token with five smart-money buyers was not entered.
 - You are reviewing the lane's expectancy and need to know what the parameters mean.
 - The sibling lane `pons-robinhood` fires — it is the same shape with a lower entity
   floor.
@@ -43,9 +43,7 @@ That is precisely why it starts in shadow and why the journal decides.
    independent, and a copier's buy is an echo, not a confirmation.
 4. **Check the age.** `max_signal_age_s` is 30 s. A confluence signal older than that
    describes a price you can no longer get.
-5. **Check the dossier.** `kaiba_token(address, chain)` must return no hard blockers and
-   at least the lane's `require_dossier_grade` of B. Five wallets never clear a blocker —
-   the owner's mandate says this in as many words.
+5. **Check the dossier.** `kaiba_token(address, chain)` must be fresh enough and have no hard blockers. The lane's `require_wallet_grade` of B applies to contributing wallets, not to the token dossier. Read the actual engine's token policy rather than inventing a token-grade floor from the wallet-grade key. Five wallets never clear a blocker.
 6. **Check the buyers are real evidence.** `kaiba_wallet` on the contributing addresses:
    grade, evidence weight, entity size, and whether the buy is a first entry or an add.
 7. **Check lane state.** `kaiba_status()` for `kill_switch`, `entries_paused`,
@@ -65,7 +63,7 @@ That is precisely why it starts in shadow and why the journal decides.
 | `window_s` | 120 s, **event time** | `config/risk.yaml`; PLAN §6.1 marks it tunable |
 | `min_buy_usd` | $50 | `config/risk.yaml` — the dust filter |
 | `max_signal_age_s` | 30 s | `config/risk.yaml` |
-| `require_dossier_grade` | B | `config/risk.yaml` |
+| `require_wallet_grade` | B, for contributing wallets | `config/risk.yaml`; `lanes.confluence_5` |
 | `size_pct_min` / `size_pct_max` | 1.0% / 5.0% of bankroll | `config/risk.yaml`; PLAN §6.2 |
 | Envelope ceiling on size | 5.0% | `bounds.max_size_pct_bankroll` — operator-owned, unwritable by the agent |
 | Chains | sol, robinhood, bsc, base | `config/risk.yaml` |
@@ -95,6 +93,12 @@ Everything below reduces the count:
 
 When the count is ambiguous, the lane does not fire. Preserving the uncertainty is the
 required behaviour, not a conservative style choice.
+
+## Counting the wallets actually in use
+
+Count stored A/B grades, active tracker addresses returned by the real selector, and wallets that actually contributed to emitted signals separately. Use `(chain,address)` identities and disclose cross-chain duplicate address strings. Report known hubs and quarantined cluster rows separately even when they retain a B label or an active watchlist flag; exclude them from the defensible qualified count without pretending a read-only audit removed them. Keep zero closed episodes distinct from unavailable counts and keep partial-tape grades explicit.
+
+Read both `confluence-5` and `sm-trenches` modes and source-selection code. A shadow A/B-gated confluence lane is not a live strategy. The live smart-money lane can consume tags/archetypes without an A/B minimum; a large stored grade pool or an active-B roster must not be presented as an exclusive live-entry whitelist. Trace disabled shared watchlist policies and affected consumers before any cleanup, rather than silently changing other lanes while answering a count.
 
 ## Failure modes
 

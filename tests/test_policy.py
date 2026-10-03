@@ -42,7 +42,7 @@ from kaiba.execution.policy import (
 
 # ------------------------------------------------------------------ fixtures & builders
 
-OUR_SOL = "CJF7MNqb9xv1XrTs5St1Du5JuQXLsfFBB137vmYRKpnb"
+OUR_SOL = "Bnd5oBSWpPpXoaWTckgXTVx9TCKkX5GyVqxcrwBzUYsB"
 OUR_SOL_ATA = "9wFFyRfZBsuAha4YcuxcXLKwMxJR43S7fPfQLusDBzvT"
 STRANGER_SOL = "5Q544fKrFoe6tsEbD7S8EmxGTJYAKtTVhAW5Q5pge4j1"
 SOL_MINT = "So11111111111111111111111111111111111111112"

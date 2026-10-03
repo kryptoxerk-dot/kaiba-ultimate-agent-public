@@ -521,9 +521,26 @@ class GmgnPriceSource:
 
     name = "gmgn"
 
+    #: Cache budget for THIS read, strictly under every poll interval protection runs (5 s
+    #: default, 12 s on the box), so each tick that reaches this layer gets a fresh number.
+    #:
+    #: MEASURED 2026-10-01: in 1,695 of 1,967 robinhood `protection_blind` events (86%) this
+    #: layer had a price and served it STALE. `token.info` caches 15 s with a 120 s stale
+    #: grace, and inside the grace `run_read` returns the stale copy WITHOUT trying the
+    #: network -- the cache file for 0xc777 aged 26 s -> 95 s across six ticks with no
+    #: refresh. A stale quote is unusable, so the position was blind for up to 120 s of every
+    #: 135, on the one layer that could price it (DexScreener has no pair for it).
+    EXIT_TTL_S = 4.0
+
     def quote(self, chain: Chain, token: str) -> PriceQuote:
+        from kaiba.core.limiter import Priority  # noqa: PLC0415 - module-local, like the rest
+
         try:
-            got = _gmgn_token_info(token, chain)
+            # EXIT, not the helper's RESEARCH default: this read decides a stop. And no
+            # stale grace: a stale answer here is blindness, so ask the network instead.
+            got = _gmgn_token_info(
+                token, chain, priority=Priority.EXIT, ttl_s=self.EXIT_TTL_S, stale_grace_s=0.0
+            )
         except Exception as exc:  # noqa: BLE001 - a dead provider is blindness, not a crash
             return PriceQuote.unavailable(f"gmgn:{type(exc).__name__}")
         body = getattr(got, "data", None)
@@ -1089,7 +1106,7 @@ def wallet_token_units(
 
     MEASURED payload, 2026-09-22::
 
-        {"balances":[{"wallet_address":"AVmos...","token_address":"8JVtw...",
+        {"balances":[{"wallet_address":"62Ebt...","token_address":"8JVtw...",
                       "balance":"47876.517476461","decimal":0,"height":449306003}]}
 
     Same three traps as :func:`kaiba.execution.risk.parse_native_balance`, and for the same
@@ -1818,6 +1835,17 @@ class Watchdog:
                     subject=position.token,
                 )
 
+        # LOG-ONLY, after every stop has been decided: hand the RH book to the on-chain
+        # pool reader, which records the pool price beside the quote just used. It never
+        # feeds a decision, does its I/O on its own thread, and is a no-op unless
+        # `protection.onchain_price_log` is on. See kaiba.execution.onchain_pool.
+        try:
+            from kaiba.execution import onchain_pool
+
+            onchain_pool.after_tick(self, positions, cfg)
+        except Exception:  # noqa: BLE001 - a log-only reader must never break a tick
+            log.debug("onchain price log hook raised", exc_info=True)
+
         report.duration_ms = int((time.monotonic() - started) * 1000)
         self._note_overrun(report, cfg)
         self._heartbeat(report)
@@ -2231,6 +2259,10 @@ class Watchdog:
             self._blind(position, state, (quote.invalid_reason or "price_unavailable") + "; "
                         + (quote.note or ""), report, quote=quote)
             save_state(self.conn, state)
+            # An hourly recheck that cannot price must stay hourly. The deferral used to be
+            # renewed only from `_do_exit`, which needs a usable quote, so an unpriceable
+            # recheck dropped the position back onto every tick.
+            self._extend_stranded(position)
             # Being blind is exactly when a venue-side stop earns its keep, and the mirror
             # needs no price of its own: the ladder's triggers come from the entry and the
             # ratchet, both of which are already in `state`.
@@ -2750,7 +2782,13 @@ class Watchdog:
         # never had tokens, so its blindness is a data-quality problem and must not be
         # allowed to brake a live book.
         real_tokens = position.mode is not LaneMode.SHADOW
-        halt_wanted = real_tokens and self._halt_entries_on_timeout()
+        # A position the venue has already reported as wallet-empty holds nothing a stop
+        # could protect. MEASURED 2026-10-01: pos_9cb9's hourly recheck could not price a
+        # dead token, the blind clock ran out, and entries stopped on EVERY chain for 5 h
+        # -- the fourth such halt from that one position. It still pages; it only stops
+        # braking the book.
+        venue_empty = real_tokens and self._stranded_marker(position) is not None
+        halt_wanted = real_tokens and not venue_empty and self._halt_entries_on_timeout()
 
         event_id = self._emit(
             "protection_blind_timeout",
@@ -2771,6 +2809,7 @@ class Watchdog:
                 "stop_price_usd": _s(state.stop_price_usd),
                 "deferred_exit_pct": _s(state.pending_pct),
                 "real_tokens": real_tokens,
+                "venue_reported_empty": venue_empty,
                 "forced_exit": False,
                 "forced_exit_refused": (
                     "we cannot price this token, so a sell would be a market order with no "
@@ -2977,6 +3016,45 @@ class Watchdog:
         except (TypeError, ValueError):
             return None
         return due if due > now_ms() else None
+
+    def _stranded_marker(self, position: Position) -> dict | None:
+        """The wallet-empty evidence for this position, whether or not its recheck is due.
+
+        Only the schedule in the marker expires; the evidence does not. The marker is only
+        ever written from `_do_exit`'s `wallet_empty` branch and is removed once a sell is
+        accepted, so it cannot describe a position the venue says still holds tokens.
+        """
+        try:
+            row = fetch_one(
+                self.conn, "SELECT value FROM kv WHERE key=?",
+                (self._stranded_key(position.position_id),),
+            )
+        except sqlite3.Error:
+            return None
+        value = jload(row["value"]) if row else None
+        if isinstance(value, dict) and value.get("reason") == "wallet_empty":
+            return value
+        return None
+
+    def _extend_stranded(self, position: Position) -> None:
+        """Keep an EXISTING wallet-empty deferral on its hourly cadence. Never creates one,
+        so a deferral can still only originate in `_do_exit`'s wallet_empty branch."""
+        marker = self._stranded_marker(position)
+        if marker is None:
+            return
+        marker["recheck_after_ms"] = now_ms() + STRANDED_RECHECK_S * 1000
+        try:
+            upsert(
+                self.conn, "kv",
+                {
+                    "key": self._stranded_key(position.position_id),
+                    "value": jdump(marker),
+                    "updated_ms": now_ms(),
+                },
+                ["key"],
+            )
+        except sqlite3.Error:
+            log.exception("could not extend a stranded deferral")
 
     def _defer_stranded(self, position: Position, state: WatchdogState) -> None:
         """Stop servicing a WALLET-EMPTY position every tick. NOT a write-off.
@@ -3257,7 +3335,24 @@ class Watchdog:
 
         if not outcome.ok:
             report.exit_failures += 1
-            backoff = _exit_backoff(state.exit_attempts)
+            # OUR limiter refused before anything was sent (minimum interval, max inflight,
+            # bucket exhausted): it is not a venue failure and must not be backed off like
+            # one. MEASURED 2026-09-30 (robinhood 0x2aa4...6262): stop_loss decided, sell
+            # refused "gmgn: minimum interval (retry in 0.1s)", re-sent on the next 12 s
+            # tick, closed -42.3% against a -30% stop. (`limiter.reserve` now waits a gap
+            # that short out at EXIT; this is the backstop for whatever still refuses.)
+            # Retry on the limiter's own hint, capped at the first rung, and do not
+            # count the attempt: `exit_attempts` drives escalation to the 30-minute ceiling
+            # and the dust write-off, and self-throttling is evidence of neither. A
+            # provider's own 429 and our cooldowns parse as None and keep the full backoff.
+            from kaiba.core.limiter import local_refusal_retry_s  # noqa: PLC0415
+
+            limiter_retry_s = local_refusal_retry_s(outcome.detail)
+            if limiter_retry_s is not None:
+                state.exit_attempts = max(0, state.exit_attempts - 1)
+                backoff = min(RETRY_BASE_MS, int(limiter_retry_s * 1000) + 1)
+            else:
+                backoff = _exit_backoff(state.exit_attempts)
             state.exit_retry_after_ms = ts + backoff
             self._emit(
                 "exit_failed",
@@ -3269,6 +3364,7 @@ class Watchdog:
                     "detail": outcome.detail,
                     "attempts": state.exit_attempts,
                     "retry_in_ms": backoff,
+                    "limiter_refusal": limiter_retry_s is not None,
                     "gated_exit_bug": _looks_like_an_entry_gate(outcome.detail),
                 },
                 level="error",
@@ -3287,6 +3383,14 @@ class Watchdog:
         # position is a stop that fires late by construction. Found by adversarial
         # review of the high-volume design; the fourth of four exit-protection gaps.
         state.exit_attempts = 0
+        # The venue accepted a sell, so the wallet holds this token after all: the
+        # wallet-empty marker no longer describes it and must not exempt it from the brake.
+        try:
+            self.conn.execute(
+                "DELETE FROM kv WHERE key=?", (self._stranded_key(position.position_id),)
+            )
+        except sqlite3.Error:
+            log.exception("could not clear a stranded marker")
         report.exits += 1
         if kind is ProtectionKind.TRIM and pct < 100:
             report.trims += 1

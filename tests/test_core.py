@@ -27,7 +27,7 @@ from kaiba.core.schemas import (
 )
 
 EVM = "0x68EEE5c2FE8883A63CD9E5F0e71a3116FB728B3a"
-SOL = "CJF7MNqb9xv1XrTs5St1Du5JuQXLsfFBB137vmYRKpnb"
+SOL = "Bnd5oBSWpPpXoaWTckgXTVx9TCKkX5GyVqxcrwBzUYsB"
 
 
 # ---------------------------------------------------------------- addresses & schemas

@@ -226,8 +226,14 @@ def test_shipped_wallet_budgets_stay_well_under_ten_percent_of_the_free_month():
     monthly = buyers_month + tracked_month
     assert monthly <= 0.55 * S.FREE_MONTHLY_CREDITS, f"scheduled wallet work would cost {monthly}/month"
     funding = int(config.jobs["clustering_funding"].params["credits_per_day"]) * 31
+    # wallet_deepen (2026-10-02): 1,000/day x 31 = 31,000, 3.1%. Total 651,000 of 700,000.
+    deepen = config.jobs["wallet_deepen"].params
+    assert int(deepen["credits_per_day"]) <= S.GATHER_DAILY_CREDIT_HARD_MAX
+    deepen_month = int(deepen["credits_per_day"]) * 31
+    assert deepen_month <= 0.04 * S.FREE_MONTHLY_CREDITS, f"wallet_deepen would cost {deepen_month}/month"
     floor = config.helius.floor_credits
-    assert monthly + funding < S.FREE_MONTHLY_CREDITS - floor, "scheduled paid work must fit above the floor"
+    assert monthly + funding + deepen_month < S.FREE_MONTHLY_CREDITS - floor, (
+        "scheduled paid work must fit above the floor")
     assert 0.10 * S.FREE_MONTHLY_CREDITS <= floor <= 0.50 * S.FREE_MONTHLY_CREDITS
 
 
@@ -1792,7 +1798,10 @@ def test_the_naming_job_is_wired_and_on_because_the_tag_leak_is_closed(tmp_db, m
 
     config = S.load_config(ROOT / "config" / "schedule.yaml")
     jc = config.jobs["wallet_naming"]
-    assert jc.enabled is True and jc.interval_s == 3600 and jc.timeout_s == 300
+    # 2026-10-02: incremental, every 15 min, and the run's own budget ends it well inside
+    # the timeout (see test_the_naming_job_runs_incrementally_inside_its_budget).
+    assert jc.enabled is True and jc.interval_s == 900 and jc.timeout_s == 300
+    assert float(jc.params["budget_s"]) + 30 < jc.timeout_s
     # The leak, on the real namer: the three vendor labels that used to become lane words.
     facts = NM.WalletFacts(chain=Chain.SOL, address="LEAK", gmgn_tags={
         "smart_degen": 3, "launchpad_smart": 1, "app_smart_money": 2, "wash_trader": 1, "kol": 1,
@@ -1819,13 +1828,16 @@ def test_the_naming_job_is_wired_and_on_because_the_tag_leak_is_closed(tmp_db, m
         return report
 
     monkeypatch.setattr(NM, "name_wallets", fake_name)
-    out = S.job_wallet_naming(ctx_for(tmp_db, "wallet_naming", {}))
+    out = S.job_wallet_naming(ctx_for(tmp_db, "wallet_naming", {"mode": "full"}))
     assert seen == [(tmp_db, None, {})]  # every chain, not dry
     assert out["inserted"] == 12 and out["wallets_after"] == 12 and len(out["samples"]) == 5
 
-    # It really is a Python entry point on the real module, on an empty database.
-    monkeypatch.undo()
+    # It really is a Python entry point on the real module, on an empty database -- and the
+    # default is the incremental pass, which never calls the full one.
     out = S.job_wallet_naming(ctx_for(tmp_db, "wallet_naming", {}))
+    assert seen == [(tmp_db, None, {})] and out["mode"] == "incremental"
+    monkeypatch.undo()
+    out = S.job_wallet_naming(ctx_for(tmp_db, "wallet_naming", {"mode": "full"}))
     assert out["considered"] == 0 and out["dry_run"] is False
 
 

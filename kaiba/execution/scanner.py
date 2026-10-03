@@ -254,6 +254,26 @@ class ScanConfig:
     #: batch, about once a second. See ``_smart_flow_work``.
     smart_set_ttl_s: float = 300.0
 
+    #: Scan tokens that >= ``min_entities`` PROVEN wallets (``kaiba.learning.proven``) are
+    #: buying, whenever ``confluence-5`` counts that cohort (``wallet_source: proven`` in
+    #: risk.yaml). Off in effect otherwise: the feeder reads the lane's own params and
+    #: returns nothing unless the lane asks for proven wallets.
+    #:
+    #: WHY a feeder of its own, MEASURED 2026-10-02 on the box: of the 19 robinhood tokens
+    #: where five B-graded wallets net-bought within 120 s over seven days, 3 were scanned
+    #: within +-120 s and NONE within 30 s of qualifying. The lane only sees what a work
+    #: source offers, and no source was offering the tokens its own wallets were buying.
+    proven_flow: bool = True
+    #: The most of one batch proven flow may take. A few qualifying tokens a day per chain
+    #: are expected, so this almost never binds; it exists so a misconfigured threshold
+    #: cannot crowd out the live lane's feeder.
+    proven_flow_max: int = 4
+    #: The feeder's query runs at most this often. One short range seek per proven wallet
+    #: per chain, so it is cheap; the floor stops it running on every one-second batch.
+    proven_flow_min_interval_s: float = 5.0
+    #: Rows the proven-flow query may return per chain.
+    proven_flow_limit: int = 50
+
     #: How far back ``recent_buys`` reaches. 1800 s is the widest window any lane asks for
     #: (``pons-robinhood``'s ``max_age_s``); the narrower lanes filter inside it themselves.
     recent_buys_window_s: int = 1800
@@ -1436,7 +1456,9 @@ def _smart_tag_values() -> list[str]:
 SMART_FLOW_TOKEN_SOURCE = "smart_flow"
 
 
-def _register_smart_flow_token(conn: sqlite3.Connection, chain: Chain, token: str) -> bool:
+def _register_smart_flow_token(
+    conn: sqlite3.Connection, chain: Chain, token: str, *, discovered_by: str = "smart_flow"
+) -> bool:
     """Put a discovered token in the registry, if nothing else already has. Returns whether
     a row was written.
 
@@ -1477,8 +1499,8 @@ def _register_smart_flow_token(conn: sqlite3.Connection, chain: Chain, token: st
             "INSERT OR IGNORE INTO tokens (chain, address, first_seen_ms, meta_json) "
             "VALUES (?,?,?,?)",
             (chain.value, token, seen_ms,
-             jdump({"source": SMART_FLOW_TOKEN_SOURCE, "discovered_by": "smart_flow",
-                    "note": "seen in the swaps tape being bought by screened smart money; "
+             jdump({"source": SMART_FLOW_TOKEN_SOURCE, "discovered_by": discovered_by,
+                    "note": f"seen in the swaps tape being bought ({discovered_by}); "
                             "not observed at launch, so created_ms is deliberately unset"})),
         )
         conn.commit()
@@ -1600,6 +1622,105 @@ def _smart_flow_work(conn: sqlite3.Connection, n: int, *, config: ScanConfig) ->
     return out
 
 
+#: Per database: when the proven-flow query may next run, and what it last offered.
+#: ``(db, chain, token) -> (distinct proven buyers offered, monotonic time)``. A token is
+#: re-offered only when MORE proven wallets are buying it than when it was last offered:
+#: that is new evidence, and the only thing a re-scan inside the cooldown could act on.
+_PROVEN_NEXT_AT: dict[str, float] = {}
+_PROVEN_OFFERED: dict[tuple[str, str, str], tuple[int, float]] = {}
+_PROVEN_LOCK = threading.Lock()
+#: Forget an offer after this long; by then the lane's window has long closed.
+_PROVEN_OFFER_TTL_S = 7_200.0
+
+
+def _proven_flow_work(conn: sqlite3.Connection, n: int, *, config: ScanConfig) -> list[WorkItem]:
+    """Tokens that at least ``min_entities`` proven wallets are buying inside the window.
+
+    Driven entirely by ``confluence-5``'s own params, read the way the lane reads them, so
+    the feeder and the lane cannot disagree: nothing is returned unless ``wallet_source``
+    is ``proven``; the window, the threshold and the age gate are the lane's, per chain;
+    and the cohort is the one the lane will count (``proven.proven_members``, same age
+    limit). Raw buyers are counted, not net buyers -- the lane re-derives that itself, and
+    for a feeder a token scanned and refused costs one pass while one never offered costs
+    the signal.
+
+    A token whose newest proven buy is already older than the lane's age gate is skipped:
+    the lane would refuse it, so the pass would be spent for nothing.
+    """
+    if not config.proven_flow or n <= 0:
+        return []
+    db = _db_key(conn)
+    mono = time.monotonic()
+    with _PROVEN_LOCK:
+        if _PROVEN_NEXT_AT.get(db, 0.0) > mono:
+            return []
+        _PROVEN_NEXT_AT[db] = mono + max(0.0, float(config.proven_flow_min_interval_s))
+        if len(_PROVEN_OFFERED) > 5_000:
+            for k in [k for k, (_, at) in _PROVEN_OFFERED.items() if mono - at > _PROVEN_OFFER_TTL_S]:
+                _PROVEN_OFFERED.pop(k, None)
+    try:
+        from kaiba.core.config import get_risk
+        from kaiba.learning.proven import proven_members
+
+        params = LaneContext(chain=Chain.SOL, token="").lane_params(Lane.CONFLUENCE_5)
+        if str(params.get("wallet_source") or "grade").strip().lower() != "proven":
+            return []
+        chains = list(get_risk().lane(Lane.CONFLUENCE_5).chains or [])
+    except Exception as exc:  # noqa: BLE001 - a feeder must never take the scanner down
+        log.warning("scanner: proven-flow config unreadable (%s)", exc)
+        return []
+
+    now = now_ms()
+    sql = (
+        "SELECT s.token AS token, COUNT(DISTINCT s.wallet) AS nw, MAX(s.ts_ms) AS last_ms "
+        "FROM json_each(?) AS j CROSS JOIN swaps AS s INDEXED BY idx_swaps_wallet "
+        "WHERE s.chain = ? AND s.wallet = j.value AND s.ts_ms >= ? "
+        "AND s.side = 'buy' AND s.token != '' "
+        "GROUP BY s.token HAVING nw >= ? ORDER BY last_ms DESC LIMIT ?"
+    )
+    out: list[WorkItem] = []
+    for chain in chains:
+        if len(out) >= n:
+            break
+        try:
+            cohort = proven_members(
+                conn, chain, max_age_s=float(params.get("proven_max_cohort_age_s", 259_200)), at_ms=now
+            )
+            if cohort is None or not cohort.members:
+                continue
+            window_s = int(lanes_mod._per_chain(params, "window_s", chain, 120))
+            min_n = max(1, int(lanes_mod._per_chain(params, "min_entities", chain, 5)))
+            max_age_s = int(lanes_mod._per_chain(params, "max_signal_age_s", chain, 30))
+            rows = fetch_all(conn, sql, (
+                jdump(sorted(cohort.members)), chain.value, now - window_s * 1000, min_n,
+                int(config.proven_flow_limit),
+            ))
+        except (sqlite3.Error, ValueError, TypeError) as exc:
+            log.warning("scanner: proven-flow query failed on %s (%s)", chain.value, exc)
+            continue
+        for row in rows:
+            token = str(row["token"] or "")
+            nw, last_ms = int(row["nw"] or 0), int(row["last_ms"] or 0)
+            if not token or is_quote_asset(chain, token):
+                continue
+            if now - last_ms > max_age_s * 1000:
+                continue  # the lane's age gate would refuse it
+            key = (db, chain.value, token)
+            with _PROVEN_LOCK:
+                offered = _PROVEN_OFFERED.get(key)
+                if offered is not None and offered[0] >= nw:
+                    continue  # nothing new since the last offer
+                _PROVEN_OFFERED[key] = (nw, mono)
+            _register_smart_flow_token(conn, chain, token, discovered_by="proven_flow")
+            out.append(WorkItem(
+                chain=chain, token=token, source="proven_flow", score=float(nw),
+                extras={"proven_buyers": nw, "last_buy_ms": last_ms, "cohort_id": cohort.cohort_id},
+            ))
+            if len(out) >= n:
+                break
+    return out
+
+
 def next_work(
     conn: sqlite3.Connection,
     n: int,
@@ -1616,6 +1737,10 @@ def next_work(
     """
     q = queue if queue is not None else triage_mod.get_queue()
     work = _migration_work(conn, n, config=config)
+    # Proven flow next. Rare by construction (a few tokens a day per chain) and its lane's
+    # age gate is tight, so it goes ahead of the smart-flow slice, capped.
+    if len(work) < n and config.proven_flow:
+        work.extend(_proven_flow_work(conn, min(n - len(work), int(config.proven_flow_max)), config=config))
     # Smart flow next, and capped at a share of the batch. Its window (300 s) is nearly as
     # tight as a migration's, and it is the only source that can produce an sm-trenches
     # candidate -- but the launch sources below it feed pons-robinhood and the migration
@@ -1637,7 +1762,10 @@ def next_work(
             continue
         # A migration is always worth the pass: it is a new fact about the token, and it
         # is the one lane whose window we can actually hit.
-        if item.source != "migration" and RECENT.is_recent(
+        # Proven flow too: it only offers a token when MORE proven wallets are buying it
+        # than at its last offer, and its lane's age gate is shorter than the cooldown --
+        # waiting the cooldown out would be the same as never looking.
+        if item.source not in ("migration", "proven_flow") and RECENT.is_recent(
             item.chain, item.token, config.rescan_cooldown_s
         ):
             continue

@@ -26,7 +26,7 @@ candidate's context is part of the read rather than a surprise afterwards.
 ## When to use it
 
 - The scheduled radar run.
-- the operator asks "what is happening" or "anything interesting".
+- The operator asks "what is happening" or "anything interesting".
 - A lane has been quiet and you want to know whether the market or the pipeline is quiet.
 - Before a research session, to pick what to spend budget on.
 - After a listing or news event, to see what moved.

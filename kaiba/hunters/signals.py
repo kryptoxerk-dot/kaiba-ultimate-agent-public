@@ -152,6 +152,19 @@ DEFAULT_INTERVALS: dict[str, int] = {
 #: the operator asked for; slow sources get six of their own intervals instead.
 DEAD_AFTER_FLOOR_S = 6 * 3600
 
+#: Sources the default sweep does not poll, each with the measurement that retired it.
+#: ``source_health`` reports them as ``disabled`` (with the reason) rather than ``dead``,
+#: so they stay visible without paging every hour. An operator re-enables one with
+#: ``disabled: {}`` (or a smaller map) in ``config/signals.yaml``; naming it in ``only``
+#: still polls it, so a manual probe works.
+DEFAULT_DISABLED: dict[str, str] = {
+    "upbit": "403 from the VPS address on every poll (fail_streak 2467, never once ok, "
+             "2026-10-02); the same request answers 200 from a residential address. Upbit "
+             "listings still arrive through the BWEnews relay in kaiba.hunters.listings",
+    "discourse": "all four default forums answer 403 to the VPS address with any user agent "
+                 "(fail_streak 700, never once ok, 2026-10-02)",
+}
+
 
 class SignalsConfig(BaseModel):
     """Operator knobs. Absent file means defaults; a broken file means defaults plus a warning."""
@@ -160,6 +173,8 @@ class SignalsConfig(BaseModel):
     repos: list[str] = Field(default_factory=lambda: list(DEFAULT_REPOS))
     forums: list[str] = Field(default_factory=lambda: list(DEFAULT_FORUMS))
     intervals: dict[str, int] = Field(default_factory=lambda: dict(DEFAULT_INTERVALS))
+    #: source -> why it is not polled. See ``DEFAULT_DISABLED``.
+    disabled: dict[str, str] = Field(default_factory=lambda: dict(DEFAULT_DISABLED))
     #: Certificates older than this are history, not news. Without this bound the first
     #: poll of a long-lived domain would record every claim subdomain it ever had as a
     #: fresh signal, all stamped with today's date.
@@ -1113,8 +1128,12 @@ SOURCES: dict[str, Source] = {
 
 def due_sources(conn: sqlite3.Connection, cfg: SignalsConfig, *, force: bool = False,
                 only: Iterable[str] | None = None) -> list[str]:
-    """Which sources are past their interval. Each one runs on its own clock."""
-    names = [n for n in (list(only) if only else list(SOURCES)) if n in SOURCES]
+    """Which sources are past their interval. Each one runs on its own clock.
+
+    A disabled source is never due unless ``only`` names it explicitly.
+    """
+    default = [n for n in SOURCES if n not in cfg.disabled]
+    names = [n for n in (list(only) if only else default) if n in SOURCES]
     if force:
         return names
     ts = now_ms()
@@ -1182,7 +1201,9 @@ def source_health(conn: sqlite3.Connection | None = None,
         last_ok = int(row["last_ok_ms"]) if row and row["last_ok_ms"] else None
         tolerance = config.dead_after_s(name)
         age_s = None if last_ok is None else (ts - last_ok) / 1000.0
-        if row is None:
+        if name in config.disabled:
+            state = "disabled"
+        elif row is None:
             state = "never_run"
         elif last_ok is None:
             state = "dead"
@@ -1207,6 +1228,7 @@ def source_health(conn: sqlite3.Connection | None = None,
             "fail_streak": int((row or {}).get("fail_streak") or 0),
             "baseline_ms": (row or {}).get("baseline_ms"),
             "last_error": (row or {}).get("last_error"),
+            "disabled_reason": config.disabled.get(name),
         })
     return out
 

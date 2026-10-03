@@ -1,3 +1,4 @@
+# Codex 2026-09-27: owner-requested repair integration; see docs/TASKS.md REPAIR-INTEGRATION-20260927.
 """The `kaiba` command line.
 
 Subcommands import their modules lazily. A half-finished subsystem must not stop the rest
@@ -1686,6 +1687,85 @@ def signer_serve(
     )
 
 
+def _signer_keystore_dir(keystore: str) -> Path:
+    """The keystore for keygen/import. Explicit or from the environment; never a fallback.
+
+    `sudo -u kaiba-signer ... signer keygen` does not inherit the unit's Environment=, so a
+    silent default would file the key somewhere the running signer never looks.
+    """
+    import os
+
+    chosen = keystore or os.environ.get("KAIBA_KEYSTORE_DIR", "")
+    if not chosen:
+        _fail(
+            "no keystore directory given",
+            "pass --keystore /etc/kaiba/signer/keys (or set KAIBA_KEYSTORE_DIR)",
+        )
+    return Path(chosen)
+
+
+def _signer_family_or_fail(chain: str) -> str:
+    from kaiba.execution.signer import KEY_FAMILIES
+
+    family = chain.strip().lower()
+    if family not in KEY_FAMILIES:
+        _fail(f"unknown key family {chain!r}", f"use --chain {' or --chain '.join(KEY_FAMILIES)}")
+    return family
+
+
+def _read_secret_hidden() -> str:
+    """A hidden prompt on a terminal, one line of stdin otherwise. Never argv, never echoed."""
+    import getpass
+
+    if sys.stdin is not None and sys.stdin.isatty():
+        return getpass.getpass("private key (input hidden): ")
+    return sys.stdin.readline() if sys.stdin is not None else ""
+
+
+@signer_app.command("keygen")
+def signer_keygen(
+    chain: str = typer.Option(..., "--chain", help="Key family: evm (one key for every EVM chain) or sol."),
+    keystore: str = typer.Option(
+        "", "--keystore", help="Keystore directory. Default: $KAIBA_KEYSTORE_DIR (required if unset)."
+    ),
+) -> None:
+    """Generate a wallet key inside the keystore (0600, never overwrites). Prints ONLY the address."""
+    from kaiba.execution.signer import SignerRefused, keygen
+
+    family = _signer_family_or_fail(chain)
+    directory = _signer_keystore_dir(keystore)
+    try:
+        address = keygen(family, directory)
+    except (SignerRefused, ValueError) as exc:
+        _fail(str(exc))
+    typer.echo(address)
+
+
+@signer_app.command("import")
+def signer_import(
+    chain: str = typer.Option(..., "--chain", help="Key family: evm or sol."),
+    keystore: str = typer.Option(
+        "", "--keystore", help="Keystore directory. Default: $KAIBA_KEYSTORE_DIR (required if unset)."
+    ),
+) -> None:
+    """Store an existing private key, read from a hidden prompt (or piped stdin). Prints ONLY the address.
+
+    There is deliberately no option that takes the key: argv is visible in `ps` and shell history.
+    """
+    from kaiba.execution.signer import SignerRefused, import_secret
+
+    family = _signer_family_or_fail(chain)
+    directory = _signer_keystore_dir(keystore)
+    secret = _read_secret_hidden()
+    try:
+        address = import_secret(family, secret, directory)
+    except (SignerRefused, ValueError) as exc:
+        _fail(str(exc))
+    finally:
+        secret = ""
+    typer.echo(address)
+
+
 @run_app.command("reflect")
 def run_reflect(days: int = 1) -> None:
     """Build the nightly review packet (the model step happens in Hermes)."""
@@ -1891,17 +1971,23 @@ def hunt_refresh(
 
     conn = ensure_db()
     kinds = list(_HUNTERS) if kind == "all" else [kind]
-    table = Table("hunter", "found", "detail")
+    table = Table("hunter", "written", "new", "qualified", "outcome")
     for k in kinds:
         if k not in _HUNTERS:
             _fail(f"unknown hunter {k!r}", f"one of: {', '.join(_HUNTERS)} or all")
         try:
             mod = importlib.import_module(_HUNTERS[k])
-            table.add_row(k, str(mod.refresh(conn)), "")
+            reporter = getattr(mod, "refresh_report", None)
+            if reporter is not None:
+                result = reporter(conn)
+                table.add_row(k, str(result["written"]), str(result["new_count"]),
+                              str(result["qualified_count"]), str(result["outcome"]))
+            else:
+                table.add_row(k, str(mod.refresh(conn)), "unknown", "unknown", "legacy count")
         except ImportError as exc:
-            table.add_row(k, "-", f"[dim]not available: {exc}[/dim]")
+            table.add_row(k, "-", "-", "-", f"[dim]not available: {exc}[/dim]")
         except Exception as exc:  # noqa: BLE001 - a scraper breaking is normal
-            table.add_row(k, "-", f"[yellow]{type(exc).__name__}: {exc}[/yellow]"[:70])
+            table.add_row(k, "-", "-", "-", f"[yellow]{type(exc).__name__}: {exc}[/yellow]"[:70])
     console.print(table)
 
 
@@ -1923,22 +2009,23 @@ def hunt_report(kind: str = typer.Argument("airdrop", help="airdrop | nft | list
 
 
 @hunt_app.command("list")
-def hunt_list(kind: str = typer.Option("", help="Filter by kind."), limit: int = 15) -> None:
-    """Ranked opportunities across the hunters."""
-    from kaiba.core.db import ensure_db, fetch_all
+def hunt_list(
+    kind: str = typer.Option("", help="Filter by kind/family: airdrop includes points; nft means nft_mint."),
+    limit: int = 15,
+    include_unqualified: bool = typer.Option(False, "--all", help="Audit view: include unqualified/refused discovery records."),
+) -> None:
+    """Qualified research candidates, or an explicit audit of retained leads."""
+    from kaiba.core.db import ensure_db
+    from kaiba.hunters.qualification import opportunity_report
 
-    conn = ensure_db()
-    sql = "SELECT kind, name, chain, status, ev_score, cost_usd FROM opportunities"
-    params: list[Any] = []
-    if kind:
-        sql += " WHERE kind = ?"
-        params.append(kind)
-    sql += " ORDER BY COALESCE(ev_score, -1e9) DESC LIMIT ?"
-    params.append(limit)
-    rows = fetch_all(conn, sql, params)
+    report = opportunity_report(ensure_db(), kind=kind or None, limit=limit,
+                                include_unqualified=include_unqualified)
+    rows = report["opportunities"]
     if not rows:
-        console.print("[dim]no opportunities recorded yet; run `kaiba hunt refresh`[/dim]")
+        console.print(f"[dim]No qualified opportunities. {report['registry_count']} retained records; use --all to audit evidence gaps.[/dim]")
         return
+    if include_unqualified:
+        console.print("[yellow]Audit view: discovery is not qualification; EV may use unsupported assumptions.[/yellow]")
     table = Table("kind", "name", "chain", "status", "EV $", "cost $")
     for r in rows:
         ev_val = r["ev_score"]

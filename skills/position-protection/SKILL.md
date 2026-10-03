@@ -31,7 +31,7 @@ running on the venue's side.
   on the bus.
 - A position just opened and you are confirming the exits attached.
 - Liquidity on a held token dropped sharply.
-- the operator asks what is protecting a position, or asks you to close one.
+- The operator asks what is protecting a position, or asks you to close one.
 - A restart happened while positions were open (`incident-recovery` runs first).
 
 ## Procedure

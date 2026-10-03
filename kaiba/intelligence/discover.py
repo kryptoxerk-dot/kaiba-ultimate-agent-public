@@ -124,7 +124,7 @@ from kaiba.core.db import ensure_db, fetch_all, fetch_one, get_conn, jdump, jloa
 from kaiba.core.events import emit
 from kaiba.core.schemas import Chain, EventKind, EvidenceBasis, digest, now_ms
 from kaiba.ingest import tape as tape_coverage
-from kaiba.intelligence import grade
+from kaiba.intelligence import feed_tags, grade
 from kaiba.intelligence.entity import SOLO_PREFIX, _UnionFind, entity_ids_for
 from kaiba.intelligence.hubs import safe_normalize
 from kaiba.intelligence.pnl import MATH, Episode, reconstruct_wallet
@@ -2132,6 +2132,32 @@ def _feed_tags(
     conn: sqlite3.Connection, chain: Chain, addresses: Sequence[str]
 ) -> tuple[dict[str, list[str]], dict[str, str | None], set[str]]:
     """``(address -> tag union, address -> first wallet name, addresses with any feed event)``.
+
+    From the ``wallet_feed_tags`` rollup once ``feed_tags.table_ready`` (GMGN feed rows
+    only, primary-key seeks); from the ``wallet.trade`` events until then.
+    """
+    if not feed_tags.table_ready(conn):
+        return feed_tags_from_events(conn, chain, addresses)
+    tags: dict[str, list[str]] = {}
+    names: dict[str, str | None] = {}
+    seen: set[str] = set()
+    wanted = {safe_normalize(str(a), chain) for a in addresses}
+    for addr, rows in feed_tags.wallet_rows(conn, chain.value, wanted).items():
+        labels, name, on_feed = feed_tags.feed_view(rows)
+        if not on_feed:
+            continue
+        seen.add(addr)
+        tags[addr] = labels
+        if name:
+            names[addr] = name
+    return tags, names, seen
+
+
+def feed_tags_from_events(
+    conn: sqlite3.Connection, chain: Chain, addresses: Sequence[str]
+) -> tuple[dict[str, list[str]], dict[str, str | None], set[str]]:
+    """The pre-rollup reader, off the ``wallet.trade`` events. Kept for the not-yet-ready
+    path and for ``feed_tags.parity_check``, which holds it against the table.
 
     Only events that carry a ``feed`` field are feed rows; the tracker's own detections
     are ``wallet.trade`` events too and carry no vendor labels.

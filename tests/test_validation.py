@@ -31,7 +31,7 @@ from kaiba.learning.validation import Verdict
 BASE_MS = 1_700_000_000_000
 DAY_MS = 86_400_000
 WEEK_MS = 7 * DAY_MS
-SOL_TOKEN = "CJF7MNqb9xv1XrTs5St1Du5JuQXLsfFBB137vmYRKpnb"
+SOL_TOKEN = "Bnd5oBSWpPpXoaWTckgXTVx9TCKkX5GyVqxcrwBzUYsB"
 WALLET_A = "2xNweLHLqrbx4zo1waDvgWJHgsUpPj8Y8icbAFeewsMR"
 
 

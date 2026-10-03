@@ -26,7 +26,7 @@ reassuring 0%. A dossier full of unknowns is a reason to stand aside, not a clea
 
 ## When to use it
 
-- the operator asks `/scan <contract address>`.
+- The operator asks `/scan <contract address>`.
 - Any lane produced a signal and `trade-intent` needs the data step of the precedence
   chain satisfied.
 - An open position's token is behaving strangely and you want the safety picture again.
@@ -110,6 +110,14 @@ From `docs/research/02-memecoin-edge-and-risk.md`:
 
 A dossier that says "nothing wrong found" against those base rates is usually a dossier
 with unknowns in it.
+
+## Refresh-run operational checks
+
+- Batch independent dossier reads, but cap provider-backed scan concurrency. If receipts show `max inflight` or a formerly populated dossier becomes blind, record the initial blocker transition immediately and retry the affected scan once serially. Record both the transient quarantine and recovery; provider recovery is not a verified on-chain safety change.
+- Verify emitted scan records with event kind `token.scanned`; `token.dossier` is not the scan event kind. Preserve event IDs alongside the before/after blockers. An `ok:true` scan can leave the prior dossier and no event: read the exact token back, retry once serially if persistence is absent, and verify again. Serialize journal appends to avoid database-lock failures; after a lock error read back before retrying to avoid duplicates.
+- Treat a capped recent-signal response as a snapshot, not exhaustive active-candidate coverage. Deduplicate by chain and exact token and filter by signal expiry; document pagination limitations.
+- Validate identifier lengths with a permitted deterministic parser (for EVM-format strings, jq `test("^0x[0-9a-fA-F]{40}$")`), never visual counting. If a validation tool is blocked, report validation unknown, not malformed. Verify delegated format claims before journalling; correct erroneous journal claims append-only.
+- Keep journal entries short enough to survive the API's observed 400-character body truncation, splitting evidence across entries when needed, and read back the saved entries.
 
 ## Failure modes
 

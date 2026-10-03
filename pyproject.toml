@@ -30,7 +30,9 @@ telegram = ["telethon>=1.37"]
 # ModuleNotFoundError. Hit for real on the VPS 2026-09-21. Remove the cap only
 # together with the v2 migration.
 mcp = ["mcp>=1.2,<2"]
-signer = ["solders>=0.21", "eth-account>=0.13"]
+# cryptography: ed25519 signing of the exact Solana message bytes, and keygen/import
+# address derivation (kaiba/execution/signer.py). eth-account signs EVM transactions.
+signer = ["solders>=0.21", "eth-account>=0.13", "cryptography>=42"]
 # The production systemd profile enables all three boundaries: Telegram ingestion,
 # the FastMCP server, and the isolated signer.  Keep the focused extras above for local
 # development, but give the installer one audited target that cannot silently omit a
@@ -40,6 +42,7 @@ production = [
   "mcp>=1.2,<2",   # see the note on the `mcp` extra above
   "solders>=0.21",
   "eth-account>=0.13",
+  "cryptography>=42",
 ]
 
 [project.scripts]

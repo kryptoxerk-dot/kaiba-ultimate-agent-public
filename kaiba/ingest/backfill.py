@@ -240,6 +240,8 @@ class WalletResult:
     transfers_written: int = 0
     meta_written: int = 0
     meta_pages: int = 0
+    # Only these tokens can have changed their observed buyer ranking this pass.
+    buy_tokens: set[str] = field(default_factory=set)
     ambiguous: int = 0
     skips: Counter[str] = field(default_factory=Counter)
     credits_spent: int = 0
@@ -771,6 +773,7 @@ def backfill_wallet(
     until = cursor.get("newest_sig") if fresh else None
     started_credits = credits_used(c)
     newest_seen: str | None = None
+    forward_full = False
 
     for _ in range(max(1, pages)):
         if not _budget_room(c, _enhanced_cost()):
@@ -797,6 +800,8 @@ def backfill_wallet(
             written, duplicate = write_swaps(c, parsed.swaps)
             result.swaps_written += written
             result.swaps_duplicate += duplicate
+            if written:
+                result.buy_tokens.update(r.token for r in parsed.swaps if r.side == "buy")
             result.transfers_written += write_transfers(c, parsed.transfers)
             if with_meta:
                 result.meta_written += write_meta(c, chain, parsed.meta)
@@ -808,6 +813,9 @@ def backfill_wallet(
         if newest_seen is None and first_sig:
             newest_seen = first_sig
         if fresh:
+            # A full page means more transactions may sit between `until` and the oldest
+            # one on this page, and the cursor jumps `newest_sig` past them below.
+            forward_full = len(payload) >= page_limit
             break  # `until` already bounded the window; one page keeps the top-up cheap
         if not last_sig or last_sig == before:
             result.exhausted = True
@@ -822,7 +830,19 @@ def backfill_wallet(
         if newest_seen and (fresh or not cursor.get("newest_sig")):
             cursor["newest_sig"] = newest_seen
         cursor["pages"] = int(cursor.get("pages") or 0) + result.pages
-        cursor["exhausted"] = bool(result.exhausted)
+        if fresh:
+            # `exhausted` describes the BACKWARD walk -- whether it reached the wallet's
+            # first transaction -- and a forward top-up says nothing about that. It used to
+            # be overwritten here with the top-up's own result (False for any non-empty
+            # page), so a fully walked wallet read as truncated after its next top-up and
+            # the next backward walk paid a page to rediscover the end. The grader now reads
+            # this flag (grade.history_truncated -> the A gate), so it has to be right.
+            # A full forward page is a possible hole between the old and new `newest_sig`
+            # that nothing fills: recorded, and it counts as truncated from then on.
+            if forward_full:
+                cursor["forward_gap"] = True
+        else:
+            cursor["exhausted"] = bool(result.exhausted)
         cursor["swaps"] = int(cursor.get("swaps") or 0) + result.swaps_written
         save_cursor(c, chain, address, cursor)
 
@@ -932,7 +952,7 @@ def backfill_wallets(
     """Backfill a batch, stopping cleanly on the credit ceiling and reporting how far it got."""
     c = conn or get_conn()
     report = BackfillReport(chain=chain)
-    targets = list(wallets) if wallets else tracked_wallets(c, chain, limit=limit, cohorts=cohorts)
+    targets = list(wallets) if wallets is not None else tracked_wallets(c, chain, limit=limit, cohorts=cohorts)
     started = credits_used(c)
 
     for address in targets:
@@ -965,7 +985,12 @@ def backfill_wallets(
 
     report.credits_spent = max(0, credits_used(c) - started)
     if rebuild_buyers and not dry_run and report.swaps_written:
-        report.first_buyers_written = rebuild_first_buyers(c, chain)
+        # Re-rank all observed buyers of the touched tokens, not the whole chain.
+        # A one-wallet top-up used to rescan every buy and rewrite every first-buyer
+        # row, turning bounded provider work into an unbounded local write storm.
+        tokens = sorted({token for result in report.results for token in result.buy_tokens})
+        for start in range(0, len(tokens), 100):
+            report.first_buyers_written += rebuild_first_buyers(c, chain, tokens=tokens[start:start + 100])
     if not dry_run:
         _emit_summary(c, chain, report)
     return report

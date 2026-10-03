@@ -54,3 +54,14 @@ id_ed25519
 
 # --- scratch: timestamped editor backups ---
 *.bak-*
+
+# --- wallet secrets: private keys / seed phrases must never enter this tree ---
+# A key file must never sit in the working tree, not even untracked.
+*wallet*.txt
+*wallets*.txt
+*Wallet*.txt
+*seed*.txt
+*mnemonic*
+*private*key*
+*privkey*
+secrets/

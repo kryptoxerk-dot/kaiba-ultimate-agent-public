@@ -39,7 +39,7 @@ from kaiba.core.schemas import (
 from kaiba.execution import watchdog as wd
 from kaiba.execution.risk import RiskGate
 
-TOKEN = "CJF7MNqb9xv1XrTs5St1Du5JuQXLsfFBB137vmYRKpnb"
+TOKEN = "Bnd5oBSWpPpXoaWTckgXTVx9TCKkX5GyVqxcrwBzUYsB"
 
 #: The longest blind spell ever observed on the live box (protection_restored.blind_for_s
 #: was 4, 5, 5 and 17 s; n=4, read 2026-09-21). A budget that acts on this is a budget

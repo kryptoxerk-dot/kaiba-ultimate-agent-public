@@ -46,7 +46,7 @@ def _stop_from(entry):
     """
     return Decimal(str(entry)) * (1 - Decimal(_pcfg().stop_loss_bps) / Decimal(10000))
 
-TOKEN = "CJF7MNqb9xv1XrTs5St1Du5JuQXLsfFBB137vmYRKpnb"
+TOKEN = "Bnd5oBSWpPpXoaWTckgXTVx9TCKkX5GyVqxcrwBzUYsB"
 NATIVE = "So11111111111111111111111111111111111111112"
 ONE_SOL = 1_000_000_000
 NOW = 1_780_000_000_000

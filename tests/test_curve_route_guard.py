@@ -6,7 +6,7 @@ from kaiba.core.schemas import Chain, EvidenceBasis, now_ms
 from kaiba.execution.curve_price import CurvePriceSource
 from kaiba.execution.watchdog import PriceQuote
 
-TOKEN = "CJF7MNqb9xv1XrTs5St1Du5JuQXLsfFBB137vmYRKpnb"
+TOKEN = "Bnd5oBSWpPpXoaWTckgXTVx9TCKkX5GyVqxcrwBzUYsB"
 
 @pytest.mark.parametrize("launchpad,migrated", [("pump.fun", True), ("meteora_virtual_curve", False)])
 def test_known_non_curve_tokens_skip_pump_resolver(tmp_db, launchpad, migrated):

@@ -158,6 +158,15 @@ or saved money.
   earned a hit in thirty days retires on its own.
 - **Mode confusion.** A shadow record reported as a trade.
 
+## Nightly reflection audit safeguards
+
+- Build `mask(build_review(...)).packet` with one fixed 24-hour cutoff and verify its trade/skip counts against SQL. Group every skip by lane, mode, chain, blockers and outcome basis; do not sample only interesting rejections.
+- Check the installed implementation: `build_review` may omit attribution, and `calibration_points` may include only decisions joined to closed trades. Report these limits rather than assuming the packet implements every intended metric.
+- Separate skip-horizon maturity from coverage. `_skip_outcome` uses later realised trades, potentially from another lane or mode, not a fixed-24h price return; this proxy does not establish a filter hit rate. Last-24h skips generally have not completed their 24h horizon.
+- For Robinhood benchmark attribution, inspect `native_price.price_source_chain` before declaring benchmarks absent: the installed alias reads ETH samples. Retain endpoint timestamps/distances, match return denominations, and never treat a tiny-sample OLS beta as reliable edge.
+- Inspect `journal.append` before wrapping `apply_reflection` in a transaction. An implementation with its own unconditional `BEGIN IMMEDIATE` rejects an outer transaction. Use the supported autocommit connection, verify rollback after an error, and check exact run/lesson/rule targets before retrying to prevent duplicate writes. Do not edit journal or gate code to force the run through.
+- Retain the masked packet, validated response, audit and read-back receipt under the active profile's reports directory, not expiring scratch. Verify the exact reflection run, journal entries, playbook IDs and journal hash chain before reporting completion.
+
 ## What NOT to do
 
 - **Do not journal only the trades that closed green.**

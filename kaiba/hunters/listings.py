@@ -365,6 +365,16 @@ ANNOUNCEMENT_SOURCES: dict[str, tuple[str, str, Callable[[Any], list[ListingItem
     "bithumb": ("announcements.list", BITHUMB_ANNOUNCEMENTS_URL, parse_bithumb, False),
 }
 
+#: Pages the default sweep no longer requests, with the measurement that retired them.
+#: Their parsers stay (a supplied ``raw`` still parses), so a working route -- a proxy, a
+#: different host -- is one line to restore. Upbit and Bithumb listings still reach the
+#: registry through the BWEnews relay, which recorded both exchanges in the same week.
+DISABLED_ANNOUNCEMENT_SOURCES: dict[str, str] = {
+    "upbit": "403 from the VPS address on every call (39/day on 2026-10-01); 200 from a "
+             "residential address with the same request, so it is the IP, not the request",
+    "bithumb": "403 Cloudflare challenge from the VPS (39/day) and from a residential address",
+}
+
 
 def exchange_announcements(
     raw: dict[str, Any] | None = None, conn: sqlite3.Connection | None = None
@@ -373,6 +383,8 @@ def exchange_announcements(
     out: list[ListingItem] = []
     for name, (endpoint, url, parser, as_json) in ANNOUNCEMENT_SOURCES.items():
         if raw is not None and name not in raw:
+            continue
+        if raw is None and name in DISABLED_ANNOUNCEMENT_SOURCES:
             continue
         if raw is not None:
             body = raw[name]
@@ -452,9 +464,12 @@ def record_listing(
     return True
 
 
+#: ``cryptolisting`` left the default sweep on 2026-10-02: ``api.cryptolisting.app`` does
+#: not resolve (ConnectError "Name or service not known", 39 times on 2026-10-01) and the
+#: source had never once succeeded on the box (fail_streak 364, last_ok_ms NULL). Its
+#: parser is kept for the fixture and for a vendor that comes back.
 FEEDS: dict[str, Callable[..., list[ListingItem]]] = {
     "bwenews": bwenews_feed,
-    "cryptolisting": cryptolisting_feed,
     "exchange_announcements": exchange_announcements,
 }
 

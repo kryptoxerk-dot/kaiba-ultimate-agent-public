@@ -19,7 +19,7 @@ import httpx
 import pytest
 
 from kaiba.core import events
-from kaiba.core.schemas import Chain, EventKind
+from kaiba.core.schemas import Chain, EventKind, now_ms
 from kaiba.hunters import airdrops, listings, nft
 from kaiba.hunters.airdrops import PlanAction, RiskLevel
 from kaiba.hunters.ev import (
@@ -374,7 +374,7 @@ def test_a_dead_provider_returns_empty_and_emits_provider_error(tmp_db, monkeypa
     def boom(*a, **kw):
         raise httpx.ConnectError("connection refused")
 
-    monkeypatch.setattr(airdrops.httpx, "get", boom)
+    monkeypatch.setattr(airdrops.httpx, "stream", boom)
     assert airdrops.from_airdrops_io_telegram(conn=tmp_db) == []
     errs = provider_errors(tmp_db)
     assert errs and errs[0].payload["provider"] == "airdrops_io"
@@ -420,6 +420,13 @@ def test_a_broken_collector_does_not_stop_the_others(tmp_db):
 # ============================================================== 6. refresh + storage
 
 
+def _verified_terms():
+    """Synthetic, current research receipt for positive planner/alert controls only."""
+    return {"observed_ms": now_ms(), "official_source_verified": True,
+            "eligibility_verified": True, "value_cost_verified": True,
+            "execution_path_verified": True, "participation_open": True}
+
+
 def _rich_collector(ev_usd: str = "5000"):
     def collector(conn=None):
         return [
@@ -431,6 +438,9 @@ def _rich_collector(ev_usd: str = "5000"):
                 vested_fraction=0.0,
                 sybil_risk=SybilRisk.LOW,
                 url="https://rich.example",
+                official_url="https://rich.example",
+                chain=Chain.SOL,
+                meta={"qualification": _verified_terms()},
                 sources=["test"],
             )
         ]
@@ -444,7 +454,8 @@ def test_refresh_stores_scores_and_emits_hunter_found_once(tmp_db):
     row = tmp_db.execute("SELECT * FROM opportunities").fetchone()
     assert row["kind"] == "airdrop" and row["status"] == "open"
     assert row["ev_score"] == pytest.approx(2880.0)  # 0.9 x 5000 x 0.64
-    assert row["source"] == "test" and row["confidence"] == pytest.approx(0.45)
+    # Positive fixture now supplies official_url; the existing scorer adds 0.10.
+    assert row["source"] == "test" and row["confidence"] == pytest.approx(0.55)
     assert json.loads(row["rationale_json"])
     found = events.recent(kinds=[EventKind.HUNTER_FOUND.value], conn=tmp_db)
     assert len(found) == 1 and found[0].payload["name"] == "Rich Programme"
@@ -484,7 +495,8 @@ def test_weekly_report_is_markdown_and_shows_warnings(tmp_db):
 
 
 def _programme(**kw) -> OpportunityEvidence:
-    meta = {"requires_bridge": True, "kyc_required": True, "governance": True}
+    meta = {"requires_bridge": True, "kyc_required": True, "governance": True,
+            "qualification": _verified_terms()}
     meta.update(kw.pop("meta", {}))
     return OpportunityEvidence(
         kind=OpportunityKind.POINTS,
@@ -493,7 +505,10 @@ def _programme(**kw) -> OpportunityEvidence:
         confirmed_token=True,
         capital_required_usd=Decimal("250"),
         capital_lockup_days=30,
-        chain_hint="arbitrum",
+        chain=Chain.BASE,
+        chain_hint="base",
+        expected_value_usd=Decimal("5000"),
+        official_url="https://points.example",
         url="https://points.example",
         meta=meta,
         **kw,
@@ -674,12 +689,25 @@ def test_mint_plan_carries_the_start_slot_for_the_executor(tmp_db):
 
 
 def test_helius_mint_watch_parses_and_groups_by_candy_machine(tmp_db):
-    mints = nft.helius_mint_watch(tmp_db, payloads=fixture("helius_nft_mint.json"))
+    import base58
+    payloads = fixture("helius_nft_mint.json")
+    machine = base58.b58encode(bytes([7]) * 32).decode()
+    # The original hand-built fixture omitted the instruction discriminator and
+    # used placeholder account strings. Add the documented Core mint layout.
+    for payload in payloads[:2]:
+        payload["instructions"] = [{
+            "programId": nft.CORE_CANDY_MACHINE_PROGRAM,
+            "accounts": [machine] * 11,
+            "data": base58.b58encode(bytes([84, 175, 211, 156, 56, 250, 104, 118]) + bytes(4)).decode(),
+        }]
+    mints = nft.helius_mint_watch(tmp_db, payloads=payloads)
     assert len(mints) == 2, "two mints from one machine are one opportunity"
     by_machine = {m.candy_machine: m for m in mints}
-    cats = by_machine["CandyMach1ne111111111111111111111111111111"]
+    cats = by_machine[machine]
     assert cats.observed_mints == 2
-    assert cats.start_slot == 298_000_123  # the earliest slot we know is safe
+    assert cats.start_slot is None  # another wallet's mint is not a verified public start
+    assert cats.meta["observed_slot"] == 298_000_123
+    assert cats.launch_ms is None
     assert cats.mint_price_native == Decimal("0.5")
     assert cats.mint_price_usd is None
     assert all(not m.guards_verified for m in mints), "a webhook cannot see the guards"

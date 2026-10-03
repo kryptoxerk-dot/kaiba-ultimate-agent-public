@@ -40,8 +40,9 @@ import json
 import logging
 import re
 import sqlite3
+import time
 from collections import Counter
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from decimal import Decimal
 from pathlib import Path
@@ -49,6 +50,7 @@ from typing import TYPE_CHECKING, Any
 
 from kaiba.core.db import fetch_all, fetch_one, jdump, jload, tx
 from kaiba.core.schemas import Archetype, Chain, Grade, WalletScore, WalletTag, now_ms
+from kaiba.intelligence import feed_tags
 from kaiba.intelligence.hubs import safe_normalize
 
 if TYPE_CHECKING:  # avoids a runtime cycle: grade imports naming for the archetype
@@ -58,6 +60,16 @@ log = logging.getLogger(__name__)
 
 #: GMGN accepts at most this many rows per imported follow list.
 GMGN_CHUNK_SIZE = 2000
+
+# Operational lock bound, not a wallet-quality threshold.
+NAMING_WRITE_BATCH = 100
+
+#: The incremental pass (:func:`name_wallets_incremental`). See THRESHOLD_PROVENANCE.
+INCREMENTAL_CHUNK_WALLETS = 300
+INCREMENTAL_MAX_WALLETS = 6000
+INCREMENTAL_ID_WINDOW = 500
+INCREMENTAL_TAGS_LAG_MS = 120_000
+INCREMENTAL_MAX_TAPE_LAG_IDS = 54_000
 
 #: Exactly the keys GMGN round-trips in its follow-list export, in its own order.
 GMGN_ROW_KEYS: tuple[str, ...] = (
@@ -449,6 +461,23 @@ GRADED_LETTERS: frozenset[str] = frozenset({Grade.A.value, Grade.B.value, Grade.
 
 #: Every numeric knob in this module says where it came from. A test asserts coverage.
 THRESHOLD_PROVENANCE: dict[str, str] = {
+    "NAMING_WRITE_BATCH": "OPERATIONAL. Release the SQLite writer between 100-row name batches.",
+    "INCREMENTAL_CHUNK_WALLETS": "OPERATIONAL. Wallets per fact read + cursor commit; a kill or a deadline "
+    "loses at most one chunk. MEASURED 2026-10-02 on the box: ~5.5 ms of reads per wallet warm, ~230 ms "
+    "under 95% IO pressure -- 300 is ~2 s warm and ~70 s at the worst measured, inside one run's budget.",
+    "FACT_BATCH": "OPERATIONAL. Addresses per IN-list read, and how often the deadline is checked: ~25 s "
+    "of reads at the worst measured 230 ms a wallet, inside the 30 s the job keeps before its timeout.",
+    "INCREMENTAL_MAX_WALLETS": "OPERATIONAL. Per-run cap. MEASURED 2026-10-02: 17,291 distinct wallets "
+    "traded in one hour on the box, ~4.3k per 15-minute run; 6,000 leaves room for a backlog.",
+    "INCREMENTAL_ID_WINDOW": "OPERATIONAL. Change-feed ids read per step: ~160 wallets of swaps (MEASURED "
+    "17,291 wallets per 54,203 swaps in an hour), so a chunk overshoots its size by at most that.",
+    "INCREMENTAL_MAX_TAPE_LAG_IDS": "OPERATIONAL. MEASURED 2026-10-02: 54,203 swaps an hour on the box, "
+    "5,450 distinct wallets in 15 minutes, and ~0.4 s of tape reads per wallet under the box's usual 80-90% "
+    "IO pressure -- the tape feed cannot keep up there, so its lag is capped at ~1 h and the rest skipped, "
+    "counted, instead of growing without end. An active wallet trades again and is picked up then.",
+    "INCREMENTAL_TAGS_LAG_MS": "OPERATIONAL. A wallet_feed_tags row is read only once it is this much "
+    "older than now, so a writer transaction still open when the cursor moves past its time is not "
+    "skipped. Writer transactions are milliseconds; two minutes is margin.",
     "GMGN_CHUNK_SIZE": "OPERATIONAL. GMGN silently truncates a follow-list import above 2,000 rows.",
     "KOL_FOLLOWER_FLOOR": "INVENTED, inherited from the grade.mjs scorer. Never swept against outcomes.",
     "INSIDER_TOKEN_FLOOR": "INVENTED, inherited from wallet-grading/05_metrics.py. Never swept.",
@@ -512,6 +541,7 @@ class NamingReport:
     updated: int = 0
     unchanged: int = 0
     skipped_unknown_chain: int = 0
+    concurrent_skipped: int = 0
     by_archetype: dict[str, int] = field(default_factory=dict)
     by_chain: dict[str, int] = field(default_factory=dict)
     by_basis: dict[str, int] = field(default_factory=dict)
@@ -532,6 +562,7 @@ class NamingReport:
             "updated": self.updated,
             "unchanged": self.unchanged,
             "skipped_unknown_chain": self.skipped_unknown_chain,
+            "concurrent_skipped": self.concurrent_skipped,
             "by_archetype": dict(sorted(self.by_archetype.items())),
             "by_chain": dict(sorted(self.by_chain.items())),
             "by_basis": dict(sorted(self.by_basis.items())),
@@ -863,29 +894,31 @@ def gather_facts(
             f.sources[source] = f.sources.get(source, 0) + int(row["n"])
 
     # 2. GMGN cohort labels. They ride on the wallet.trade events (``feed`` marks a GMGN
-    #    row); the swaps table never stored them.
-    event_where = " AND chain = ?" if chain is not None else ""
-    for row in fetch_all(
-        conn,
-        "SELECT chain, subject, payload FROM events WHERE kind = 'wallet.trade' "
-        f"AND payload LIKE '%\"feed\":\"%'{event_where}",
-        params,
-    ):
-        payload = jload(row["payload"], {})
-        if not isinstance(payload, dict):
-            continue
-        f = get(row["chain"] or payload.get("chain"), row["subject"] or payload.get("wallet"))
-        if f is None:
-            continue
-        feed = payload.get("feed")
-        if feed:
-            f.gmgn_feeds[str(feed)] = f.gmgn_feeds.get(str(feed), 0) + 1
-        tags = payload.get("tags") or []
-        if isinstance(tags, list):
-            for tag in tags:
-                label = str(tag).strip().lower()
-                if label:
-                    f.gmgn_tags[label] = f.gmgn_tags.get(label, 0) + 1
+    #    row); the swaps table never stored them. Once feed_tags.table_ready, the
+    #    wallet_feed_tags rollup holds them and this is a scan of that small table instead
+    #    of a LIKE over every wallet.trade event (the 2026-09-24..10-02 timeouts).
+    if feed_tags.table_ready(conn):
+        by_wallet: dict[tuple[str, str], list[feed_tags.TagRow]] = {}
+        for tag_row in feed_tags.chain_rows(conn, chain.value if chain is not None else None, gmgn_only=True):
+            by_wallet.setdefault((tag_row.chain, tag_row.address), []).append(tag_row)
+        for (raw_chain, address), tag_rows in by_wallet.items():
+            f = get(raw_chain, address)
+            if f is not None:
+                _add_gmgn_counts(f, *feed_tags.naming_counts(tag_rows))
+    else:
+        event_where = " AND chain = ?" if chain is not None else ""
+        for row in fetch_all(
+            conn,
+            "SELECT chain, subject, payload FROM events WHERE kind = 'wallet.trade' "
+            f"AND payload LIKE '%\"feed\":\"%'{event_where}",
+            params,
+        ):
+            payload = jload(row["payload"], {})
+            if not isinstance(payload, dict):
+                continue
+            f = get(row["chain"] or payload.get("chain"), row["subject"] or payload.get("wallet"))
+            if f is not None:
+                _add_gmgn_payload(f, payload)
 
     # 3. entity membership.
     member_where = " WHERE m.chain = ?" if chain is not None else ""
@@ -933,6 +966,173 @@ def gather_facts(
     return facts, skipped
 
 
+def _add_gmgn_payload(f: WalletFacts, payload: Mapping[str, Any]) -> None:
+    """One feed event's contribution, exactly as the pre-rollup reader counted it."""
+    feed = payload.get("feed")
+    if feed:
+        f.gmgn_feeds[str(feed)] = f.gmgn_feeds.get(str(feed), 0) + 1
+    tags = payload.get("tags") or []
+    if isinstance(tags, list):
+        for tag in tags:
+            label = str(tag).strip().lower()
+            if label:
+                f.gmgn_tags[label] = f.gmgn_tags.get(label, 0) + 1
+
+
+def _add_gmgn_counts(f: WalletFacts, tags: Mapping[str, int], feeds: Mapping[str, int]) -> None:
+    for label, n in tags.items():
+        f.gmgn_tags[label] = f.gmgn_tags.get(label, 0) + int(n)
+    for feed, n in feeds.items():
+        f.gmgn_feeds[feed] = f.gmgn_feeds.get(feed, 0) + int(n)
+
+
+def gmgn_counts_from_events(
+    conn: sqlite3.Connection, chain: Chain, address: str
+) -> tuple[dict[str, int], dict[str, int]]:
+    """``(gmgn_tags, gmgn_feeds)`` for one wallet off its ``wallet.trade`` events, the way
+    :func:`gather_facts` read them before the rollup. ``feed_tags.parity_check`` holds this
+    against the table; the incremental pass uses it until the table is ready."""
+    f = WalletFacts(chain=chain, address=address)
+    for row in conn.execute(feed_tags.WALLET_EVENTS_SQL, (address, chain.value, feed_tags.PARITY_MAX_EVENTS)):
+        text = row[4] if isinstance(row[4], str) else ""
+        if '"feed":"' not in text:
+            continue
+        payload = jload(text, {})
+        if isinstance(payload, dict):
+            _add_gmgn_payload(f, payload)
+    return f.gmgn_tags, f.gmgn_feeds
+
+
+class NamingOutOfTime(Exception):
+    """:func:`gather_facts_for` passed its deadline between two batches. Nothing was written."""
+
+
+#: Addresses per IN-list read in :func:`gather_facts_for`; also the deadline's granularity.
+FACT_BATCH = 100
+
+
+def gather_facts_for(
+    conn: sqlite3.Connection,
+    keys: Iterable[tuple[str, str]],
+    *,
+    swaps_for: Callable[[WalletFacts], bool] | None = None,
+    deadline_ms: int | None = None,
+    clock: Callable[[], float] = time.time,
+) -> dict[tuple[str, str], WalletFacts]:
+    """The :class:`WalletFacts` :func:`gather_facts` would build, for these wallets only.
+
+    Every read is an index seek on the wallet (``idx_swaps_wallet``, the primary keys of
+    ``wallets`` / ``wallet_scores`` / ``entity_members`` / ``wallet_feed_tags``,
+    ``idx_token_bundle_members_address``, ``idx_tokens_creator``), :data:`FACT_BATCH`
+    addresses at a time. ``keys`` are ``(chain, address)``; addresses are normalised here.
+    A wallet whose rows are stored under another spelling (a mixed-case EVM address) is not
+    found by these seeks -- MEASURED 2026-10-02, every EVM address in the box's swaps and
+    feed events is lower-case, so this is a documented limit, not a live gap.
+
+    The swaps aggregate is the one expensive read: it touches every trade the wallet ever
+    made, scattered across the table (MEASURED on the box 2026-10-02: ~5 ms a wallet
+    warm, ~230 ms under 95% IO pressure). ``swaps_for(facts)``, given the cheap facts,
+    says whether a wallet needs it; a wallet it refuses keeps ``observed_* = None``.
+    ``deadline_ms`` is checked before every batch; past it, :class:`NamingOutOfTime`.
+    """
+    facts: dict[tuple[str, str], WalletFacts] = {}
+    by_chain: dict[str, list[str]] = {}
+    for raw_chain, address in keys:
+        ch = _chain_or_none(raw_chain)
+        if ch is None or not address:
+            continue
+        key = _key(ch, address)
+        if key not in facts:
+            facts[key] = WalletFacts(chain=ch, address=key[1])
+            by_chain.setdefault(ch.value, []).append(key[1])
+    ready = feed_tags.table_ready(conn)
+
+    def batches(items: Sequence[str]) -> Iterable[tuple[Sequence[str], str, tuple[Any, ...]]]:
+        for i in range(0, len(items), FACT_BATCH):
+            if deadline_ms is not None and int(clock() * 1000) >= deadline_ms:
+                raise NamingOutOfTime(f"deadline passed with {len(items) - i} of {len(items)} addresses unread")
+            batch = items[i : i + FACT_BATCH]
+            yield batch, ",".join("?" for _ in batch), (ch, *batch)
+
+    for ch, addresses in by_chain.items():
+        # 1. the cheap facts: registry row, labels, entity, launch roles, grade, creations
+        for batch, marks, args in batches(addresses):
+            for row in fetch_all(conn, f"SELECT * FROM wallets WHERE chain = ? AND address IN ({marks})", args):
+                facts[(ch, row["address"])].existing = dict(row)
+            if ready:
+                for address, tag_rows in feed_tags.wallet_rows(conn, ch, batch).items():
+                    gmgn = [r for r in tag_rows if r.is_gmgn]
+                    if gmgn and (ch, address) in facts:
+                        _add_gmgn_counts(facts[(ch, address)], *feed_tags.naming_counts(gmgn))
+            for row in fetch_all(
+                conn,
+                "SELECT m.address AS address, m.entity_id AS entity_id, e.size AS size FROM entity_members m "
+                f"JOIN entities e ON e.entity_id = m.entity_id WHERE m.chain = ? AND m.address IN ({marks})",
+                args,
+            ):
+                f = facts[(ch, row["address"])]
+                f.entity_id = str(row["entity_id"])
+                f.entity_size = int(row["size"]) if row["size"] is not None else None
+            for row in fetch_all(
+                conn,
+                "SELECT address, role, COUNT(DISTINCT token) AS n FROM token_bundle_members "
+                f"WHERE chain = ? AND address IN ({marks}) GROUP BY address, role",
+                args,
+            ):
+                facts[(ch, row["address"])].bundle_roles[str(row["role"])] = int(row["n"])
+            for row in fetch_all(
+                conn,
+                f"SELECT address, archetype, grade FROM wallet_scores WHERE chain = ? AND address IN ({marks})",
+                args,
+            ):
+                f = facts[(ch, row["address"])]
+                f.score_archetype = str(row["archetype"]) if row["archetype"] else None
+                f.grade = str(row["grade"]) if row["grade"] else None
+            for row in fetch_all(
+                conn,
+                f"SELECT creator, COUNT(*) AS n FROM tokens WHERE chain = ? AND creator IN ({marks}) "
+                "GROUP BY creator",
+                args,
+            ):
+                facts[(ch, row["creator"])].created_tokens = int(row["n"])
+        # 2. the tape, only where it is wanted
+        tape = [a for a in addresses if swaps_for is None or swaps_for(facts[(ch, a)])]
+        for _batch, marks, args in batches(tape):
+            for row in fetch_all(
+                conn,
+                "SELECT wallet, COUNT(*) AS n, SUM(side = 'buy') AS buys, SUM(side = 'sell') AS sells, "
+                "COUNT(DISTINCT token) AS tokens, MIN(ts_ms) AS first_ms, MAX(ts_ms) AS last_ms "
+                f"FROM swaps WHERE chain = ? AND wallet IN ({marks}) GROUP BY wallet",
+                args,
+            ):
+                f = facts[(ch, row["wallet"])]
+                f.observed_buys = (f.observed_buys or 0) + int(row["buys"] or 0)
+                f.observed_sells = (f.observed_sells or 0) + int(row["sells"] or 0)
+                f.observed_tokens = max(f.observed_tokens or 0, int(row["tokens"] or 0))
+                f.first_seen_ms = _min_opt(f.first_seen_ms, row["first_ms"])
+                f.last_seen_ms = _max_opt(f.last_seen_ms, row["last_ms"])
+            for row in fetch_all(
+                conn,
+                f"SELECT wallet, source, COUNT(*) AS n FROM swaps WHERE chain = ? AND wallet IN ({marks}) "
+                "GROUP BY wallet, source",
+                args,
+            ):
+                f = facts[(ch, row["wallet"])]
+                f.sources[str(row["source"])] = f.sources.get(str(row["source"]), 0) + int(row["n"])
+        if not ready:
+            # Before the rollup is ready the labels are only on the events. Every feed event
+            # comes with a gmgn:* swaps row for the same wallet (gmgn_feeds.write_swap inserts
+            # the swap first, INSERT OR IGNORE), so only those wallets' events are read -- not
+            # the robinhood wallets, every one of whose trades is also a wallet.trade event.
+            for address in tape:
+                if deadline_ms is not None and int(clock() * 1000) >= deadline_ms:
+                    raise NamingOutOfTime("deadline passed while reading labels off the events")
+                f = facts[(ch, address)]
+                if any(src.startswith(feed_tags.GMGN_PREFIX) for src in f.sources):
+                    _add_gmgn_counts(f, *gmgn_counts_from_events(conn, f.chain, address))
+    return facts
+
+
 # ------------------------------------------------------------------ writing
 
 
@@ -961,6 +1161,9 @@ def name_wallets(
     ``tags_json``, ``meta_json`` and the seen timestamps move, and tags only ever grow.
     ``dry_run`` computes everything and writes nothing, which is how it runs against the
     live database.
+
+    This is the FULL pass: a GROUP BY over all of ``swaps``. The scheduled job runs
+    :func:`name_wallets_incremental`; this stays for the CLI and a deliberate rebuild.
     """
     stamp = now if now is not None else now_ms()
     facts, skipped = gather_facts(conn, chain)
@@ -971,12 +1174,47 @@ def name_wallets(
 
     report = NamingReport(dry_run=dry_run, wallets_before=before, wallets_after=before)
     report.skipped_unknown_chain = skipped
+    sample_buckets: dict[str, list[str]] = {}
+    inserts, updates, _ = _plan(facts, stamp, report, sample_buckets, samples_per_archetype)
+    report.samples = [n for word in ARCHETYPE_PRECEDENCE for n in sample_buckets.get(word, [])]
+
+    if dry_run:
+        report.wallets_after = before + report.inserted
+        return report
+
+    _write(conn, inserts, updates, report)
+    after_row = fetch_one(conn, f"SELECT COUNT(*) AS n FROM wallets{where}", params)
+    report.wallets_after = int(after_row["n"]) if after_row else before + report.inserted
+    log.info(
+        "named %d wallets (%d new, %d updated, %d unchanged) chain=%s",
+        report.considered, report.inserted, report.updated, report.unchanged,
+        chain.value if chain else "all",
+    )
+    return report
+
+
+def _plan(
+    facts: Mapping[tuple[str, str], WalletFacts],
+    stamp: int,
+    report: NamingReport,
+    sample_buckets: dict[str, list[str]],
+    samples_per_archetype: int,
+    *,
+    skip_new: Callable[[WalletFacts], bool] | None = None,
+) -> tuple[list[tuple[Any, ...]], list[tuple[Any, ...]], int]:
+    """``(inserts, updates, new wallets skipped)``: what writing these facts would change.
+
+    ``skip_new(facts)`` true leaves a wallet with no registry row out entirely (counted,
+    not named, not in ``report``) -- the incremental pass's swap-only rule.
+    """
     inserts: list[tuple[Any, ...]] = []
     updates: list[tuple[Any, ...]] = []
-    sample_buckets: dict[str, list[str]] = {}
-
+    skipped_new = 0
     for key in sorted(facts):
         f = facts[key]
+        if f.existing is None and skip_new is not None and skip_new(f):
+            skipped_new += 1
+            continue
         name = registry_name(f)
         tags = registry_tags(f)
         meta = registry_meta(f, name, tags)
@@ -1024,34 +1262,344 @@ def name_wallets(
         if same:
             report.unchanged += 1
             continue
-        updates.append((name, tags_json, meta_json, first, last, f.chain.value, f.address))
+        # The read phase can outlive another registry writer. Compare the fields
+        # we replace atomically; a changed row waits for the next naming pass.
+        updates.append((name, tags_json, meta_json, first, last, f.chain.value, f.address,
+                        ex.get("name"), ex.get("tags_json"), ex.get("meta_json"),
+                        ex.get("first_seen_ms"), ex.get("last_seen_ms")))
         report.updated += 1
+    return inserts, updates, skipped_new
 
-    report.samples = [n for word in ARCHETYPE_PRECEDENCE for n in sample_buckets.get(word, [])]
 
-    if dry_run:
-        report.wallets_after = before + report.inserted
-        return report
-
-    with tx(conn):
-        if inserts:
-            conn.executemany(
+def _write(
+    conn: sqlite3.Connection,
+    inserts: Sequence[tuple[Any, ...]],
+    updates: Sequence[tuple[Any, ...]],
+    report: NamingReport,
+) -> None:
+    for start in range(0, len(inserts), NAMING_WRITE_BATCH):
+        with tx(conn):
+            written = conn.executemany(
                 "INSERT INTO wallets (chain, address, name, source, tags_json, first_seen_ms, "
-                "last_seen_ms, meta_json) VALUES (?,?,?,?,?,?,?,?)",
-                inserts,
-            )
-        if updates:
-            conn.executemany(
+                "last_seen_ms, meta_json) VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(chain, address) DO NOTHING",
+                inserts[start:start + NAMING_WRITE_BATCH],
+            ).rowcount
+            skipped = len(inserts[start:start + NAMING_WRITE_BATCH]) - written
+            report.inserted -= skipped
+            report.concurrent_skipped += skipped
+    for start in range(0, len(updates), NAMING_WRITE_BATCH):
+        with tx(conn):
+            written = conn.executemany(
                 "UPDATE wallets SET name = ?, tags_json = ?, meta_json = ?, first_seen_ms = ?, "
-                "last_seen_ms = ? WHERE chain = ? AND address = ?",
-                updates,
-            )
-    after_row = fetch_one(conn, f"SELECT COUNT(*) AS n FROM wallets{where}", params)
-    report.wallets_after = int(after_row["n"]) if after_row else before + report.inserted
+                "last_seen_ms = ? WHERE chain = ? AND address = ? "
+                "AND name IS ? AND tags_json IS ? AND meta_json IS ? "
+                "AND first_seen_ms IS ? AND last_seen_ms IS ?",
+                updates[start:start + NAMING_WRITE_BATCH],
+            ).rowcount
+            skipped = len(updates[start:start + NAMING_WRITE_BATCH]) - written
+            report.updated -= skipped
+            report.concurrent_skipped += skipped
+
+
+# ------------------------------------------------------------------ incremental
+
+#: kv key of :func:`name_wallets_incremental`'s cursors, one per change feed.
+INCREMENTAL_STATE_KEY = "naming:incremental"
+
+#: The change feeds, in the order a run spends its budget on them: the evidence that
+#: moves a NAME first (vendor labels, grades, launch roles, entities, created tokens), the
+#: tape last. The tape is ~17k wallets an hour; the rest together are a few hundred.
+INCREMENTAL_SOURCES: tuple[str, ...] = ("tags", "grades", "bundles", "entities", "creators", "swaps")
+
+#: ``feed -> (table, id column, wallet column, extra predicate)`` for the id-ordered feeds.
+#: ``wallet_score_history`` is written only when a grade moved (grade._history_moved), so
+#: its id is a change feed for ``wallet_scores``. ``entity_members`` and
+#: ``token_bundle_members`` are rewritten by delete + insert, so a changed membership gets a
+#: new rowid; a REMOVED member gets none and keeps its old entity until something else
+#: about it changes (the full pass is the remedy, and clustering is disabled on the box).
+_ID_FEEDS: dict[str, tuple[str, str, str, str]] = {
+    "grades": ("wallet_score_history", "id", "address", ""),
+    "bundles": ("token_bundle_members", "rowid", "address", ""),
+    "entities": ("entity_members", "rowid", "address", ""),
+    "creators": ("tokens", "rowid", "creator", " AND creator IS NOT NULL AND creator != ''"),
+    "swaps": ("swaps", "id", "wallet", ""),
+}
+
+
+@dataclass
+class IncrementalReport:
+    dry_run: bool
+    naming: NamingReport
+    chunks: int = 0
+    wallets: int = 0
+    skipped_swap_only_new: int = 0
+    stopped: str | None = None
+    tags_source: str = "events"
+    sources: dict[str, dict[str, Any]] = field(default_factory=dict)
+    elapsed_s: float = 0.0
+
+    def as_dict(self) -> dict[str, Any]:
+        out = self.naming.as_dict()
+        out.pop("wallets_before", None)
+        out.pop("wallets_after", None)
+        out.update(
+            mode="incremental", chunks=self.chunks, wallets=self.wallets,
+            skipped_swap_only_new=self.skipped_swap_only_new, stopped=self.stopped,
+            tags_source=self.tags_source, sources=self.sources, elapsed_s=round(self.elapsed_s, 2),
+        )
+        return out
+
+
+def _swap_only(f: WalletFacts) -> bool:
+    """Nothing but trades: no label, feed, launch role, entity, grade or created token."""
+    return not (f.gmgn_tags or f.gmgn_feeds or f.bundle_roles or f.entity_id or f.grade
+                or f.score_archetype or f.created_tokens)
+
+
+def _id_head(conn: sqlite3.Connection, table: str, col: str) -> int:
+    row = conn.execute(f"SELECT max({col}) FROM {table}").fetchone()
+    return int(row[0]) if row and row[0] is not None else 0
+
+
+def _id_chunk(
+    conn: sqlite3.Connection, feed: str, cursor: int, head: int, want: int, window: int
+) -> tuple[list[tuple[str, str]], int]:
+    """Wallets touched in ``(cursor, c]`` of one id feed, ``c`` advanced a window at a
+    time until ``want`` wallets or the head. Rowid ranges: bounded, never a scan."""
+    table, col, wallet_col, extra = _ID_FEEDS[feed]
+    keys: dict[tuple[str, str], None] = {}
+    c = int(cursor)
+    while c < head and len(keys) < want:
+        hi = min(int(head), c + max(1, int(window)))
+        for raw_chain, address in conn.execute(
+            f"SELECT chain, {wallet_col} FROM {table} WHERE {col} > ? AND {col} <= ?{extra}", (c, hi)
+        ):
+            ch = _chain_or_none(raw_chain)
+            if ch is not None and address:
+                keys.setdefault(_key(ch, address), None)
+        c = hi
+    return list(keys), c
+
+
+def _tags_chunk(
+    conn: sqlite3.Connection, cursor_ms: int, upper_ms: int, want: int
+) -> tuple[list[tuple[str, str]], int]:
+    """Up to ``want`` wallets whose ``wallet_feed_tags`` rows moved in ``(cursor_ms, c]``.
+
+    ``last_ms`` is not unique, so the cursor only ever stops at an instant whose rows have
+    ALL been taken: a page that ends inside an instant stops before it, and an instant
+    with more rows than a page is taken whole (the one case that may exceed ``want``).
+    """
+    if cursor_ms >= upper_ms:
+        return [], cursor_ms
+    limit = max(1, int(want)) * 4  # a wallet is a handful of rows (membership + labels)
+    rows = conn.execute(
+        "SELECT chain, address, last_ms FROM wallet_feed_tags WHERE last_ms > ? AND last_ms <= ? "
+        "ORDER BY last_ms LIMIT ?",
+        (int(cursor_ms), int(upper_ms), limit + 1),
+    ).fetchall()
+    keys: dict[tuple[str, str], None] = {}
+
+    def key_of(raw_chain: Any, address: Any) -> tuple[str, str] | None:
+        ch = _chain_or_none(raw_chain)
+        return _key(ch, address) if ch is not None and address else None
+
+    stop_at: int | None = None
+    for i, (raw_chain, address, _) in enumerate(rows):
+        if i == limit:
+            stop_at = i
+            break
+        k = key_of(raw_chain, address)
+        if k is not None and k not in keys and len(keys) >= want:
+            stop_at = i
+            break
+        if k is not None:
+            keys.setdefault(k, None)
+    if stop_at is None:
+        return list(keys), int(upper_ms)
+    instant = int(rows[stop_at][2])
+    finished = [int(r[2]) for r in rows[:stop_at] if int(r[2]) < instant]
+    if finished:
+        return list(keys), max(finished)
+    for raw_chain, address, _ in conn.execute(
+        "SELECT chain, address, last_ms FROM wallet_feed_tags WHERE last_ms = ?", (instant,)
+    ):
+        k = key_of(raw_chain, address)
+        if k is not None:
+            keys.setdefault(k, None)
+    return list(keys), instant
+
+
+def _load_incremental_state(conn: sqlite3.Connection) -> dict[str, Any]:
+    row = conn.execute("SELECT value FROM kv WHERE key = ?", (INCREMENTAL_STATE_KEY,)).fetchone()
+    if row is None:
+        return {}
+    value = jload(row[0], {})
+    return value if isinstance(value, dict) else {}
+
+
+def _save_incremental_state(conn: sqlite3.Connection, state: Mapping[str, Any], now: int) -> None:
+    with tx(conn):
+        conn.execute(
+            "INSERT INTO kv (key, value, updated_ms) VALUES (?,?,?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_ms = excluded.updated_ms",
+            (INCREMENTAL_STATE_KEY, jdump(dict(state)), int(now)),
+        )
+
+
+def name_wallets_incremental(
+    conn: sqlite3.Connection,
+    *,
+    dry_run: bool = False,
+    max_wallets: int = INCREMENTAL_MAX_WALLETS,
+    chunk_wallets: int = INCREMENTAL_CHUNK_WALLETS,
+    id_window: int = INCREMENTAL_ID_WINDOW,
+    lag_ms: int = INCREMENTAL_TAGS_LAG_MS,
+    insert_swap_only: bool = False,
+    deadline_ms: int | None = None,
+    clock: Callable[[], float] = time.time,
+    start: Mapping[str, int] | None = None,
+    samples_per_archetype: int = 1,
+    max_tape_lag_ids: int | None = INCREMENTAL_MAX_TAPE_LAG_IDS,
+) -> IncrementalReport:
+    """Re-name only the wallets whose evidence changed since the last run.
+
+    Six change feeds (:data:`INCREMENTAL_SOURCES`), each with its own cursor in kv
+    (:data:`INCREMENTAL_STATE_KEY`): ``wallet_feed_tags.last_ms`` for vendor labels, and the
+    ids of ``wallet_score_history``, ``token_bundle_members``, ``entity_members``,
+    ``tokens`` (creators) and ``swaps``. A run takes chunks of up to ``chunk_wallets``
+    wallets, reads their facts by index seeks (:func:`gather_facts_for`), writes the
+    changed names, and only THEN commits the feed's cursor -- so a run killed at any point
+    loses at most the chunk in hand, and the next run picks it up again. It stops before a
+    new chunk once ``max_wallets`` is reached (so a run may end up to one chunk, or one id
+    window's wallets, past it) or ``deadline_ms`` has passed, and reports each feed's lag.
+
+    The first run starts every id feed at its current head (wallets whose evidence last
+    moved before then keep the name they have; :func:`name_wallets` is the full rebuild)
+    and the label feed at 0, since the whole table is new. When the feed_tags backfill
+    completes, the label cursor is reset to 0 once, so the old labels it rolled up are
+    named too.
+
+    The tape feed (``swaps``) is last and the only high-volume one. Its lag is capped at
+    ``max_tape_lag_ids``: a run that finds it further behind skips ahead and reports the
+    skipped ids (``skipped_ahead_ids``) -- on an IO-saturated box the alternative is a lag
+    that grows for ever. The other feeds are never skipped.
+
+    ``insert_swap_only`` false (the default) does not CREATE a registry row for a wallet
+    whose only evidence is trades -- ``unknown#xxxxxx`` or ``sell-only#xxxxxx`` with no
+    label, role, entity, grade or created token. MEASURED 2026-10-02: 4,770 of the 17,291
+    wallets that traded in one hour had no ``wallets`` row; inserting them is ~115k rows a
+    day at ~470 B of name, tags and meta each. Existing rows are always kept up to date.
+    """
+    if conn.in_transaction:
+        raise RuntimeError("name_wallets_incremental needs a connection with no open transaction")
+    t0 = clock()
+    stamp = int(t0 * 1000)
+    deadline = int(deadline_ms) if deadline_ms is not None else stamp + 240_000
+    report = IncrementalReport(dry_run=dry_run, naming=NamingReport(dry_run=dry_run, wallets_before=-1,
+                                                                     wallets_after=-1))
+    has_table = feed_tags.table_exists(conn)
+    ready_now = feed_tags.table_ready(conn)
+    report.tags_source = "wallet_feed_tags" if ready_now else "events"
+    heads = {feed: _id_head(conn, table, col) for feed, (table, col, _, _) in _ID_FEEDS.items()}
+    upper_ms = stamp - int(lag_ms)
+    state = _load_incremental_state(conn)
+    if not state:
+        state = {feed: heads[feed] for feed in _ID_FEEDS}
+        state["tags"] = 0
+        state["created_ms"] = stamp
+        state.update({k: int(v) for k, v in (start or {}).items()})
+        if not dry_run:  # the starting line is fixed now, whatever happens to this run
+            _save_incremental_state(conn, state, stamp)
+    before = dict(state)
+    backfill = feed_tags.backfill_state(conn) if has_table else {}
+    rewound = bool(backfill.get("complete") and backfill.get("completed_ms")
+                   and state.get("tags_reset_for") != backfill.get("completed_ms"))
+    if rewound:
+        state["tags"] = 0
+        state["tags_reset_for"] = backfill.get("completed_ms")
+    skip_new = None if insert_swap_only else _swap_only
+
+    def swaps_for(f: WalletFacts) -> bool:
+        # A wallet with no registry row and nothing but trades would be skipped by _plan
+        # anyway; do not pay for its whole tape to find that out. Before the label table is
+        # ready its labels may still be only on the events, so read everyone then.
+        return insert_swap_only or f.existing is not None or not _swap_only(f) or not ready_now
+    sample_buckets: dict[str, list[str]] = {}
+    # A wallet is named at most once a run. Safe: every feed reads only up to a head (or a
+    # time) taken BEFORE the first fact read, so the facts read for a wallet already hold
+    # every change a later feed of the same run could report for it.
+    named: set[tuple[str, str]] = set()
+
+    for feed in INCREMENTAL_SOURCES:
+        src: dict[str, Any] = {"cursor_before": before.get(feed), "chunks": 0, "wallets": 0}
+        if feed == "tags" and rewound:
+            src["rewound_for_backfill"] = True
+        report.sources[feed] = src
+        if feed == "tags" and not has_table:
+            src["skipped"] = "no_table"
+            continue
+        if feed == "swaps" and max_tape_lag_ids is not None:
+            behind = heads["swaps"] - int(state.get("swaps") or 0)
+            if behind > int(max_tape_lag_ids):
+                skipped = behind - int(max_tape_lag_ids)
+                state["swaps"] = heads["swaps"] - int(max_tape_lag_ids)
+                state["swaps_skipped_total"] = int(state.get("swaps_skipped_total") or 0) + skipped
+                src["skipped_ahead_ids"] = skipped
+                if not dry_run:
+                    _save_incremental_state(conn, state, int(clock() * 1000))
+        while report.stopped is None:
+            if report.wallets >= max_wallets:
+                report.stopped = "max_wallets"
+                break
+            if int(clock() * 1000) >= deadline:
+                report.stopped = "deadline"
+                break
+            want = max(1, min(int(chunk_wallets), int(max_wallets) - report.wallets))
+            if feed == "tags":
+                keys, new_cursor = _tags_chunk(conn, int(state.get("tags") or 0), upper_ms, want)
+                done = new_cursor >= upper_ms
+            else:
+                keys, new_cursor = _id_chunk(conn, feed, int(state.get(feed) or 0), heads[feed], want, id_window)
+                done = new_cursor >= heads[feed]
+            keys = [k for k in keys if k not in named]
+            if keys:
+                try:
+                    facts = gather_facts_for(conn, keys, swaps_for=swaps_for, deadline_ms=deadline, clock=clock)
+                except NamingOutOfTime:
+                    report.stopped = "deadline_mid_chunk"  # nothing written, cursor not moved
+                    break
+                named.update(facts)
+                inserts, updates, skipped_new = _plan(
+                    facts, stamp, report.naming, sample_buckets, samples_per_archetype, skip_new=skip_new)
+                report.skipped_swap_only_new += skipped_new
+                if not dry_run:
+                    _write(conn, inserts, updates, report.naming)
+                report.chunks += 1
+                report.wallets += len(facts)
+                src["chunks"] += 1
+                src["wallets"] += len(facts)
+            state[feed] = new_cursor
+            if not dry_run:
+                _save_incremental_state(conn, state, int(clock() * 1000))
+            if done:
+                break
+        if report.stopped is not None:
+            break
+
+    for feed in INCREMENTAL_SOURCES:
+        src = report.sources.setdefault(feed, {"cursor_before": before.get(feed), "chunks": 0, "wallets": 0})
+        src["cursor_after"] = state.get(feed)
+        if feed == "tags":
+            src["lag_ms"] = max(0, upper_ms - int(state.get("tags") or 0)) if has_table else None
+        else:
+            src["lag_ids"] = max(0, heads[feed] - int(state.get(feed) or 0))
+    report.naming.samples = [n for word in ARCHETYPE_PRECEDENCE for n in sample_buckets.get(word, [])]
+    report.elapsed_s = clock() - t0
     log.info(
-        "named %d wallets (%d new, %d updated, %d unchanged) chain=%s",
-        report.considered, report.inserted, report.updated, report.unchanged,
-        chain.value if chain else "all",
+        "naming (incremental): %d wallets in %d chunks (%d new, %d updated, %d unchanged, %d swap-only "
+        "skipped) stopped=%s", report.wallets, report.chunks, report.naming.inserted, report.naming.updated,
+        report.naming.unchanged, report.skipped_swap_only_new, report.stopped,
     )
     return report
 
@@ -1169,6 +1717,8 @@ __all__ = [
     "cohort_tags",
     "entity_handle",
     "gather_facts",
+    "gather_facts_for",
+    "gmgn_counts_from_events",
     "gmgn_import_rows",
     "infer_archetype",
     "infer_registry_archetype",
@@ -1176,6 +1726,7 @@ __all__ = [
     "main",
     "name_violates_quality_rule",
     "name_wallets",
+    "name_wallets_incremental",
     "prior_name",
     "registry_meta",
     "registry_name",

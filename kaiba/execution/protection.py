@@ -179,6 +179,16 @@ class ProtectionConfig(BaseModel):
     #: and `stale_no_volume` all still apply.
     moonbag_trail_bps: int = 5000
     emergency_loss_bps: int = 5000
+    #: LOG-ONLY. Read every open live Robinhood position's pool on chain once per tick and
+    #: record it beside the quote protection decided on (``kaiba.execution.onchain_pool``).
+    #: Feeds no decision; it exists to MEASURE whether a pool price would fire RH stops
+    #: earlier and better than the DexScreener/GMGN mark (audit-20261001-strategy §1c).
+    #: Off by default: while False the watchdog's hook returns before touching anything.
+    onchain_price_log: bool = False
+    #: At most one on-chain read per this many seconds (one HTTP call per read, always).
+    onchain_price_log_min_interval_s: float = 10.0
+    #: Rows older than this are pruned by the logger itself.
+    onchain_price_log_retention_days: int = 14
 
     @field_validator("tp_ladder", "trailing", mode="before")
     @classmethod

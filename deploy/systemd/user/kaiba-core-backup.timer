@@ -1,0 +1,15 @@
+[Unit]
+Description=Run the Kaiba core-state backup daily at a quiet time
+
+[Timer]
+# 22:50 UTC (06:50 CST). MEASURED 2026-10-01 from events per hour over the previous 48 h:
+# 22:00-01:00 UTC is the quietest stretch (8-13k events/h against 24-34k at 12:00-20:00).
+# :50 past the hour stays out of the :05-:45 window in which the hourly Hermes
+# wallet-discovery cron (:07) has been driving kaiba-mcp into global OOMs (audit P0-1).
+OnCalendar=*-*-* 22:50:00 UTC
+AccuracySec=1min
+Persistent=true
+Unit=kaiba-core-backup.service
+
+[Install]
+WantedBy=timers.target

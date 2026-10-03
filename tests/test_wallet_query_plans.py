@@ -27,7 +27,7 @@ from kaiba.intelligence import discover
 from kaiba.intelligence import grade as GR
 from kaiba.learning import exit_study as ES
 
-SOL_WALLET = "CJF7MNqb9xv1XrTs5St1Du5JuQXLsfFBB137vmYRKpnb"
+SOL_WALLET = "Bnd5oBSWpPpXoaWTckgXTVx9TCKkX5GyVqxcrwBzUYsB"
 
 
 def _plans(conn: sqlite3.Connection, statements: list[str], needle: str) -> list[str]:

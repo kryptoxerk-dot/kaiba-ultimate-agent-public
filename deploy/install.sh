@@ -84,13 +84,22 @@ if command -v rsync >/dev/null 2>&1; then
     --exclude '.git' --exclude '.venv' --exclude '__pycache__' --exclude '*.pyc' \
     --exclude 'data' --exclude '.env' --exclude '.pytest_cache' --exclude 'reference' \
     --exclude 'node_modules' \
+    --exclude '*wallet*.txt' --exclude '*wallets*.txt' --exclude '*Wallet*.txt' \
+    --exclude '*seed*.txt' --exclude '*mnemonic*' --exclude '*private*key*' \
+    --exclude '*privkey*' --exclude 'secrets' \
+    --exclude '*.key' --exclude '*_ed25519' --exclude '*_rsa' --exclude '*.ppk' \
     "$REPO/" "$RELEASE/"
 else
   warn "rsync not installed; falling back to tar"
   run bash -c "tar -C '$REPO' \
       --exclude='.git' --exclude='.venv' --exclude='__pycache__' --exclude='*.pyc' \
       --exclude='data' --exclude='.env' --exclude='.pytest_cache' --exclude='reference' \
-      --exclude='node_modules' -cf - . | tar -C '$RELEASE' -xf -"
+      --exclude='node_modules' \
+      --exclude='*wallet*.txt' --exclude='*wallets*.txt' --exclude='*Wallet*.txt' \
+      --exclude='*seed*.txt' --exclude='*mnemonic*' --exclude='*private*key*' \
+      --exclude='*privkey*' --exclude='secrets' \
+      --exclude='*.key' --exclude='*_ed25519' --exclude='*_rsa' --exclude='*.ppk' \
+      -cf - . | tar -C '$RELEASE' -xf -"
 fi
 
 # Root-owned, world-readable, nothing writable by a service user. A service that can
@@ -247,7 +256,9 @@ say "systemd units"
 #
 # The runbooks also use `kaiba risk pause|resume|reduce-only|kill|lane|bounds|global`,
 # `kaiba positions show|close`, `kaiba orders show|replace`, `kaiba journal add`,
-# and `kaiba signer keygen|rekey|retire`.
+# and `kaiba signer keygen|import --chain evm|sol --keystore DIR` (both print only the
+# address; import reads the key from a hidden prompt, never argv). `signer rekey` and
+# `signer retire` do NOT exist, and the keystore is plain 0600 files, not encrypted.
 #
 UNIT_SRC="$RELEASE/deploy/systemd"
 UNITS=(kaiba-ingest.service kaiba-ops.service kaiba-scan.service kaiba-engine.service kaiba-protection.service
@@ -366,9 +377,11 @@ Nothing is running yet and nothing is armed. What is left needs a person:
     It prompts for each value, never echoes one, writes with install -m 0600 and records
     only a sha256 fingerprint in the journal.
 
- 2. Wallet keys. Generated on this host by the signer, never imported from a laptop:
-      sudo systemctl start kaiba-signer
-      sudo -u kaiba-signer $VENV/bin/python -m kaiba.cli.main signer keygen --chain sol
+ 2. Wallet keys. Generated on this host as the signer user, never imported from a laptop.
+    --keystore is required: sudo -u does not inherit the unit's KAIBA_KEYSTORE_DIR.
+      sudo -u kaiba-signer $VENV/bin/python -m kaiba.cli.main signer keygen --chain sol --keystore $KAIBA_CONF/signer/keys
+      sudo -u kaiba-signer $VENV/bin/python -m kaiba.cli.main signer keygen --chain evm --keystore $KAIBA_CONF/signer/keys
+    Each prints only the new address (one evm key serves every EVM chain).
     Then bind each wallet in risk.yaml (chains.<chain>.wallet) and, for the GMGN lane,
     confirm the binding in the GMGN portal per chain.
 

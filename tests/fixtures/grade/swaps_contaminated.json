@@ -1,6 +1,6 @@
 {
   "note": "CCC receives inventory by transfer between the buy and the sell, so its cost basis is unknowable and the episode must be excluded. DDD is clean and is the only thing that may reach a grade.",
-  "wallet": "CJF7MNqb9xv1XrTs5St1Du5JuQXLsfFBB137vmYRKpnb",
+  "wallet": "Bnd5oBSWpPpXoaWTckgXTVx9TCKkX5GyVqxcrwBzUYsB",
   "swaps": [
     {
       "chain": "sol",

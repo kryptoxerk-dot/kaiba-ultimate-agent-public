@@ -80,6 +80,54 @@ stop_grace_s: 30
 # Per-run history kept in ops_runs. INVENTED. Two weeks covers a fortnight's incident review.
 runs_retention_days: 14
 
+# Row retention for the tables that only grow (kaiba/ops/retention.py, run by jobs.retention).
+# MEASURED 2026-10-01: the database grows ~2.9 GB/day and nothing deleted from provider_calls,
+# triage_decisions or wallet_score_history. NOT events, NOT swaps: wallet.trade events hold
+# the only copy of GMGN's wallet tags and need a rollup first.
+#
+# enabled: false = the job reports a read-only dry run and deletes NOTHING. Flipping it is
+# the lead's call, after a dry run on the box (python -m kaiba.ops.retention --dry-run).
+# MEASURED 2026-10-01: the oldest row in all three tables is 2026-09-21, so at 14 days the
+# first deletes come on 2026-10-05; this bounds the tables from then on, it is not relief
+# today. wallet_score_history keeps every grade transition and each wallet's latest row.
+# Deletes run <= batch_rows rows per transaction (hard max 5,000), halving the batch when a
+# transaction takes over max_tx_ms, sleeping sleep_s between, inside budget_s. INVENTED.
+retention:
+  enabled: false
+  provider_calls_days: 14
+  triage_decisions_days: 14
+  wallet_score_history_days: 14
+  batch_rows: 2000
+  max_tx_ms: 1000
+  sleep_s: 0.5
+  budget_s: 600
+  history_scan_rows: 5000
+  history_pass_interval_s: 86400
+  sample_rows: 200
+  # wallet.trade EVENTS older than wallet_trade_days. A switch of its own under `enabled`
+  # (both must be true), and on every run kaiba/intelligence/feed_tags.retention_gate must
+  # also agree: the wallet_feed_tags backfill complete AND an exact parity check passed,
+  # the latest one passed and younger than wallet_trade_parity_max_age_s. MEASURED
+  # 2026-10-02: 336,028 wallet.trade events a day (~0.4 GB/day with their indexes) and
+  # 1,649,589 already older than 7 days. 7 days: INVENTED; every reader of these events
+  # reads the rollup once it is ready, and the bus consumers (SSE, notify) read minutes.
+  wallet_trade_enabled: false
+  wallet_trade_days: 7
+  wallet_trade_parity_max_age_s: 172800
+
+# GMGN wallet feeds (kaiba/ingest/gmgn_feeds.py, run by kaiba-ingest, which re-reads this
+# block every sweep). smartmoney and kol are WALLET-discovery inputs -- the gather queue,
+# discover.cohort_wallets, the tracker's cohort seeding and naming read them -- so they poll
+# these chains whether or not a chain is enabled for TRADING in risk.yaml; the token feeds
+# (signal, trenches, trending) still follow risk.yaml. MEASURED 2026-10-02: with sol trading
+# off since 2026-10-01 the sol wallet feeds had stopped too (cursors idle 56 h). Absent ->
+# [sol, bsc, robinhood]; [] -> no wallet feed anywhere. Budget, MEASURED on the box: gmgn
+# spent 1,194 weight in the last hour against a 3.0/s refill (10,800/h); smartmoney + kol
+# are weight 1 and ran 55 calls/h each on robinhood alone, so two more chains add ~220/h
+# (total ~13% of the refill) and 4 calls x 250 ms of pacing to each 60 s sweep.
+gmgn_feeds:
+  wallet_chains: [sol, bsc, robinhood]
+
 helius:
   # Skip every Helius-spending job while the month's remaining credits are below this.
   # 30% of the Free tier's 1,000,000 credits. INVENTED, with this reasoning: scheduled
@@ -141,6 +189,33 @@ jobs:
     timeout_s: 1500
     chains: "sol,bsc,robinhood"
     top_n: 20
+
+  proven_wallets:
+    # FORWARD-VALIDATED wallet cohort per chain (kaiba/learning/proven.py), frozen into
+    # wallet_cohorts as proven:<chain>:<ms>. confluence-5 counts it when risk.yaml sets
+    # wallet_source: proven. Records only; never sizes anything. An EMPTY cohort is frozen
+    # too, and the lane reads it as "nobody counts on this chain".
+    #
+    # MEASURED 2026-10-02 (box, read-only, 10-day look-back, split on the median swap,
+    # 1%/leg, lag robinhood 20 s / sol 120 s, 3,000 random recently-active candidates):
+    #   robinhood  409 eligible; in-sample winners -3.0%/trip OOS vs losers -10.8% (the
+    #              rank persists, diff CI +5.9..+9.9pp, but even the winners LOSE net of
+    #              fees); 1 of 73 passed alone vs 3 of 282 losers: chance p 0.65 -> EMPTY
+    #   sol        200 eligible after the $20 buy floor; winners -0.5% vs losers -2.1%,
+    #              diff CI -1.6..+5.1pp: does not persist -> EMPTY
+    # Without the buy floor sol "persisted" (+9.7% vs -2.1%) on a dust network (median
+    # buy $0.04, 2,004 of 4,988 buys within 2 s of another member). Without honest exit
+    # pricing robinhood yielded 7. Both are the optimism this job exists to remove.
+    # interval 86400: the answer moves with the tape, not the hour; daily keeps a cohort
+    # under the lane's 3-day age limit with two runs to spare. INVENTED.
+    # timeout 1500: MEASURED 324 s (robinhood) + 64 s (sol) under ionice -c3; the job
+    # stops taking new candidates 60 s before this and still freezes what it scored. It
+    # must stay under lock_stale_s (1800), as copytrade's does.
+    enabled: true
+    interval_s: 86400
+    timeout_s: 1500
+    chains: "sol,robinhood"
+    max_candidates: 3000
 
   variable_study:
     # Search every populated dossier/tape variable, and every promising pair, for
@@ -313,6 +388,40 @@ jobs:
     wallets_per_run: 200
     max_age_days: 7
 
+  wallet_deepen:
+    # More Helius history ONLY for paid (kaiba-wallet-v1) grades within score_margin of the
+    # A score whose backward walk is not exhausted, then an immediate regrade
+    # (scheduler.job_wallet_deepen). Spends Helius credits at RESEARCH priority.
+    #
+    # Why so narrow (MEASURED on the box 2026-10-02, read-only): the "1,600 high-score thin
+    # wallets" score 88/65 from seed_confluence alone (0-2 closed round trips); GMGN's
+    # all-time numbers for 100 of the sol ones give ROI -86% at the median. Where evidence
+    # is already full (979 sol grades, evidence_weight >= 90) the best pre-penalty score is
+    # 65.4, so A is bound by quality there, not by pages. And the A gate now refuses a
+    # truncated walk (grade.history_truncated), so a real A needs the complete history this
+    # job buys. Candidates on 2026-10-02: 1 (score 65.4, 1 closed round trip, 1 page walked).
+    #
+    # Budget: credits_per_day 1,000 = 31,000 a 31-day month = 3.1% of the free tier. With
+    # wallet_buyers 465,000, wallet_tracked 77,500 and clustering_funding 77,500 that is
+    # 651,000 of the 700,000 above helius.floor_credits (tests/test_scheduler.py).
+    # pages_per_wallet 5 x 100 credits = 500 a pass; max_pages 20 (2,000 transactions) caps
+    # one wallet at ~2,000 credits for a complete history -- INVENTED: past that it is a
+    # high-frequency trader we will not buy whole, and it stays capped at B.
+    # retry_after_hours 6: INVENTED spacing so one wallet cannot take every pass of a day.
+    # score_margin 10 / min_closed 1: see scheduler.DEEPEN_SCORE_MARGIN / DEEPEN_MIN_CLOSED.
+    enabled: true
+    interval_s: 3600
+    timeout_s: 300
+    chain: sol
+    wallets_per_run: 2
+    pages_per_wallet: 5
+    max_pages: 20
+    credits_per_day: 1000
+    max_credits_per_run: 1000
+    retry_after_hours: 6
+    score_margin: 10
+    min_closed: 1
+
   wallet_naming:
     # Name every wallet we hold evidence on (naming.name_wallets) and write it into
     # `wallets`: name, tags_json, meta_json. Free, local.
@@ -338,9 +447,57 @@ jobs:
     # (MEASURED 2026-09-22, its `wallets` table has 0 rows), so this file lands whole or
     # not at all: never this block on its own.
     # interval 3600 / timeout 300: as asked. Idempotent: unchanged evidence writes nothing.
+    #
+    # 2026-10-02: INCREMENTAL (naming.name_wallets_incremental). The full pass had not
+    # finished inside 300 s since 2026-09-24 (a GROUP BY over every swap and a LIKE over
+    # every wallet.trade event; 25 consecutive timeouts on the box). Now each run re-names
+    # only wallets whose evidence moved since its kv cursors (naming:incremental): labels,
+    # grades, launch roles, entities and creators first, the tape last, in chunks of
+    # chunk_wallets whose cursor commits only after their names are written; it stops at
+    # budget_s (checked every 100 addresses, always 30 s inside the timeout) or max_wallets.
+    # MEASURED on the box 2026-10-02 (dry runs, read-only): a 15-minute tape window is 5,450
+    # wallets; cheap facts ~1.2 ms a wallet; the tape read ~5 ms a wallet at low IO load but
+    # ~0.4 s under the box's usual 80-90% IO pressure, where a run names ~300-600 wallets
+    # and stops at 202 s. So the tape cannot keep up there: max_tape_lag_ids (~1 h of swaps)
+    # caps its lag and the run reports skipped_ahead_ids instead of falling behind for ever.
+    # insert_swap_only false: a wallet whose ONLY evidence is trades gets no NEW registry
+    # row and no tape read (1,063 of the window's 5,450; ~115k rows/day if inserted).
+    # Existing rows are always updated. mode: full restores the old pass (never on the box).
     enabled: true
-    interval_s: 3600
+    interval_s: 900
     timeout_s: 300
+    budget_s: 200
+    max_wallets: 6000
+    chunk_wallets: 300
+    max_tape_lag_ids: 54000
+    insert_swap_only: false
+
+  wallet_feed_tags:
+    # Roll GMGN's wallet labels up out of wallet.trade events into wallet_feed_tags, then
+    # prove the rollup equals the events (kaiba/intelligence/feed_tags.py). The labels exist
+    # nowhere else, so no wallet.trade event may be deleted until this has finished.
+    # Each run: waiting_for_writer (until gmgn_feeds.write_swap -- new code, kaiba-ingest
+    # restarted -- has rolled up its first event), then backfilling (the events below that
+    # id, newest window first, window_ids per transaction, resumable from kv), then a
+    # parity check at most every parity_interval_s over parity_sample wallets. A failed
+    # parity FAILS the job and blocks retention; the first exact pass switches every reader
+    # to the table (feed_tags.table_ready). Free, local, no provider.
+    # MEASURED read rate on the box 2026-10-02: a 20k-id window (12.6-17.7k events) read and
+    # aggregated in 0.9-1.9 s; the 5.45M-id backlog is ~270 windows, ~5-10 min of reads, so
+    # budget_s 200 every 600 s finishes within a few runs. timeout 300 < long_timeout_s.
+    # Parity: MEASURED ~1.8 s per sampled wallet (a feed wallet averages ~900 events, each
+    # old reader re-reads them), so 60 wallets ~110 s, and the run's deadline cuts it short
+    # cleanly; only a pass over >= 20 compared wallets switches the readers.
+    # Off (enabled: false) until the lead has deployed migration 032 and the writer and restarted
+    # kaiba-ingest; enabling it earlier only reports waiting_for_writer.
+    enabled: true
+    interval_s: 600
+    timeout_s: 300
+    budget_s: 200
+    window_ids: 20000
+    sleep_s: 0.2
+    parity_sample: 60
+    parity_interval_s: 21600
 
   wallet_seeds:
     # Count the tokens that demonstrably RAN, and how many of them each wallet bought.
@@ -519,20 +676,27 @@ jobs:
 
   copy_manager:
     # The owner's GMGN copy trades on the agent wallet (kaiba/execution/copy_manager.py).
-    # Owner 2026-09-30: "dont touch my copy trading but manage them just if they are making
-    # profit like trim them help me and sell help me / cut loss if trend is weak but i
-    # already have auto -50% cut loss". Trims 33% at +25%, half the rest at +50%, half the
-    # rest at +100%; sells the rest when a winner gives back half its peak gain; cuts at
-    # -25% only while the price is still falling over 10 min. Never buys, never touches
-    # Kaiba's own positions, honeypots, pools under $5k or dust. One GMGN call per run.
-    # live: false = decides and records only. Flip to true to let it sell.
-    enabled: true
+    # Owner 2026-09-30: "dont touch my copy trading but manage them". Policy 2026-10-01,
+    # owner-approved: GIVEBACK ONLY -- sell everything once a position has given back half
+    # its peak gain, armed when the peak reached +25%. Measured on 35.7 h of dry-run
+    # decisions: +$1,312 on $6,981 at stake after a 5pp haircut (25/30 right); trims sold
+    # runners early, the weak cut was neutral. Never buys, never touches Kaiba's own
+    # positions, honeypots, pools under $5k or dust. Caps: 3 sells per pass, 30 per UTC day.
+    # DISABLED 2026-10-02: GMGN's API now trades the owner's NEW wallets (0xcc44…, rUHr…), so it can
+    # no longer sell on the old copy-trading wallet 0x7243…, and copy_manager must never manage
+    # Kaiba's own new wallet (it reads exit_wallet_for(chain)). Re-enable only with an explicit wallet.
+    enabled: false
     interval_s: 30
     timeout_s: 90
     chain: robinhood
-    live: false
+    live: true
+    tp_rungs: []
+    weak_cut_enabled: false
+    giveback: 0.5
+    giveback_arm_pnl: 0.25
     min_liquidity_usd: 5000
     max_sells_per_run: 3
+    max_sells_per_day: 30
 
   native_price:
     # One native-price sampling pass per chain (native_price.run_sampler, max_iterations=1).
@@ -581,6 +745,19 @@ jobs:
     enabled: true
     interval_s: 86400
     timeout_s: 60
+
+  retention:
+    # Batched row retention under the top-level `retention:` block above. DISABLED, and
+    # even when this is enabled nothing is deleted until retention.enabled is also true:
+    # a run is then a read-only dry run that reports what it would delete.
+    # timeout 900 >= long_timeout_s, so it is a LONG job and shares the single long slot
+    # with the studies instead of crowding them; budget_s (600) ends a run well inside it,
+    # and the job also stops 30 s before the timeout. Under lock_stale_s (1800) as
+    # tests/test_scheduler.py requires. interval 3600: INVENTED; the backlog clears over
+    # several runs and a complete history pass repeats at most daily.
+    enabled: false
+    interval_s: 3600
+    timeout_s: 900
 
   # --- live wallet tracking (kaiba/intelligence/tracker.py) -----------------------------
 
@@ -759,3 +936,95 @@ jobs:
     timeout_s: 120
     max_plan_age_s: 300
     max_submits_per_run: 3
+
+
+  nft_mint_study:
+    # PAPER NFT mint study on Robinhood Chain (kaiba/learning/mint_study.py), added
+    # 2026-10-02. Answers "would auto-minting OpenSea drops make money?" BEFORE any money is
+    # spent. No wallet, no signer, no transaction, no OpenSea key. It reads SeaDrop mints and
+    # Seaport sales off the chain (nft_mints / nft_fills, migration 034), writes paper
+    # mint/shadow rows once per collection per UTC day, scores them at +24 h / +72 h from
+    # REAL fills (an accepted bid first; an ask nobody paid is never a price), and keeps a
+    # PASS / PENDING / FAIL gate in kv nft_mint_study:gate. The daily report prints it.
+    #
+    # DISABLED until the lead has applied migration 034 on the box. Enable with
+    #   kaiba ops run --once --only nft_mint_study --force   (one supervised pass)
+    # then flip enabled: true.
+    #
+    # Budget, robinhood-rpc (shared with LIVE stop-losses; ~1,200 calls/h already, MEASURED
+    # 2026-10-02), all Priority.RESEARCH in the chain.* family, the job's own requests
+    # >= pace_s apart, never more than 4 reads per batch (a 7-read batch drew an HTTP 429
+    # from the public RPC in a workstation test, 1- and 4-read batches did not):
+    #   tape   steady 2 HTTP / 4 reads per run (head + one chunk); catch-up <= 1 + 6 HTTP
+    #   checks <= 6 candidates per run, 2 reads each, 4 if the public stage is open; each
+    #          collection at most once per UTC day
+    # => steady ~192 HTTP / ~384 reads a day for the tape plus 2-4 reads per distinct
+    #    minting collection per day; worst case 1 + 6 + 12 = 19 HTTP in one catch-up run.
+    # interval 900: the tape advances ~8,900 blocks per 15 min, one chunk. INVENTED.
+    # timeout 300: a worst-case run is 19 requests >= 3 s apart, ~60-90 s. INVENTED.
+    enabled: true
+    interval_s: 900
+    timeout_s: 300
+    max_checks_per_run: 6
+    pace_s: 3
+    max_chunks_per_run: 6
+    chunk_blocks: 10000
+    backfill_hours: 24
+    retention_days: 14
+
+  experiment_gates:
+    # THE SELF-IMPROVEMENT LOOP (kaiba/learning/experiment_loop.py), added 2026-10-02.
+    # MEASURED that day: 4 experiments, all `proposed`; 2 gate_results rows ever (one
+    # hand-run 09-24); 0 experiment_trades. Nothing ran kaiba/learning/gates.py.
+    #   proposed -> replay gate -> rejected | shadow
+    #   shadow   -> forward trades labelled candidate/incumbent (a SELECTION shadow: the
+    #               lane's own recorded fills, tagged by whether the candidate threshold would
+    #               have taken them; no order, no quote, no provider call) -> shadow gate once
+    #               >= 50 candidate trades over >= 14 days (the gate's own minimums) or at
+    #               shadow_max_days -> rejected | awaiting_owner | gates.promote
+    #   promoted -> pre-registered rollback rule: after rollback_min_trades live trades, roll
+    #               back if their mean return < the shadow-window baseline's 95% lower bound;
+    #               checked until monitor_until_trades.
+    # Promotes ONLY min_*/max_* entry thresholds the lane already reads, tightenings only,
+    # never sizing / bankroll / bounds / modes / chains / launchpads, and only while
+    # risk.yaml bounds.allow_self_promotion is true AND auto_promote here is true.
+    # Spends nothing. interval 6 h: verdicts need days of trades, not minutes. INVENTED.
+    # timeout 300: a replay over ~400 decisions is seconds; bounded by the caps below.
+    enabled: true
+    interval_s: 21600
+    timeout_s: 300
+    auto_promote: true            # false = judge and shadow, but every pass goes to awaiting_owner
+    max_experiments_per_run: 25   # proposed experiments judged per pass
+    max_label_rows_per_run: 2000  # forward trades labelled per shadow experiment per pass
+    shadow_max_days: 45           # a shadow that has not met the minimums by then is judged as is
+    max_auto_refused_share: 0.5   # a candidate cutting more of the lane's forward signals needs the owner
+    rollback_min_trades: 20       # live trades after promotion before the rollback rule is read
+    monitor_until_trades: 100     # rollback monitoring closes after this many live trades
+    chain_lookback_days: 7        # busiest chain over this window is the shadow's chain
+  loss_attribution:
+    # LOSS LEARNING (kaiba/learning/loss_attribution.py), added 2026-10-03. Splits every
+    # closed live loss into ENTRY (the price path reached the stop) vs EXIT execution (gap
+    # past the stop on the mark acted on, fill vs that mark, fees/rent/dust; plus the
+    # on-chain pool price where onchain_price_samples exist), and ranks entry features on
+    # the SCANNED population (every sm-trenches decision, skips included, first per token,
+    # forward bracket +/-30% within 2 h on the swap tape), threshold chosen on the older
+    # half and scored on the newer. Writes ONLY its own table loss_attribution and kv
+    # learning:loss_attribution, which the daily LLM learning loop and the daily report
+    # read. Proposes nothing; the gates judge whatever the loop proposes. No provider call.
+    # MEASURED 2026-10-03 read-only on the box under nice/ionice idle: 19.8 s warm, 338 s
+    # cold (248 positions, 2,603 decisions, 1,692 tokens priced), nearly all of it swap
+    # reads for the forward outcome. DAILY, so that I/O lands once a day beside the live
+    # protection reads; the learning loop it feeds is daily too. Once signals carry the
+    # entry features the backward read shrinks to the 300 s pre-window. The job stops on its
+    # own deadline (timeout - 15 s) and reports truncated rather than overrunning.
+    # timeout 1500: ~4.5x the cold measurement, under lock_stale_s (1800).
+    enabled: true
+    interval_s: 86400
+    timeout_s: 1500
+    lanes: sm-trenches          # comma list; gate readiness is reported for the first
+    trade_days: 30              # Part A window (closed live positions)
+    summary_days: 7             # headline window the daily report prints
+    scan_days: 30               # Part B window (decisions)
+    horizon_s: 7200             # forward outcome horizon after each decision
+    barrier_pct: 30             # +/- bracket; 30 = the live hard stop (stop_loss_bps 3000)
+    min_keep_share: 0.5         # = the gates' removal ceiling: a threshold may refuse <= half

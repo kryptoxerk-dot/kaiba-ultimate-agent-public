@@ -18,6 +18,7 @@ Design points, learned from the prior repo's provider governor:
 from __future__ import annotations
 
 import logging
+import re
 import sqlite3
 import time
 from collections.abc import Iterator
@@ -61,6 +62,70 @@ class RateLimited(Exception):
         self.provider = provider
         self.reason = reason
         self.retry_after_s = retry_after_s
+
+
+#: How long :func:`reserve` may WAIT OUT its own minimum-interval refusal before raising,
+#: by priority. Priorities not listed (ENTRY, DISCOVERY, RESEARCH) never wait here.
+#:
+#: MEASURED 2026-10-01 on the box, 24 h: 883 of 1,967 `protection_blind` events on
+#: robinhood (45%) read "rate limited: dexscreener: minimum interval", on five tokens
+#: DexScreener prices fine (they were never blind for any other reason). 75% of all
+#: dexscreener calls land inside protection's own ticks, which cover 9% of the clock: the
+#: prefetch workers price the book concurrently and each EXIT read after the first is
+#: refused by the 275 ms gap the previous one just opened. The refusal said "retry in
+#: 0.2s" and the read was abandoned for the 12 s tick. The same shape refused
+#: copy_manager's POSITION-priority gmgn holdings read 21 times in 24 h ("retry in
+#: 0.0-0.5s"), and two live robinhood sells in 7.6 days (gmgn, "retry in 0.0-0.1s").
+#:
+#: Waiting out the interval is not bypassing it: the call still goes no sooner than the
+#: provider's spacing allows. What this changes is only that a sub-second gap no longer
+#: costs a whole tick. Bounded, so a penalty-escalated interval after a real 429 (doubled
+#: per level) still refuses at once -- the provider's own back-pressure is never overridden.
+#: The EXIT bound is INVENTED as a size; it admits ~5 serialised dexscreener EXIT reads
+#: (275 ms apart) inside a 12 s protection tick whose p90 is 974 ms.
+INTERVAL_WAIT_S: dict[Priority, float] = {
+    Priority.EXIT: 1.5,
+    Priority.UNRESOLVED: 1.0,
+    Priority.POSITION: 1.0,
+}
+
+#: Refusals our limiter makes BEFORE anything reaches the provider, which clear on their
+#: own within seconds. A provider's own 429 is a different reason string and never in here.
+LOCAL_TRANSIENT_REASONS: frozenset[str] = frozenset(
+    {"minimum interval", "max inflight", "bucket exhausted"}
+)
+
+_REFUSAL_TEXT = re.compile(
+    r"RateLimited: (?P<provider>[^:\s]+): (?P<reason>[^()]+?) \(retry in (?P<retry>[0-9.]+)s\)"
+)
+
+
+def local_refusal_retry_s(text: str | None) -> float | None:
+    """``retry_after_s`` when ``text`` reports one of OUR transient refusals, else ``None``.
+
+    ``text`` is a :class:`RateLimited` rendered as ``f"{type(exc).__name__}: {exc}"``,
+    which is how the exit submitter flattens every failure into ``ExitOutcome.detail``.
+    ``None`` for anything else, including a provider's own 429 ("provider returned 429")
+    and our cooldowns: those must keep their full backoff. The format is pinned by a
+    round-trip test against :class:`RateLimited` itself, so a change to the message breaks
+    a test rather than silently turning every limiter refusal back into a venue failure.
+    """
+    if not text:
+        return None
+    # Anchored: the class name leads the detail when the submit itself raised. The same
+    # words quoted somewhere inside a venue's error text are not our refusal.
+    found = _REFUSAL_TEXT.match(text.strip())
+    if found is None or found.group("reason").strip() not in LOCAL_TRANSIENT_REASONS:
+        return None
+    try:
+        return max(0.0, float(found.group("retry")))
+    except ValueError:
+        return None
+
+
+#: Seams so a test can drive the wait against a fake clock. Production uses the real ones.
+_sleep = time.sleep
+_monotonic = time.monotonic
 
 
 @dataclass(frozen=True)
@@ -260,8 +325,47 @@ def reserve(
     """Charge capacity for one call. Raises :class:`RateLimited` if we must not call.
 
     Returns the weight charged, which the caller passes back to :func:`release`.
+
+    A minimum-interval refusal at a priority in :data:`INTERVAL_WAIT_S` is waited out, up
+    to that bound, instead of raised -- see the measurement there. The sleep happens
+    BETWEEN attempts, never inside one: each attempt is its own short transaction, so a
+    waiting caller holds no lock. A caller that is already inside a transaction on the
+    accounting connection is never made to wait, because sleeping there would hold ITS
+    write lock against every other service for the length of the wait.
     """
     c = _accounting_conn(conn)
+    budget = INTERVAL_WAIT_S.get(priority, 0.0)
+    # Read as a hint, not a lock decision: on the thread-local connection production uses
+    # it is this thread's own state. On a connection shared across threads either answer
+    # is safe -- True only skips the wait (the old behaviour), and a wait holds nothing.
+    if budget <= 0 or getattr(c, "in_transaction", False):
+        return _reserve_once(c, provider, endpoint, priority)
+    deadline = _monotonic() + budget
+    while True:
+        try:
+            return _reserve_once(c, provider, endpoint, priority)
+        except RateLimited as exc:
+            if exc.reason != "minimum interval":
+                raise
+            remaining = deadline - _monotonic()
+            # Sleeping into a refusal we can already see coming only adds latency to it.
+            if remaining <= 0 or exc.retry_after_s > remaining:
+                raise
+            # +1 ms because `now_ms` is whole milliseconds: waking exactly on the boundary
+            # can still read one millisecond short of the interval.
+            _sleep(min(remaining, max(exc.retry_after_s, 0.0) + 0.001))
+            log.debug("%s %s: %s waiting %.0f ms out for the minimum interval",
+                      provider, endpoint, getattr(priority, "name", priority),
+                      exc.retry_after_s * 1000)
+
+
+def _reserve_once(
+    c: sqlite3.Connection,
+    provider: str,
+    endpoint: str,
+    priority: Priority,
+) -> int:
+    """One reservation attempt in one transaction. Raises :class:`RateLimited` on refusal."""
     lim = limits_for(provider)
     weight = lim.weight_for(endpoint)
     ts = now_ms()

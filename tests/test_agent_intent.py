@@ -14,7 +14,7 @@ from kaiba.core.config import load_risk, save_risk
 from kaiba.core.schemas import Chain, Lane, LaneMode
 from kaiba.execution.engine import submit_agent_intent
 
-TOKEN = "CJF7MNqb9xv1XrTs5St1Du5JuQXLsfFBB137vmYRKpnb"
+TOKEN = "Bnd5oBSWpPpXoaWTckgXTVx9TCKkX5GyVqxcrwBzUYsB"
 
 
 @pytest.fixture

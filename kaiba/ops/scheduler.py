@@ -67,6 +67,7 @@ from kaiba.core.db import fetch_all, fetch_one, jdump, jload
 from kaiba.core.events import emit
 from kaiba.core.redact import redact_text
 from kaiba.core.schemas import Chain, EventKind, now_ms
+from kaiba.ops.retention import RetentionConfig
 
 log = logging.getLogger(__name__)
 
@@ -223,6 +224,10 @@ class ScheduleConfig(BaseModel):
     reload_every_s: float = Field(default=60.0, gt=0)
     stop_grace_s: float = Field(default=30.0, ge=0)
     runs_retention_days: int = Field(default=14, ge=1)
+    #: Row retention for provider_calls, triage_decisions and unchanged wallet_score_history
+    #: (kaiba/ops/retention.py). ``retention.enabled`` defaults to False: the ``retention``
+    #: job then reports a dry run and deletes nothing.
+    retention: RetentionConfig = Field(default_factory=RetentionConfig)
     helius: HeliusGate = Field(default_factory=HeliusGate)
     backoff: BackoffConfig = Field(default_factory=BackoffConfig)
     jobs: dict[str, JobConfig] = Field(default_factory=dict)
@@ -991,10 +996,29 @@ def gather_queue(
         """Feed membership and cohort tags from one pass over the feed's own events.
 
         Every GMGN feed row is also a ``wallet.trade`` event whose payload carries the
-        row's ``source`` and ``tags`` (gmgn_feeds.write_swap), and events are never pruned,
-        so this one scan answers both. MEASURED locally: 0.9 s warm against 9-47 s for the
-        equivalent scan of ``swaps``, which has no index on ``source``.
+        row's ``source`` and ``tags`` (gmgn_feeds.write_swap), so this one scan answers
+        both. MEASURED locally: 0.9 s warm against 9-47 s for the equivalent scan of
+        ``swaps``, which has no index on ``source``.
+
+        Once ``feed_tags.table_ready``, the same answer comes from the ``wallet_feed_tags``
+        rollup (one primary-key prefix scan of a small table), and old ``wallet.trade``
+        events may then be pruned -- so the event scan below is the not-yet-ready path only.
         """
+        from kaiba.intelligence import feed_tags
+
+        if feed_tags.table_ready(conn):
+            rolled: dict[str, list[Any]] = {}
+            for tag_row in feed_tags.chain_rows(conn, ch, gmgn_only=True):
+                rolled.setdefault(tag_row.address, []).append(tag_row)
+            table_feed: dict[str, int] = {}
+            table_bits: dict[str, int] = {}
+            for wallet, tag_rows in rolled.items():
+                fed, b = feed_tags.gather_signals(tag_rows, GATHER_POSITIVE_TAGS, GATHER_NEGATIVE_TAGS)
+                if fed:
+                    table_feed[wallet] = 1
+                if b:
+                    table_bits[wallet] = b
+            return table_feed, table_bits
         key = (_db_path(conn), ch)
         with _FEED_TAG_LOCK:
             last_id, cached_feed, cached_bits = _FEED_TAG_CACHE.get(key, (0, {}, {}))
@@ -1372,6 +1396,193 @@ def job_wallet_regrade(ctx: JobContext) -> dict[str, Any]:
             "by_grade": grades, "per_chain": per_chain}
 
 
+# --------------------------------------------------------------------------------------
+# evidence deepening: more history for the few paid grades within reach of A
+# --------------------------------------------------------------------------------------
+#
+# WHY THIS EXISTS, AND WHY IT IS SMALL (MEASURED on the live box, 2026-10-02, read-only).
+#
+# The brief was "1,600 wallets score >= 70 and are capped only by evidence". They are not
+# high-quality wallets short of evidence. Their score is ONE component normalised to 100:
+# of 1,489 sol and 760 robinhood tape grades at >= 60, every one carries seed_confluence
+# 12/12 and nothing else measured (sol: 1,238 have 0 closed round trips; 88 = 100 minus the
+# no_sells penalty; robinhood 65 = 100 minus the 35-point realized-loss penalty). GMGN's
+# all-time arithmetic for a random 100 of the sol ones: median 1,023 buys, ROI -86%, 0 of
+# 100 above +15%. They buy everything, so they hold three "seed" tokens by count.
+#
+# Where full evidence already exists the bar binds on QUALITY: 979 paid sol grades with
+# evidence_weight >= 90, best pre-penalty score 65.4, none reaches A_MIN_SCORE. So the one
+# place more pages can change an A verdict is a paid grade near the A score whose history
+# walk has not reached the wallet's first transaction -- which since grade.history_truncated
+# is itself an A gate. That set was 1 wallet on 2026-10-02 (6 before the min_closed rule).
+#
+# Each pass walks ``pages_per_wallet`` more Enhanced pages BACKWARD from the stored cursor
+# (no meta pass: signer/lookup facts are clustering's input, not the grade's), regrades at
+# once, and marks the wallet so the next pass waits ``retry_after_hours``. A wallet leaves
+# the set by itself when the new history pulls its score under the line, when its walk is
+# exhausted, or at ``max_pages`` -- beyond that the wallet is a high-frequency trader whose
+# complete history we will not buy, and it stays capped at B by the truncation gate.
+
+#: How far under ``grade.A_MIN_SCORE`` a paid grade may sit and still be worth more pages.
+#: INVENTED: one decile of the score. Deeper history moves a score both ways; a wallet 10
+#: points short needs a large move, and the pass that does not make it drops it.
+DEEPEN_SCORE_MARGIN = 10.0
+#: The fewest closed round trips a candidate needs. INVENTED floor, MEASURED reason: the
+#: five 2026-10-02 candidates with 0 closed held 583-1,708 tokens with no exit seen -- the
+#: spray-buyer shape whose GMGN all-time ROI was -86% at the median in the pilot.
+DEEPEN_MIN_CLOSED = 1
+#: Planning cost of one Enhanced page without the meta pass. ``helius.CREDIT_COSTS`` charges
+#: 100 for the route; the scheduler's rule is to plan with the higher plausible figure.
+DEEPEN_PAGE_CREDITS_EST = 100
+#: ``kv`` prefix of a deepening attempt mark (per chain and wallet).
+DEEPEN_MARK_PREFIX = "ops:wallet_deepen:"
+
+
+def deepen_targets(
+    conn: sqlite3.Connection,
+    chain: Chain = Chain.SOL,
+    *,
+    min_score: float,
+    min_closed: int = DEEPEN_MIN_CLOSED,
+    max_pages: int,
+    limit: int,
+    retry_after_ms: int,
+    now: int | None = None,
+) -> list[dict[str, Any]]:
+    """Paid full-history grades near the A score whose history walk can still go deeper.
+
+    Paid means ``grade.MODEL_ID`` with a Helius cursor: a tape or provider grade cannot be
+    an A by construction, so pages bought for one buy no A. Highest score first. One
+    indexed range on ``idx_wallet_scores_grade (grade, score DESC)`` and a key lookup per
+    row, never a walk of the chain's scores.
+    """
+    from kaiba.intelligence.grade import BACKFILL_CURSOR_PREFIX, MODEL_ID
+
+    ts = now if now is not None else now_ms()
+    rows = fetch_all(
+        conn,
+        "SELECT ws.address AS wallet, ws.score AS score, ws.grade AS grade, "
+        "  ws.evidence_weight AS evidence_weight, ws.closed_trades AS closed, kv.value AS cursor "
+        "FROM wallet_scores ws INDEXED BY idx_wallet_scores_grade "
+        "JOIN kv ON kv.key = ? || ws.chain || ':' || ws.address "
+        # B or C only: an UNSCORED row (evidence_weight < grade.MIN_EVIDENCE_WEIGHT) has no
+        # opinion to deepen, and an A or QUARANTINED row has nothing to gain.
+        "WHERE ws.grade IN ('B', 'C') AND ws.score >= ? AND ws.chain = ? AND ws.model_version = ? "
+        "  AND COALESCE(ws.closed_trades, 0) >= ? "
+        "  AND COALESCE((SELECT k2.updated_ms FROM kv k2 WHERE k2.key = ? || ws.chain || ':' "
+        "                || ws.address), 0) < ? "
+        "ORDER BY ws.score DESC, ws.address ASC",
+        (BACKFILL_CURSOR_PREFIX, float(min_score), chain.value, MODEL_ID, int(min_closed),
+         DEEPEN_MARK_PREFIX, ts - int(retry_after_ms)),
+    )
+    out: list[dict[str, Any]] = []
+    for r in rows:
+        cursor = jload(r["cursor"], {})
+        if not isinstance(cursor, dict) or cursor.get("exhausted"):
+            continue
+        pages = int(cursor.get("pages") or 0)
+        if pages >= max_pages:
+            continue
+        out.append({"wallet": str(r["wallet"]), "score": float(r["score"]), "grade": str(r["grade"]),
+                    "closed": int(r["closed"] or 0), "pages": pages})
+        if len(out) >= max(0, int(limit)):
+            break
+    return out
+
+
+def job_wallet_deepen(ctx: JobContext) -> dict[str, Any]:
+    """Walk more history for paid grades within reach of A, then regrade them at once.
+
+    Bound by credits like ``wallet_buyers`` (:func:`gather_credit_room`, under this job's
+    own ``credits_per_day``), Helius calls at the provider client's RESEARCH priority, the
+    lowest the limiter has. Solana only: no other chain has a paid history route.
+    """
+    from kaiba.ingest.backfill import backfill_wallets
+    from kaiba.intelligence.grade import A_MIN_SCORE
+
+    chain = Chain(str(ctx.param("chain", Chain.SOL.value)))
+    if chain is not Chain.SOL:
+        return {"reason": "no_history_route", "chain": chain.value, "wallets": 0}
+    per_run = int(ctx.param("wallets_per_run", 2))
+    pages = max(1, int(ctx.param("pages_per_wallet", 5)))
+    max_pages = int(ctx.param("max_pages", 20))
+    min_score = A_MIN_SCORE - float(ctx.param("score_margin", DEEPEN_SCORE_MARGIN))
+    retry_ms = int(float(ctx.param("retry_after_hours", 6)) * 3_600_000)
+    targets = deepen_targets(
+        ctx.conn, chain, min_score=min_score, min_closed=int(ctx.param("min_closed", DEEPEN_MIN_CLOSED)),
+        max_pages=max_pages, limit=max(0, per_run), retry_after_ms=retry_ms, now=ctx.now(),
+    )
+    base = {"candidates": len(targets), "min_score": min_score, "max_pages": max_pages}
+    if not targets:
+        return {**base, "reason": "no_candidates", "wallets": 0}
+    _, used_credits = ctx.quota_used()
+    page_cost = DEEPEN_PAGE_CREDITS_EST
+    room = gather_credit_room(
+        ctx, daily_default=int(ctx.param("credits_per_day", 1_000)),
+        run_max=int(ctx.param("max_credits_per_run", per_run * pages * page_cost)),
+    )
+    budget = min(room.run_max, room.credits)
+    plan: list[tuple[dict[str, Any], int]] = []
+    for t in targets:
+        n = min(pages, max_pages - t["pages"], (budget - sum(p for _, p in plan) * page_cost) // page_cost)
+        if n <= 0:
+            break
+        plan.append((t, n))
+    if not plan:
+        return {**base, "reason": REASON_QUOTA, "binding": room.binding, "wallets": 0,
+                "credits_today": used_credits, "credit_room": room.as_dict()}
+
+    before = {t["wallet"]: (t["grade"], t["score"]) for t, _ in plan}
+    walked: list[dict[str, Any]] = []
+    spent = first_buyers = 0
+    for t, n in plan:
+        # One wallet per call because the page count differs per wallet. The first-buyer
+        # rebuild inside is scoped to the tokens this walk wrote buys for (backfill's
+        # ``buy_tokens``), so a per-wallet call costs no chain-wide re-sort.
+        report = backfill_wallets(
+            ctx.conn, chain, wallets=[t["wallet"]], pages=n, with_meta=False,
+            max_credits=max(0, budget - spent),
+        )
+        spent += report.credits_spent
+        first_buyers += report.first_buyers_written
+        for r in report.results:
+            walked.append({"wallet": r.wallet, "pages": r.pages, "swaps_written": r.swaps_written,
+                           "exhausted": r.exhausted, "error": r.error})
+        if report.stopped:
+            break
+    graded = _gather_grade_many(ctx, chain, [w["wallet"] for w in walked if not w["error"]])
+    after = {
+        str(r["address"]): (str(r["grade"]), float(r["score"])) for r in fetch_all(
+            ctx.conn,
+            f"SELECT address, grade, score FROM wallet_scores WHERE chain = ? AND address IN "
+            f"({','.join('?' for _ in walked) or 'NULL'})",
+            (chain.value, *[w["wallet"] for w in walked]),
+        )
+    }
+    ts = now_ms()
+    for w in walked:
+        prev, now_g = before.get(w["wallet"]), after.get(w["wallet"])
+        w["grade"] = f"{prev[0]}->{now_g[0] if now_g else '?'}" if prev else None
+        w["score"] = f"{prev[1]:.1f}->{now_g[1]:.1f}" if prev and now_g else None
+        ctx.conn.execute(
+            "INSERT INTO kv (key, value, updated_ms) VALUES (?,?,?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_ms = excluded.updated_ms",
+            (f"{DEEPEN_MARK_PREFIX}{chain.value}:{w['wallet']}", jdump(w), ts),
+        )
+    ctx.quota_add(units=len(walked), credits=spent)
+    return {
+        **base,
+        "wallets": len(walked),
+        "pages": sum(w["pages"] for w in walked),
+        "credits": spent,
+        "credits_today": used_credits + spent,
+        "first_buyers": first_buyers,
+        "walked": [{**w, "wallet": w["wallet"][:12]} for w in walked],
+        "credit_room": room.as_dict(),
+        **graded,
+    }
+
+
 def job_signals(ctx: JobContext) -> dict[str, Any]:
     """Poll the due early-alpha sources, one call per source, least-recently-tried first.
 
@@ -1525,8 +1736,30 @@ def job_hunters(ctx: JobContext) -> dict[str, Any]:
     command or Hermes chose to call ``kaiba_run_hunter``, which made "automated airdrop
     hunting" true only while somebody was watching. One hunter failing must not stop the
     others, so each is caught separately.
+
+    Each receipt is cut to its counts and per-source states. MEASURED 2026-10-02: the
+    full receipts came to 2,149 chars, over ``_small``'s 2,000 cap, so every hunters run
+    on the box was stored as ``{"truncated": true}`` and its outcome was unreadable from
+    the scheduler's own record. Self-contained on purpose (no module helper): the hunter
+    scheduler test executes this function's source on its own.
     """
     import importlib
+
+    keep = ("outcome", "written", "new_count", "qualified_count", "distinct_count",
+            "refused_count", "funded_action_authorized", "reason")
+
+    def receipt(result: Any) -> Any:
+        if not isinstance(result, dict):
+            return result
+        small: dict[str, Any] = {k: result[k] for k in keep if k in result}
+        if isinstance(result.get("sources"), dict):
+            small["sources"] = {
+                name: {"state": s.get("state"), "parsed_count": s.get("parsed_count"),
+                       **({"error": str(s["error"])[:80]} if s.get("error") else {})}
+                if isinstance(s, dict) else s
+                for name, s in result["sources"].items()
+            }
+        return small
 
     out: dict[str, Any] = {}
     for kind, module in (
@@ -1540,7 +1773,7 @@ def job_hunters(ctx: JobContext) -> dict[str, Any]:
             if refresh is None:
                 out[kind] = "no refresh entry point"
                 continue
-            out[kind] = refresh(ctx.conn)
+            out[kind] = receipt(refresh(ctx.conn))
         except Exception as exc:  # noqa: BLE001 - one dead hunter is not an outage
             log.warning("hunter %s failed: %s", kind, exc)
             out[kind] = f"failed: {type(exc).__name__}"
@@ -2009,7 +2242,7 @@ def job_tracker_cohorts(ctx: JobContext) -> dict[str, Any]:
 
 
 def job_wallet_naming(ctx: JobContext) -> dict[str, Any]:
-    """Name every wallet we hold evidence on and write it into ``wallets`` (naming.name_wallets).
+    """Name the wallets we hold evidence on and write it into ``wallets`` (naming module).
 
     Free, local, and ``enabled: true`` in the shipped schedule since 2026-09-22. It shipped
     off while ``naming.registry_tags`` mapped the vendor's ``smart_degen`` /
@@ -2027,13 +2260,91 @@ def job_wallet_naming(ctx: JobContext) -> dict[str, Any]:
     NULL (MEASURED dry run against a snapshot of the live database, 2026-09-22: 87,991) and
     an unfiltered ``backfill.tracked_wallets`` would start paying to top those up
     alphabetically.
+
+    2026-10-02: INCREMENTAL by default (``naming.name_wallets_incremental``). The full pass
+    -- a GROUP BY over every swap plus a LIKE over every ``wallet.trade`` event -- had not
+    finished inside its 300 s timeout since 2026-09-24 (4 of 4 runs timed out, then 25
+    consecutive failures). Each run now re-names only the wallets whose evidence moved
+    since its kv cursors, by index seeks, stopping at ``max_wallets`` or ``budget_s``
+    (and always 30 s inside the timeout), and reports each change feed's lag.
+    ``mode: full`` runs the old pass, for a deliberate rebuild.
     """
     from kaiba.intelligence import naming
 
-    report = naming.name_wallets(ctx.conn)
-    out = report.as_dict()
-    # Three sample names per archetype is a screenful; the table cell keeps a handful.
+    if str(ctx.param("mode", "incremental")) == "full":
+        report = naming.name_wallets(ctx.conn)
+        out = report.as_dict()
+        # Three sample names per archetype is a screenful; the table cell keeps a handful.
+        out["samples"] = list(out.get("samples") or [])[:5]
+        return out
+    budget_s = float(ctx.param("budget_s", 200))
+    deadline = min(ctx.now() + int(budget_s * 1000), ctx.deadline_ms - 30_000)
+    inc = naming.name_wallets_incremental(
+        ctx.conn,
+        max_wallets=int(ctx.param("max_wallets", naming.INCREMENTAL_MAX_WALLETS)),
+        chunk_wallets=int(ctx.param("chunk_wallets", naming.INCREMENTAL_CHUNK_WALLETS)),
+        insert_swap_only=bool(ctx.param("insert_swap_only", False)),
+        max_tape_lag_ids=int(ctx.param("max_tape_lag_ids", naming.INCREMENTAL_MAX_TAPE_LAG_IDS)),
+        deadline_ms=deadline,
+        clock=ctx.clock,
+    )
+    out = inc.as_dict()
     out["samples"] = list(out.get("samples") or [])[:5]
+    return out
+
+
+def job_wallet_feed_tags(ctx: JobContext) -> dict[str, Any]:
+    """Backfill, then parity-check, the ``wallet_feed_tags`` rollup (intelligence/feed_tags.py).
+
+    The rollup is what lets old ``wallet.trade`` events be deleted (~0.4 GB/day on the box)
+    without losing GMGN's labels, which exist nowhere else. Phases, one per run:
+
+    * ``waiting_for_writer`` -- nothing until ``gmgn_feeds.write_swap`` (new code, kaiba-ingest
+      restarted) has rolled up its first event and stamped the id it started from;
+    * ``backfilling`` -- the events below that id, newest window first, inside ``budget_s``,
+      resumable from kv, each window and its cursor in one short transaction;
+    * parity -- once complete, at most every ``parity_interval_s``: sampled wallets' table
+      rows against their own events, and every reader's old answer against its new one.
+      A failed check FAILS the job (and blocks retention); a passed one is what switches
+      the readers over (``feed_tags.table_ready``).
+
+    Free, local, no provider. Reads at most one ``window_ids`` range of events per step.
+    """
+    from kaiba.intelligence import feed_tags
+
+    budget_s = float(ctx.param("budget_s", 200))
+    deadline = min(ctx.now() + int(budget_s * 1000), ctx.deadline_ms - 30_000)
+    out: dict[str, Any] = {}
+    backfill = feed_tags.backfill_step(
+        ctx.conn,
+        deadline_ms=deadline,
+        window_ids=int(ctx.param("window_ids", 20_000)),
+        sleep_s=float(ctx.param("sleep_s", 0.2)),
+        clock=ctx.clock,
+    )
+    out["backfill"] = backfill
+    if not backfill.get("complete"):
+        out["ready"] = feed_tags.table_ready(ctx.conn)
+        return out
+    last = feed_tags.parity_record(ctx.conn)
+    interval_ms = int(ctx.param("parity_interval_s", 21_600)) * 1000
+    if (last.get("ok") and last.get("sufficient") and last.get("checked_ms")
+            and ctx.now() - int(last["checked_ms"]) < interval_ms):
+        out["parity"] = {"skipped": "interval", "last_checked_ms": last.get("checked_ms"),
+                         "last_mode": last.get("mode"), "last_compared": last.get("compared")}
+    elif ctx.now() >= deadline:
+        out["parity"] = {"skipped": "no_time_left"}
+    else:
+        # MEASURED 2026-10-02: ~1.8 s a sampled wallet on the box, so the deadline, not the
+        # sample size, is what bounds this.
+        parity = feed_tags.parity_check(ctx.conn, sample=int(ctx.param("parity_sample", 60)),
+                                        record=True, now_ms=ctx.now(), deadline_ms=deadline,
+                                        clock=ctx.clock)
+        out["parity"] = parity
+        if not parity.get("ok"):
+            out["ready"] = feed_tags.table_ready(ctx.conn)
+            raise JobFailed("wallet_feed_tags parity check failed", out)
+    out["ready"] = feed_tags.table_ready(ctx.conn)
     return out
 
 
@@ -2043,6 +2354,11 @@ def job_wallet_seeds(ctx: JobContext) -> dict[str, Any]:
     Free, local, no provider call, and it must stay ahead of ``wallet_tape``: the tape
     grader reads the number this writes, and a wallet graded before its seeds are
     counted is graded without 12 of the 100 points. See kaiba.intelligence.seeds.
+
+    2026-10-02: writes only the wallets whose count CHANGED (it rewrote all ~915k every
+    run), takes seeds from the cursor-folded price extent (no whole-tape scan, numeric
+    peak), and gives each chain a fair share of the time left so a cut pass resumes next
+    run instead of timing out. FAILS while the extent is still bootstrapping.
     """
     from kaiba.intelligence import seeds as SEEDS
 
@@ -2050,21 +2366,39 @@ def job_wallet_seeds(ctx: JobContext) -> dict[str, Any]:
     limit = ctx.param("wallets_per_chain", None)
     dry = bool(ctx.param("dry_run", False))
     per_chain: dict[str, Any] = {}
-    totals = {"seeds": 0, "written": 0, "failed": 0}
-    for name in names:
+    totals = {"seeds": 0, "written": 0, "unchanged": 0, "failed": 0}
+    not_ready: list[str] = []
+    for i, name in enumerate(names):
         try:
             chain = Chain(name)
         except ValueError:
             per_chain[str(name)] = {"reason": "unknown_chain"}
             continue
-        rep = SEEDS.run(chain, ctx.conn, limit=(int(limit) if limit else None), dry_run=dry)
+        rep = SEEDS.run(chain, ctx.conn, limit=(int(limit) if limit else None), dry_run=dry,
+                        deadline=_share_deadline(ctx, len(names) - i), clock=ctx.clock)
         per_chain[chain.value] = rep
+        if rep.get("not_ready"):
+            not_ready.append(chain.value)
         for k in totals:
             totals[k] += int(rep.get(k) or 0)
     result = {**totals, "per_chain": per_chain}
+    if not_ready:
+        raise JobFailed(f"price extent still folding the tape; no seeds counted on {not_ready}",
+                        result)
     if totals["failed"]:
         raise JobFailed("wallet seed writes failed", result)
     return result
+
+
+def _share_deadline(ctx: JobContext, chains_left: int, *, margin_s: float = 30.0) -> float:
+    """``ctx.clock()`` seconds by which this chain must stop: an equal share of what is left.
+
+    Time a chain does not use flows to the chains after it. The margin keeps the last
+    chain's final transaction clear of the scheduler's own timeout.
+    """
+    end = ctx.deadline_ms / 1000.0 - margin_s
+    now = ctx.clock()
+    return now + max(0.0, end - now) / max(1, int(chains_left))
 
 def job_wallet_tape(ctx: JobContext) -> dict[str, Any]:
     """Grade every wallet on each chain's own tape (grade.grade_tape), read-only by default.
@@ -2087,37 +2421,129 @@ def job_wallet_tape(ctx: JobContext) -> dict[str, Any]:
     """
     from kaiba.intelligence import grade
 
+    # 2026-10-02 -- MEASURED on the box: 3 of the last 4 runs timed out at 1,500 s (sol
+    # 755-1,149 s, robinhood 389-691 s, bsc 142-187 s for 928 wallets), every one storing
+    # all ~525k scored wallets. Three changes, none of which alters a grade:
+    #   * skip_unchanged (default on): a stored tape grade is rewritten only if it moved
+    #     (grade.unchanged_tape_scores), A/B every pass, the rest restamped every 3-6 days;
+    #   * each chain gets a fair share of the time left and stops BETWEEN wallets at it;
+    #     the next run resumes after the last wallet finished (kv ops:wallet_tape:pass:*),
+    #     so the job finishes inside its timeout and a long tape spreads over runs;
+    #   * chains run smallest completed pass first, so the time small tapes leave unused
+    #     flows to sol instead of sol's share starving the others.
     store = bool(ctx.param("store", False))
+    skip_unchanged = bool(ctx.param("skip_unchanged", True))
     limit = int(ctx.param("candidate_limit", grade.TAPE_CANDIDATE_LIMIT))
     names = _chain_names(ctx.param("chains", None), ("sol", "bsc", "robinhood"))
     per_chain: dict[str, Any] = {}
-    totals = {"wallets_seen": 0, "wallets_scored": 0, "candidates": 0, "stored": 0, "store_failed": 0, "b_or_better": 0}
+    totals = {"wallets_seen": 0, "wallets_scored": 0, "candidates": 0, "stored": 0,
+              "store_failed": 0, "b_or_better": 0, "unchanged_skipped": 0}
+    chains: list[Chain] = []
     for name in names:
         try:
-            chain = Chain(name)
+            chains.append(Chain(name))
         except ValueError:
             per_chain[name] = {"reason": "unknown_chain"}
-            continue
-        report = grade.grade_tape(ctx.conn, chain, store=store, candidate_limit=limit)
+    states = {c: _tape_pass_state(ctx.conn, c) for c in chains}
+    chains.sort(key=lambda c: (states[c].get("full_pass_wallets") is None,
+                               states[c].get("full_pass_wallets") or 0))
+    for i, chain in enumerate(chains):
+        state = states[chain]
+        start_after = state.get("resume_after") or None
+        report = grade.grade_tape(
+            ctx.conn, chain, store=store, candidate_limit=limit,
+            skip_unchanged=skip_unchanged, start_after=start_after,
+            deadline=_share_deadline(ctx, len(chains) - i), clock=ctx.clock,
+        )
         ts = ctx.now()
+        truncated = bool(getattr(report, "truncated", False))
+        cursor = (getattr(report, "resume_after", None) or start_after) if truncated else None
+        candidates = list(report.candidates)
+        if start_after is not None or truncated:
+            candidates = _merge_tape_candidates(
+                ctx.conn, chain, candidates, lo=start_after,
+                hi=cursor if truncated else None, limit=limit,
+            )
         ctx.conn.execute(
             "INSERT INTO kv (key, value, updated_ms) VALUES (?,?,?) "
             "ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_ms = excluded.updated_ms",
-            (f"ops:wallet_tape:candidates:{chain.value}", jdump(list(report.candidates)), ts),
+            (f"ops:wallet_tape:candidates:{chain.value}", jdump(candidates), ts),
         )
+        carried = int(state.get("pass_wallets") or 0) if start_after else 0
+        seen = int(report.wallets_seen) + carried
+        _save_tape_pass_state(ctx.conn, chain, ts, {
+            "resume_after": cursor,
+            "pass_wallets": seen if truncated else 0,
+            "full_pass_wallets": state.get("full_pass_wallets") if truncated else seen,
+        })
         d = report.as_dict()
         summary = {k: d.get(k) for k in (
             "wallets_seen", "wallets_scored", "wallets_too_thin", "by_grade", "b_or_better",
             "sell_only_refused", "quarantined_by_tag", "candidates", "stored", "store_failed", "kept_full_grade",
-            "elapsed_s",
+            "unchanged_skipped", "truncated", "elapsed_s",
         )}
-        per_chain[name] = summary
+        if start_after:
+            summary["resumed"] = True
+        per_chain[chain.value] = summary
         for key in totals:
             totals[key] += int(summary.get(key) or 0)
     result = {**totals, "store": store, "candidate_limit": limit, "per_chain": per_chain}
     if totals["store_failed"]:
         raise JobFailed("wallet tape writes failed", result)
     return result
+
+
+def _tape_pass_state(conn: sqlite3.Connection, chain: Chain) -> dict[str, Any]:
+    """``{resume_after, pass_wallets, full_pass_wallets}`` for one chain's tape pass."""
+    row = conn.execute(
+        "SELECT value FROM kv WHERE key = ?", (f"ops:wallet_tape:pass:{chain.value}",)
+    ).fetchone()
+    value = jload(row[0], {}) if row else {}
+    return value if isinstance(value, dict) else {}
+
+
+def _save_tape_pass_state(
+    conn: sqlite3.Connection, chain: Chain, ts: int, state: dict[str, Any]
+) -> None:
+    conn.execute(
+        "INSERT INTO kv (key, value, updated_ms) VALUES (?,?,?) "
+        "ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_ms = excluded.updated_ms",
+        (f"ops:wallet_tape:pass:{chain.value}", jdump(state), ts),
+    )
+
+
+def _merge_tape_candidates(
+    conn: sqlite3.Connection, chain: Chain, fresh: list[dict[str, Any]], *,
+    lo: str | None, hi: str | None, limit: int,
+) -> list[dict[str, Any]]:
+    """This run's candidates plus last list's entries for wallets this run did not reach.
+
+    A run that covered ``(lo, hi]`` of the address space re-judged every wallet in it, so
+    an old entry inside that range is dropped (re-ranked, or no longer a candidate) and one
+    outside it is kept until the pass reaches it. Ranked as the grader ranks: closed
+    episodes, then realised PnL.
+    """
+    row = conn.execute(
+        "SELECT value FROM kv WHERE key = ?", (f"ops:wallet_tape:candidates:{chain.value}",)
+    ).fetchone()
+    previous = jload(row[0], []) if row else []
+
+    def covered(address: str) -> bool:
+        return (lo is None or address > lo) and (hi is None or address <= hi)
+
+    kept = [c for c in (previous if isinstance(previous, list) else [])
+            if isinstance(c, dict) and isinstance(c.get("address"), str)
+            and not covered(c["address"])]
+
+    def rank(c: dict[str, Any]) -> tuple[int, float]:
+        try:
+            pnl = float(c.get("realized_pnl") or 0)
+        except (TypeError, ValueError):
+            pnl = 0.0
+        return int(c.get("closed_episodes") or 0), pnl
+
+    merged = sorted([*fresh, *kept], key=rank, reverse=True)
+    return merged[: max(0, int(limit))]
 
 
 def job_clustering(ctx: JobContext) -> dict[str, Any]:
@@ -2206,6 +2632,30 @@ def job_ops_prune(ctx: JobContext) -> dict[str, Any]:
     return {"runs_deleted": int(runs or 0), "quota_rows_deleted": int(quota or 0), "retention_days": days}
 
 
+def job_retention(ctx: JobContext) -> dict[str, Any]:
+    """Row retention for the tables that only grow (kaiba/ops/retention.py).
+
+    A separate job from ``ops_prune`` on purpose: ``ops_prune`` is a 60 s job over the
+    scheduler's own small tables, and this is a LONG, low-priority one (timeout >=
+    ``long_timeout_s``, so it shares the single long slot with the studies) that walks
+    millions of rows in short transactions with sleeps between them.
+
+    Two switches, both off as shipped: ``jobs.retention.enabled`` decides whether the job
+    runs at all, and the top-level ``retention.enabled`` decides whether a run may delete.
+    With the second off a run is a read-only dry run that reports what it would delete.
+    ``dry_run: true`` as a job parameter forces the dry run either way.
+    """
+    from kaiba.ops import retention
+
+    cfg = ctx.config.retention
+    # Stop 30 s inside the job's timeout whatever budget_s says: a run cut off by the
+    # scheduler would leave its last transaction to the hard-deadline interrupt.
+    deadline = min(ctx.now() + int(cfg.budget_s * 1000), ctx.deadline_ms - 30_000)
+    return retention.run(
+        ctx.conn, cfg, dry_run=bool(ctx.param("dry_run", False)), deadline_ms=deadline, clock=ctx.clock,
+    )
+
+
 def job_deployer_stats(ctx: JobContext) -> dict[str, Any]:
     """Recompute every deployer's record from our own tape.
 
@@ -2214,17 +2664,38 @@ def job_deployer_stats(ctx: JobContext) -> dict[str, Any]:
     "unknown", and the sizing arm that depends on it is a rule with no data -- which is
     the exact failure ``creator_rug_count`` had: a shipped rule that had never once fired
     because nothing populated its input.
+
+    2026-10-02: the outcomes come from ``price_extent``, folded forward from a swaps
+    cursor, not from two whole-chain ``GROUP BY`` walks per chain (197 s mean, 5 of 28
+    runs past the 300 s timeout). A steady-state run folds ~30 minutes of swaps. While the
+    extent is still bootstrapping (first deploy: ~15 min of IO over the whole tape, spread
+    across runs by the deadline) the job FAILS with the fold's progress instead of writing
+    records from a half-built table; the lookups meanwhile go stale and read "unknown",
+    which the sizer charges nothing.
     """
-    from kaiba.intelligence.deployer import refresh
+    from kaiba.intelligence import price_extent
+    from kaiba.intelligence.deployer import ExtentNotReady, refresh
 
     chains = [c.strip() for c in str(ctx.param("chains", "sol,bsc")).split(",") if c.strip()]
+    deadline = (ctx.deadline_ms - 30_000) / 1000.0
+    # Fold once up front so the result records what this run read; each refresh's own
+    # advance is then a no-op, and refresh is what refuses a half-folded extent.
+    fold = price_extent.advance(ctx.conn, deadline=deadline)
+    folded = {k: fold.as_dict()[k] for k in ("rows_read", "batches", "cursor_to", "target_id",
+                                              "caught_up", "elapsed_s")}
     out: dict[str, Any] = {}
     for name in chains:
         try:
-            out[name] = refresh(ctx.conn, Chain(name), window_days=int(ctx.param("days", 7)))
+            chain = Chain(name)
         except ValueError:
             raise JobFailed(f"unknown chain {name!r}") from None
-    return {"deployers_written": out}
+        try:
+            out[name] = refresh(ctx.conn, chain, window_days=int(ctx.param("days", 7)),
+                                deadline=deadline)
+        except ExtentNotReady as exc:
+            raise JobFailed(str(exc), {"deployers_written": out,
+                                       "price_extent": exc.progress}) from None
+    return {"deployers_written": out, "price_extent": folded}
 
 
 def job_exit_study(ctx: JobContext) -> dict[str, Any]:
@@ -2304,6 +2775,34 @@ def job_copytrade(ctx: JobContext) -> dict[str, Any]:
         }
         log.info("ops: copytrade %s %s", name, out[name])
     return out
+
+
+def job_proven_wallets(ctx: JobContext) -> dict[str, Any]:
+    """Freeze a FORWARD-VALIDATED wallet cohort per chain: ``proven:<chain>:<ms>``.
+
+    Added 2026-10-02 (kaiba/learning/proven.py). A wallet is proven when copying it, at
+    our own lag and 1%/leg, made money in sample AND again out of sample (split on the
+    median swap) with a bootstrap lower bound above zero -- and only on a chain whose
+    in-sample winners out-earned its in-sample losers out of sample. Grades do not enter
+    into it: sol B grades measured no better than C/D forward. A chain where nothing
+    persists freezes an EMPTY cohort, which the lane reads as "nobody counts here".
+
+    Read-only on ``swaps``: primary-key reads of the newest rows for the candidate draw,
+    then ``idx_swaps_wallet`` / ``idx_swaps_token`` seeks per candidate, under a deadline
+    (time left minus 60 s, split evenly across chains). Writes only
+    ``wallet_cohorts`` / ``wallet_cohort_freezes``. MEASURED 2026-10-02 on the box under
+    ``ionice -c3``: robinhood 3,014 candidates in 324 s, sol 3,000 in 64 s -- and both
+    cohorts came out EMPTY (see the proven_wallets entry in config/schedule.yaml).
+    """
+    from kaiba.learning import proven
+
+    try:
+        chains = proven.parse_chains(ctx.param("chains", "sol,robinhood"))
+        cfg = proven.config_from_params(ctx.params)
+    except ValueError as exc:
+        raise JobFailed(str(exc)) from None
+    deadline = time.monotonic() + max(5.0, ctx.time_left_s() - 60.0)
+    return proven.run(ctx.conn, chains, config=cfg, as_of_ms=ctx.now(), deadline_monotonic=deadline)
 
 
 def job_variable_study(ctx: JobContext) -> dict[str, Any]:
@@ -2391,6 +2890,85 @@ def job_learning_sweep(ctx: JobContext) -> dict[str, Any]:
         "studies": {r.name: (r.headline if r.ok else r.error) for r in report.results},
     }
 
+def job_experiment_gates(ctx: JobContext) -> dict[str, Any]:
+    """Judge proposed experiments with the deterministic gates, on a schedule.
+
+    Added 2026-10-02 (kaiba/learning/experiment_loop.py). MEASURED that day on the box: 4
+    experiments, all ``proposed``, 2 gate_results rows ever (one hand-run), 0
+    ``experiment_trades`` -- nothing ran the gates and nothing wrote a candidate arm, so no
+    proposal could ever be judged, let alone promoted. Each pass: ``proposed`` -> replay
+    gate -> ``rejected`` or ``shadow``; ``shadow`` -> label forward trades into arms ->
+    shadow gate once its own minimums are met -> ``rejected`` / ``awaiting_owner`` /
+    ``gates.promote``; ``promoted`` -> the pre-registered rollback rule.
+
+    Spends nothing: reads recorded rows only, no provider call, no quote, no order. Its only
+    trading-relevant write is ``gates.promote`` (risk.yaml lane params, never bounds or
+    sizing), behind ``bounds.allow_self_promotion`` and this job's ``auto_promote``.
+    """
+    from kaiba.learning import experiment_loop
+
+    try:
+        params = experiment_loop._params(ctx.params)
+    except ValueError as exc:
+        raise JobFailed(str(exc)) from None
+    deadline = time.monotonic() + max(5.0, ctx.time_left_s() - 15.0)
+    result = experiment_loop.run(ctx.conn, now=ctx.now(), params=params, deadline_monotonic=deadline)
+    log.info(
+        "ops: experiment_gates seen=%s rejected=%s shadow=%s promoted=%s awaiting_owner=%s "
+        "rolled_back=%s waiting=%s errors=%s",
+        result["seen"], len(result["rejected"]), len(result["shadow_started"]),
+        len(result["promoted"]), len(result["awaiting_owner"]), len(result["rolled_back"]),
+        len(result["waiting"]), len(result["errors"]),
+    )
+    if result["errors"]:
+        raise JobFailed(f"{len(result['errors'])} experiment(s) failed", result)
+    return result
+
+
+def job_nft_mint_study(ctx: JobContext) -> dict[str, Any]:
+    """PAPER NFT mint study on Robinhood Chain: would auto-minting make money? Spends nothing.
+
+    Added 2026-10-02 (kaiba/learning/mint_study.py). No wallet, no signer, no transaction,
+    no OpenSea key: it reads SeaDrop mints and Seaport sales off the chain, writes paper
+    ``mint``/``shadow`` rows priced at the on-chain public price + gas, scores them at
+    +24 h / +72 h from REAL fills (accepted bids first; an ask nobody paid is never a
+    price), and stores a PASS/PENDING/FAIL gate in ``kv``. Live minting is not even
+    discussable before PASS.
+
+    RPC budget on the shared ``robinhood-rpc`` bucket, all at Priority.RESEARCH in the
+    ``chain.`` family (refused during any chain cooldown, never EXIT/POSITION), its own
+    requests >= ``pace_s`` (3 s) apart and never more than 4 reads per batch: a steady run
+    is 2 HTTP calls / 4 reads for the tape, plus <= ``max_checks_per_run`` (6) candidate
+    checks of 2 reads, or 4 when the drop's public stage is open, once per collection per
+    UTC day.
+    """
+    from kaiba.learning import mint_study
+
+    deadline = time.monotonic() + max(5.0, ctx.time_left_s() - 15.0)
+    return mint_study.run(ctx.conn, now=ctx.now(), schedule_params=ctx.params, deadline_monotonic=deadline)
+
+
+def job_loss_attribution(ctx: JobContext) -> dict[str, Any]:
+    """Split every closed live loss into ENTRY vs EXIT, and rank entry features on the
+    SCANNED population. Added 2026-10-03 (kaiba/learning/loss_attribution.py).
+
+    Proposes nothing and changes nothing that trades: it writes its own ``loss_attribution``
+    table and ``kv`` ``learning:loss_attribution``, which the daily LLM learning loop and the
+    daily report read. The gates judge whatever the loop proposes from it. Spends nothing:
+    recorded rows and the swap tape only, no provider call.
+    """
+    from kaiba.learning import loss_attribution
+
+    deadline = time.monotonic() + max(5.0, ctx.time_left_s() - 15.0)
+    result = loss_attribution.run(ctx.conn, now=ctx.now(), params=ctx.params, deadline_monotonic=deadline)
+    log.info(
+        "ops: loss_attribution %s losses=%s entry_share=%s top_leak=%s top_feature=%s "
+        "scanned=%s truncated=%s %.1fs",
+        result["window"], result["losses"], result["entry_share"], result["top_leak"], result["top_feature"],
+        result["scanned_measured"], result["truncated"], result["elapsed_s"],
+    )
+    return result
+
 
 JOBS: dict[str, JobSpec] = {
     "learning_sweep": JobSpec(
@@ -2406,6 +2984,11 @@ JOBS: dict[str, JobSpec] = {
         "copytrade", job_copytrade,
         "rank copyable wallets AND test whether the ranking survives out of sample: it "
         "does on robinhood and does not on sol or bsc",
+    ),
+    "proven_wallets": JobSpec(
+        "proven_wallets", job_proven_wallets,
+        "freeze the wallets whose copy returns persisted OUT OF SAMPLE, per chain, with a "
+        "random-eligible control; an empty cohort where nothing persists",
     ),
     "variable_study": JobSpec(
         "variable_study", job_variable_study,
@@ -2439,6 +3022,12 @@ JOBS: dict[str, JobSpec] = {
     "wallet_regrade": JobSpec(
         "wallet_regrade", job_wallet_regrade,
         "regrade wallets whose evidence moved; free, local",
+    ),
+    "wallet_deepen": JobSpec(
+        "wallet_deepen", job_wallet_deepen,
+        "buy more history only for paid grades within reach of A whose walk is truncated, "
+        "then regrade; the A gate now refuses a truncated sample",
+        spends_helius=True,
     ),
     "signals": JobSpec(
         "signals", job_signals,
@@ -2506,6 +3095,11 @@ JOBS: dict[str, JobSpec] = {
         "wallet_naming", job_wallet_naming,
         "name every wallet we hold evidence on; a vendor label lands as gmgn:<label>, never as a lane word",
     ),
+    "wallet_feed_tags": JobSpec(
+        "wallet_feed_tags", job_wallet_feed_tags,
+        "roll GMGN's wallet labels up out of wallet.trade events, then prove the rollup equals "
+        "the events; until it does, no wallet.trade event may be deleted",
+    ),
     "wallet_seeds": JobSpec(
         "wallet_seeds", job_wallet_seeds,
         "count the tokens that ran and how many each wallet bought; feeds the grader's "
@@ -2528,9 +3122,29 @@ JOBS: dict[str, JobSpec] = {
         "ops_prune", job_ops_prune,
         "bound the scheduler's own run history",
     ),
+    "retention": JobSpec(
+        "retention", job_retention,
+        "batched, opt-in row retention for provider_calls, triage_decisions and unchanged "
+        "wallet_score_history; a dry run until retention.enabled",
+    ),
     "execute_planned": JobSpec(
         "execute_planned", job_execute_planned,
         "submit live orders the engine planned, then reconcile; the only entry path to a venue",
+    ),
+    "nft_mint_study": JobSpec(
+        "nft_mint_study", job_nft_mint_study,
+        "PAPER Robinhood NFT mint study: on-chain mint/sale tape, paper mints scored on real "
+        "fills at 24/72 h, PASS/FAIL gate; spends nothing",
+    ),
+    "experiment_gates": JobSpec(
+        "experiment_gates", job_experiment_gates,
+        "run proposed experiments through the replay and shadow gates, promote only what "
+        "passes both within the whitelist, roll back on the pre-registered live rule",
+    ),
+    "loss_attribution": JobSpec(
+        "loss_attribution", job_loss_attribution,
+        "split each closed live loss into entry vs exit execution and rank entry features on "
+        "the scanned population; writes its own table + kv, proposes nothing, spends nothing",
     ),
 }
 
