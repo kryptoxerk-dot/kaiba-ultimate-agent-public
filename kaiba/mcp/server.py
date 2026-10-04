@@ -503,6 +503,74 @@ def kaiba_set_lane_param(lane: str, key: str, value: float | int | str | bool, r
     return {"ok": True, "lane": ln.value, "key": key, "value": value}
 
 
+#: Caps on the launch-snipe watchlists. A watchlist hit fires the lane on that launch, so
+#: the lists are kept short enough to read; past the cap, remove something first.
+SNIPE_WATCHLIST_CAPS = {"dev": 50, "name": 30}
+_SNIPE_WATCHLIST_KEYS = {"dev": "dev_watchlist", "name": "name_watchlist"}
+
+
+def kaiba_snipe_watchlist(
+    action: Literal["list", "add", "remove"],
+    kind: Literal["dev", "name"] = "dev",
+    value: str = "",
+    chain: str = "robinhood",
+    reason: str = "",
+) -> dict[str, Any]:
+    """Read or edit the launch-snipe watchlists (``skills/launch-snipe``).
+
+    ``dev``: a deployer wallet whose NEW launches the sniper should fire on (validated for
+    ``chain``). ``name``: a name or ticker, 2-32 characters. A hit still passes every veto
+    and every engine gate and sizes at the lane's bottom rung; the lane re-reads its params
+    within 60 s. ``kaiba_set_lane_param`` cannot do this: its values are scalars.
+    """
+    if kind not in _SNIPE_WATCHLIST_KEYS:
+        return {"ok": False, "reason": f"kind must be one of {sorted(_SNIPE_WATCHLIST_KEYS)}"}
+    key = _SNIPE_WATCHLIST_KEYS[kind]
+    try:
+        ln = Lane("launch-snipe")
+    except ValueError:
+        return {"ok": False, "reason": "lane launch-snipe is not defined in this build"}
+    risk = get_risk()
+    if ln not in risk.lanes:
+        return {"ok": False, "reason": "lane launch-snipe is not configured in risk.yaml"}
+    cfg = risk.lane(ln)
+    current = [str(v) for v in (cfg.params.get(key) or [])]
+    if action == "list":
+        return {"ok": True, "dev_watchlist": [str(v) for v in cfg.params.get("dev_watchlist") or []],
+                "name_watchlist": [str(v) for v in cfg.params.get("name_watchlist") or []],
+                "caps": SNIPE_WATCHLIST_CAPS}
+    if action not in ("add", "remove"):
+        return {"ok": False, "reason": "action must be list, add or remove"}
+    raw = (value or "").strip()
+    if kind == "dev":
+        try:
+            item = normalize_address(raw, Chain(chain))
+        except ValueError as exc:
+            return {"ok": False, "reason": f"not a {chain} wallet address: {exc}"[:200]}
+    else:
+        if not 2 <= len(raw) <= 32 or not raw.isprintable():
+            return {"ok": False, "reason": "a name must be 2-32 printable characters"}
+        item = raw
+    same = (lambda a: a.lower() == item.lower()) if kind == "name" or item.startswith("0x") else (lambda a: a == item)
+    present = any(same(v) for v in current)
+    if action == "add":
+        if present:
+            return {"ok": True, "unchanged": True, key: current}
+        if len(current) >= SNIPE_WATCHLIST_CAPS[kind]:
+            return {"ok": False, "reason": f"{key} is at its cap of {SNIPE_WATCHLIST_CAPS[kind]}; remove one first"}
+        updated = current + [item]
+    else:
+        if not present:
+            return {"ok": True, "unchanged": True, key: current}
+        updated = [v for v in current if not same(v)]
+    cfg.params[key] = updated
+    risk.lanes[ln] = cfg
+    save_risk(risk)
+    journal.append("change", f"launch-snipe {key} {action} {item}: {reason[:200]}", subject=ln.value, conn=_conn())
+    ev.emit(EventKind.PARAM_CHANGE, {"lane": ln.value, "key": key, "action": action, "value": item}, conn=_conn())
+    return {"ok": True, "action": action, "value": item, key: updated}
+
+
 def kaiba_set_cohort(address: str, chain: str, cohort: Literal["tracked", "trusted_copy", "blacklist", "research"]) -> dict[str, Any]:
     """Move a wallet between cohorts.
 
@@ -633,6 +701,7 @@ TOOL_OPERATIONS: dict[str, str] = {
     "kaiba_reduce_only": "reduce_only_set",
     "kaiba_set_lane_mode": "lane_mode_set",
     "kaiba_set_lane_param": "lane_param_set",
+    "kaiba_snipe_watchlist": "lane_param_set",
     "kaiba_set_cohort": "cohort_set",
     "kaiba_set_protection": "protection_set",
     "kaiba_request_exit": "exit_request",
@@ -1749,6 +1818,7 @@ TOOLS.update(
         "kaiba_run_hunter": kaiba_run_hunter,
         "kaiba_opportunities": kaiba_opportunities,
         "kaiba_experiments": kaiba_experiments,
+        "kaiba_snipe_watchlist": kaiba_snipe_watchlist,
         # operator read-outs
         "kaiba_copy_manager": kaiba_copy_manager,
         "kaiba_health": kaiba_health,

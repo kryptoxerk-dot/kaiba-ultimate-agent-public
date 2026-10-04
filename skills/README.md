@@ -1,6 +1,6 @@
 # Kaiba skills
 
-Sixteen agentskills.io-format skills, shared by Hermes, Codex CLI and Claude Code. They
+Eighteen agentskills.io-format skills, shared by Hermes, Codex CLI and Claude Code. They
 are the procedural half of the agent: the deterministic services in `kaiba/` do the
 mechanical work, `hermes/profiles/*/SOUL.md` sets the posture, and these files say how a
 specific job is done, with which tool, against which threshold, and what the failure
@@ -24,7 +24,7 @@ skills/
 One directory per skill, named in kebab-case, and the directory name must equal the
 `name` in the frontmatter. `tests/test_skills.py` enforces that and more.
 
-## The sixteen
+## The eighteen
 
 **Intelligence**
 
@@ -45,6 +45,7 @@ One directory per skill, named in kebab-case, and the directory name must equal 
 | `trusted-wallet-copy` | whether to copy, how fast, and when to follow an exit |
 | `trade-intent` | the precedence chain, the lane, and the size |
 | `position-protection` | the four protections, the ladder, and the anti-wick check |
+| `launch-snipe` | whether the sniper is healthy, whether it makes money, and what it may change |
 | `incident-recovery` | what to do when a send, a provider or the day goes wrong |
 
 **Operations and learning**
@@ -55,6 +56,7 @@ One directory per skill, named in kebab-case, and the directory name must equal 
 | `trade-journaling` | what gets recorded, including the stand-asides |
 | `strategy-experiment` | how an idea earns capital |
 | `alpha-radar` | what deserves attention this cycle |
+| `early-alpha-hunt` | which finds are real by measured source quality, and which deployers to snipe |
 | `airdrop-hunter` | which programmes clear the EV bar, and why multi-wallet does not |
 
 ## Frontmatter contract

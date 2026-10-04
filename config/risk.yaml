@@ -175,6 +175,36 @@ lanes:
       min_entities: 3
       max_age_s: 1800
       min_liquidity_usd: 5000
+  launch-snipe:
+    # Launch sniping (kaiba/execution/snipe.py, unit kaiba-snipe): records signals, the engine
+    # decides them under every gate, ops.execute_planned submits. PRODUCTION (box) runs this
+    # lane LIVE -- owner, 2026-10-04: "live small". Shipped here as shadow so a fresh
+    # deploy from this file never arms it. Size = size_pct_min (bottom rung) of equity.
+    mode: shadow
+    size_pct_min: 6.0
+    size_pct_max: 7.0
+    chains:
+    - robinhood
+    - sol
+    params:
+      chains: [robinhood, sol]
+      venues:
+        robinhood: [pons]
+        sol: [launchlab, pump.fun]
+      dev_watchlist: []
+      name_watchlist: []
+      fire_on_records: [low/runner, mid/runner]
+      never_records: [spam/all_dud]
+      max_entry_tax_bps: 0
+      exempt_buyer_veto: true
+      dev_atomic_veto_wei: 30000000000000000
+      max_snipes_per_day:
+        robinhood: 5
+        sol: 5
+      max_dossiers_per_hour: 40
+      live_launchpads_by_chain:
+        robinhood: [pons]
+        sol: [pump.fun]
 protection:
   # 2026-10-03: entries reserve open positions' + the new ticket's stop exposure against the
   # remaining daily budget (SOL 10-02 closed at 206% of its stop). 0 = off.

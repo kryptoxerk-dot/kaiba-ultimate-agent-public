@@ -259,7 +259,8 @@ def test_tool_count_is_what_the_profiles_expect():
     # hermes/profiles/*/config.yaml pin this list; keep them in step.
     # 27 -> 31 on 2026-10-01: kaiba_copy_manager, kaiba_health, kaiba_wallet_grade_counts,
     # kaiba_live_ev (operator read-outs; the profiles carry no include filter).
-    assert len(server.TOOLS) == 31
+    # 31 -> 32 on 2026-10-04: kaiba_snipe_watchlist (launch-snipe dev/name watchlists).
+    assert len(server.TOOLS) == 32
 
 
 def test_module_entrypoint_runs_after_final_tool_registration():

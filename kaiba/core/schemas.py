@@ -598,6 +598,9 @@ class Lane(StrEnum):
     KOL_FADE = "kol-fade"
     LISTING_POP = "listing-pop"
     PONS_ROBINHOOD = "pons-robinhood"
+    #: Launch sniping on robinhood (Pons) and sol (pump.fun / LaunchLab): kaiba/execution/snipe.py
+    #: records signals; the engine decides them under every gate. Owner, 2026-10-04: live small.
+    LAUNCH_SNIPE = "launch-snipe"
     MANUAL = "manual"
 
 
