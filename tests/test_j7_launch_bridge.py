@@ -154,7 +154,8 @@ def test_one_author_can_automatically_plan_all_three_routes_with_explicit_native
     config = tl.load_config()
     chains = {chain: replace(route, buy_amt_native=Decimal("0.01"), max_buy_native=Decimal("0.02"), live=True)
               for chain, route in config.chains.items()}
-    config = replace(config, mode="live", armed_by="fixture", chains=chains,
+    # lead 2026-10-07: clear the shipped BNB combo route (four.meme); this test pins its own routes.
+    config = replace(config, mode="live", armed_by="fixture", chains=chains, extra_routes={},
                      accounts={"elonmusk": tuple(chains)})
     post = bridge().ingest("tweet", tweet(), now_ms=NOW).post
     plans = j7.shadow_plans(post, config, now_ms=NOW)

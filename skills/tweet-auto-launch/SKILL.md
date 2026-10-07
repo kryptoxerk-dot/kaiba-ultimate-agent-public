@@ -54,7 +54,8 @@ is for Pons, whose protocol fee is deducted from the input. Both target 5% of to
 rounded up by less than one indivisible unit, with integer arithmetic. `require_cap` refuses a
 quote above the configured cap: the launch is skipped, never undersized. `allocation_receipt`
 compares the minted supply with what the dev wallet actually received. Source for the modelled
-costs (pump.fun ~1.485 SOL, Flap ~0.2933 BNB, Pons V2 ~0.0893 ETH, fees included): the
+costs (pump.fun ~1.485 SOL, Flap ~0.2933 BNB, four.meme ~0.3040 BNB, Pons V2 ~0.0893 ETH, fees
+included; a BNB post launches on four.meme and Flap in parallel via the `also:` route): the
 `dev_buy_native` curve models in `kaiba/execution/tweet_launch.py`. They are models, not fills.
 
 **Vamps** (`kaiba.execution.tweet_vamp`). A vamp reuses a source token's exact name, ticker and
@@ -72,7 +73,8 @@ ladder in `config/risk.yaml` sells 20% / 25% / 33% / 50% of the then-remaining b
 so a partial fill never re-sells the same percentage of a shrinking balance.
 
 **Holder fees.** BNB / Flap: a dividend tax paid entirely to holders (`holder_fee_args`, zero
-creator / burn / LP allocation). Solana / pump.fun: through GMGN only Cashback, which pays
+creator / burn / LP allocation). BNB / four.meme: a 1% fee paid to holders as dividends
+(`dividend_fee_pct`), not yet verified live. Solana / pump.fun: through GMGN only Cashback, which pays
 traders, not holders. Robinhood / Pons: no holder-fee mechanism through GMGN.
 `j7_holder_fields` encodes J7's documented holder fields; it sends nothing and is not a GMGN
 flag mapping.

@@ -96,6 +96,9 @@ class Config:
     armed_by: str = ""
     dev_buy_supply_pct: float = 5.0
     chains: dict[Chain, ChainRoute] = field(default_factory=dict)
+    #: More launchpads on the same chain, launched IN ADDITION to ``chains[chain]`` (owner
+    #: 2026-10-07: "bnb four.meme + flap.sh combo"). Launch id tl:<tweet>:<chain>:<dex>.
+    extra_routes: dict[Chain, tuple[ChainRoute, ...]] = field(default_factory=dict)
     daily_launch_cap: int = 5
     daily_native_cap: dict[Chain, Decimal] = field(default_factory=dict)
     per_author_cooldown_s: int = 900
@@ -119,6 +122,11 @@ class Config:
     logo_generate: bool = True
     logo_timeout_s: float = 15.0
     activity_poll_s: float = 3.0
+    #: Solana create flags (speed). A create+dev-buy cannot be sandwiched -- the token does not
+    #: exist before our transaction -- so anti-MEV bundling only adds delay there; a priority
+    #: fee buys faster inclusion instead.
+    sol_anti_mev: bool = False
+    sol_priority_fee: Decimal | None = Decimal("0.0005")
     #: Vamp a watched post's launch that already has volume (owner 2026-10-07: "Vamp launches
     #: with volume / Just use same everything"). ``vamp_launches`` live|shadow|off.
     vamp_launches: str = "shadow"
@@ -136,14 +144,20 @@ def _dec(v: Any) -> Decimal | None:
 
 def load_config(path: Path | None = None) -> Config:
     raw = yaml.safe_load((path or CONFIG_PATH).read_text(encoding="utf-8")) or {}
-    chains = {}
-    for name, c in (raw.get("chains") or {}).items():
-        ch = Chain(name)
-        chains[ch] = ChainRoute(
+    chains, extra = {}, {}
+
+    def _route(ch: Chain, c: dict[str, Any]) -> ChainRoute:
+        return ChainRoute(
             chain=ch, dex=str(c["dex"]), max_buy_native=_dec(c.get("max_buy_native")) or Decimal(0),
             buy_amt_native=_dec(c.get("buy_amt_native")), live=bool(c.get("live", False)),
             holder_fee_args=_holder_fee_args(ch, str(c["dex"]), c.get("holder_fees")),
         )
+
+    for name, c in (raw.get("chains") or {}).items():
+        ch = Chain(name)
+        chains[ch] = _route(ch, c)
+        if c.get("also"):
+            extra[ch] = tuple(_route(ch, x) for x in c["also"])
     accounts, kinds = {}, {}
     for a in raw.get("accounts") or []:
         h = str(a["handle"]).lstrip("@").lower()
@@ -152,7 +166,7 @@ def load_config(path: Path | None = None) -> Config:
             kinds[h] = tuple(a["post_kinds"])
     return Config(
         mode=str(raw.get("mode", "shadow")), armed_by=str(raw.get("armed_by") or ""),
-        dev_buy_supply_pct=float(raw.get("dev_buy_supply_pct", 5.0)), chains=chains,
+        dev_buy_supply_pct=float(raw.get("dev_buy_supply_pct", 5.0)), chains=chains, extra_routes=extra,
         daily_launch_cap=int(raw.get("daily_launch_cap", 5)),
         daily_native_cap={Chain(k): Decimal(str(v)) for k, v in (raw.get("daily_native_cap") or {}).items()},
         per_author_cooldown_s=int(raw.get("per_author_cooldown_s", 900)),
@@ -173,6 +187,8 @@ def load_config(path: Path | None = None) -> Config:
         logo_generate=bool((raw.get("logo") or {}).get("generate", True)),
         logo_timeout_s=float((raw.get("logo") or {}).get("timeout_s", 15.0)),
         activity_poll_s=float(raw.get("activity_poll_s", 3.0)),
+        sol_anti_mev=bool((raw.get("speed") or {}).get("sol_anti_mev", False)),
+        sol_priority_fee=_dec((raw.get("speed") or {}).get("sol_priority_fee", "0.0005")),
         vamp_launches=str((raw.get("vamp") or {}).get("tweet_launches", "shadow")),
         vamp_window_s=int((raw.get("vamp") or {}).get("window_s", 60)),
         vamp_min_volume_usd=Decimal(str((raw.get("vamp") or {}).get("min_volume_usd", 0))),
@@ -182,6 +198,14 @@ def load_config(path: Path | None = None) -> Config:
 def _alpha_config(raw: dict[str, Any]) -> Any:
     from kaiba.execution.tweet_refs import parse_alpha_config
     return parse_alpha_config(raw)
+
+
+def route_for(cfg: Config, chain: Chain, dex: str) -> ChainRoute | None:
+    """The configured route for (chain, launchpad): the primary or one of its ``also`` routes."""
+    for r in (cfg.chains.get(chain), *cfg.extra_routes.get(chain, ())):
+        if r is not None and r.dex == dex:
+            return r
+    return None
 
 
 def watched_handles(cfg: Config) -> set[str]:
@@ -209,6 +233,12 @@ def _holder_fee_args(chain: Chain, dex: str, spec: Any) -> tuple[str, ...]:
                 "dividend_bps": 10000, "lp_bps": 0, "minimum_share_balance": 10000,
                 "recipient_type": "split", "twitter_account": "", "split_conf": []}
         return ("--flap-rate-conf", json.dumps(conf, separators=(",", ":")))
+    if isinstance(spec, dict) and spec.get("dividend_fee_pct") is not None and dex == "fourmeme":
+        # four.meme fee plan: fee_rate is a WHOLE percent; the shares route it. All to dividends.
+        # UNVERIFIED against a live create: a refusal fails only this route, nothing is sent.
+        conf = {"fee_plan": True, "recipient_address": "", "fee_rate": int(spec["dividend_fee_pct"]),
+                "burn_rate": 0, "divide_rate": 100, "liquidity_rate": 0, "recipient_rate": 0}
+        return ("--fourmeme-rate-conf", json.dumps(conf, separators=(",", ":")))
     raise ValueError(f"holder_fees {spec!r} not supported on {chain.value}/{dex}")
 
 
@@ -235,6 +265,18 @@ announced announces says said today's week's daily weekly via read more here now
 """.split())
 
 _URL = re.compile(r"https?://\S+")
+#: A brand-shaped word: an internal capital after a lower-case letter (SpaceX, OpenAI, xAI, iPhone).
+_BRAND = re.compile(r"^(?=.*[a-z])(?=.*[A-Z])[A-Za-z][A-Za-z0-9]*[a-z][A-Z][A-Za-z0-9]*$|^[a-z]+[A-Z][A-Za-z0-9]*$")
+#: Media outlets, institutions and acronyms: context words, never the subject of a coin.
+NOT_A_SUBJECT = frozenset("""
+FOX CNN CNBC BBC NBC ABC CBS MSNBC NYT WSJ AP AFP REUTERS BLOOMBERG POLITICO AXIOS TMZ NPR PBS
+CEO CFO CTO COO USA US UK EU UN NATO AI IPO ETF SEC FBI CIA DOJ GOP DNC NFL NBA MLB NHL UFC TV PM AM
+GDP CPI FED FOMC IRS DOGE NASA LIVE OFFICIAL EXCLUSIVE BREAKING UPDATE ICYMI JUST NEWS ALERT
+""".split())
+#: "<Subject> is / launches / says ..." -- the first word is what the post is about.
+SUBJECT_VERBS = frozenset("""is are was were has have had will just announces announced launches launched
+says said unveils unveiled reveals revealed hits hit buys bought sells sold drops dropped surges soars
+plans wants gets got becomes became""".split())
 _MENTION = re.compile(r"(?<!\w)@\w{1,15}")
 _CASHTAG = re.compile(r"(?<![\w$])\$([A-Za-z][A-Za-z0-9]{1,9})\b")
 _HASHTAG = re.compile(r"(?<![\w#])#([A-Za-z][A-Za-z0-9_]{1,24})\b")
@@ -292,11 +334,24 @@ def derive_identity(text: str) -> Identity | None:
         phrase = " ".join(words)
         if _ok_symbol(_symbolize(phrase)):
             return Identity(name=_titled(phrase), symbol=_symbolize(phrase), basis="short_post")
+    # 2026-10-07, owner: "$FOX ... out of context". The post was "SpaceX is still undervalued,
+    # says Kyle Reidhead on FOX Business" -- FOX is the channel, SpaceX the subject. A brand
+    # (internal capital: SpaceX, OpenAI, xAI, iPhone) or the sentence subject ("Tesla is ...")
+    # outranks a stray ALL-CAPS word, and outlets / acronyms are never the ticker.
     for w in content:
-        if w.isupper() and 3 <= len(w) <= 10 and _ok_symbol(w):
+        core = w.strip("'’")
+        if _BRAND.match(core) and _ok_symbol(_symbolize(core)) and core.upper() not in NOT_A_SUBJECT:
+            return Identity(name=core[:32], symbol=_symbolize(core), basis="brand_word")
+    if len(words) >= 2:
+        first, nxt = words[0].strip("'’"), words[1].lower()
+        if (first[:1].isupper() and first.lower() not in STOPWORDS and nxt in SUBJECT_VERBS
+                and first.upper() not in NOT_A_SUBJECT and _ok_symbol(_symbolize(first))):
+            return Identity(name=_titled(first), symbol=_symbolize(first), basis="subject")
+    for w in content:
+        if w.isupper() and 3 <= len(w) <= 10 and _ok_symbol(w) and w not in NOT_A_SUBJECT:
             return Identity(name=_titled(w), symbol=w, basis="caps_word")
-    caps = [w for w in content[1:] if w[:1].isupper() and len(w) >= 3] or \
-           [w for w in content if len(w) >= 4]
+    caps = [w for w in content[1:] if w[:1].isupper() and len(w) >= 3 and w.upper() not in NOT_A_SUBJECT] or \
+           [w for w in content if len(w) >= 4 and w.upper() not in NOT_A_SUBJECT]
     if caps:
         w = max(caps, key=len)
         sym = _symbolize(w)
@@ -363,6 +418,13 @@ FLAP_VIRTUAL_BNB = Decimal("6.14")
 FLAP_H_TOKENS = Decimal(107_036_752)
 FLAP_SUPPLY = Decimal(1_000_000_000)
 FLAP_FEE = Decimal("0.01")
+# four.meme, BNB-quoted TokenManager2 curve (evm_price.FourMemeCurve). MEASURED 2026-10-07 from
+# 3/3 BNB-quoted launches (the rest were USDT/other-quoted): virtual quote at launch 6.164384 BNB,
+# virtual tokens 1,073,972,603, fee 100 bps on top, graduation at 18 BNB raised.
+FOURMEME_VIRTUAL_BNB = Decimal("6.164384")
+FOURMEME_VIRTUAL_TOKENS = Decimal(1_073_972_603)
+FOURMEME_SUPPLY = Decimal(1_000_000_000)
+FOURMEME_FEE = Decimal("0.01")
 
 
 def dev_buy_native(route: ChainRoute, supply_pct: float) -> tuple[Decimal | None, float | None, str]:
@@ -387,6 +449,11 @@ def dev_buy_native(route: ChainRoute, supply_pct: float) -> tuple[Decimal | None
         else:
             amt = PONS_PHANTOM_ETH * (1 / (1 - p) - 1) / (1 - PONS_FEE)
         basis = "pons_v2_phantom_quote"
+    elif route.chain is Chain.BSC and route.dex == "fourmeme":
+        x0, t0 = FOURMEME_VIRTUAL_BNB, FOURMEME_VIRTUAL_TOKENS
+        amt = x0 * t0 / (t0 - FOURMEME_SUPPLY * p) - x0
+        amt *= 1 + FOURMEME_FEE
+        basis = "fourmeme_bnb_curve"
     elif route.chain is Chain.BSC and route.dex == "flap":
         x0 = FLAP_SUPPLY + FLAP_H_TOKENS
         amt = FLAP_VIRTUAL_BNB * x0 / (x0 - FLAP_SUPPLY * p) - FLAP_VIRTUAL_BNB
@@ -455,8 +522,13 @@ def build_argv(plan: Plan, post: XPost, cfg: Config, wallet: str) -> list[str]:
         argv += ["--image-url", plan.image_url]
     if cfg.link_tweet_as_twitter:
         argv += ["--twitter", post.url]
-    route = cfg.chains.get(plan.chain)
+    route = route_for(cfg, plan.chain, plan.dex)
     fee_args = list(route.holder_fee_args) if route else []
+    if "--fourmeme-rate-conf" in fee_args:
+        i = fee_args.index("--fourmeme-rate-conf") + 1
+        conf = json.loads(fee_args[i])
+        conf["recipient_address"] = wallet
+        fee_args[i] = json.dumps(conf, separators=(",", ":"))
     if "--flap-rate-conf" in fee_args:
         # recipient_type "split" requires a split list; mkt_bps is 0, so nothing reaches it.
         i = fee_args.index("--flap-rate-conf") + 1
@@ -465,7 +537,10 @@ def build_argv(plan: Plan, post: XPost, cfg: Config, wallet: str) -> list[str]:
         fee_args[i] = json.dumps(conf, separators=(",", ":"))
     argv += fee_args
     if plan.chain is Chain.SOL:
-        argv += ["--anti-mev"]
+        if cfg.sol_anti_mev:
+            argv += ["--anti-mev"]
+        if cfg.sol_priority_fee:
+            argv += ["--priority-fee", format(cfg.sol_priority_fee, "f")]
     return argv + ["--yes"]
 
 
@@ -500,10 +575,13 @@ def plan_post(post: XPost, cfg: Config, *, now_ms: int | None = None,
     else:
         ident = derive_identity(post.text)
     out = []
+    pairs = []
     for ch in chains:
-        route = cfg.chains.get(ch)
+        pairs.append((ch, cfg.chains.get(ch), f"tl:{post.tweet_id}:{ch.value}"))
+        pairs += [(ch, r, f"tl:{post.tweet_id}:{ch.value}:{r.dex}") for r in cfg.extra_routes.get(ch, ())]
+    for ch, route, launch_id in pairs:
         p = Plan(
-            launch_id=f"tl:{post.tweet_id}:{ch.value}", tweet_id=post.tweet_id, author=post.author,
+            launch_id=launch_id, tweet_id=post.tweet_id, author=post.author,
             chain=ch, dex=route.dex if route else "?", mode="live" if (cfg.live and route and route.live) else "shadow",
             verdict="skip", reasons=list(reasons), score=score, decided_ms=now,
             decide_latency_ms=None if post.created_ms is None else now - post.created_ms,
@@ -515,10 +593,13 @@ def plan_post(post: XPost, cfg: Config, *, now_ms: int | None = None,
         if ident is not None:
             p.name, p.symbol = ident.name, ident.symbol
             p.reasons.append(f"name_basis:{ident.basis}")
-        if post.media:
-            p.image_source, p.image_url = "tweet_media", post.media[0]
-        elif logo is not None and logo.source != "none":
+        if logo is not None and logo.source != "none":
             p.image_source, p.image_url, p.image_b64 = logo.source, logo.url, logo.b64
+            if logo.note:
+                p.reasons.append(f"logo:{logo.note}"[:160])
+        elif post.media and logo is None:
+            # no logo decision was made (pure planning / tests): the post's image as-is
+            p.image_source, p.image_url = "tweet_media", post.media[0]
         elif logo is not None and logo.note:
             p.reasons.append(f"logo:{logo.note}"[:160])
         amt, share, basis = dev_buy_native(route, cfg.dev_buy_supply_pct)
@@ -637,7 +718,7 @@ def _admission(conn: sqlite3.Connection, p: Plan, cfg: Config, lane: Any) -> str
     if p.chain is Chain.SOL and p.dex == "pump":
         from kaiba.execution import launch_preflight as lp
         glob, _note = lp.read_pump_global(conn)
-        why = lp.pump_preflight(glob, cfg.chains[p.chain].holder_fee_args)
+        why = lp.pump_preflight(glob, route_for(cfg, p.chain, p.dex).holder_fee_args)
         if why:
             return why
     return _risk_brakes(conn, p.chain)
@@ -719,7 +800,8 @@ def send(conn: sqlite3.Connection, p: Plan, cfg: Config, *, poll_s: float = 2.0,
     from kaiba.core.schemas import EVM_ZERO, SOL_NATIVE_MINT, Lane, LaneMode, Order, Side
     from kaiba.execution import executor as ex
 
-    if not (cfg.live and cfg.chains.get(p.chain) and cfg.chains[p.chain].live) or p.verdict != "launch":
+    _r = route_for(cfg, p.chain, p.dex)
+    if not (cfg.live and _r is not None and _r.live) or p.verdict != "launch":
         raise RuntimeError("send() called for a plan that is not armed live")
     try:
         lane = Lane(LANE_VALUE)
@@ -758,12 +840,12 @@ def send(conn: sqlite3.Connection, p: Plan, cfg: Config, *, poll_s: float = 2.0,
             refusal = spend_check(conn, p, cfg, now)
         if refusal is None:
             pending = fetch_one(conn,
-                "SELECT launch_id FROM tweet_launches l WHERE mode = 'live' AND chain = ? "
+                "SELECT launch_id FROM tweet_launches l WHERE mode = 'live' AND chain = ? AND tweet_id != ? "
                 "AND (state IN ('submitting','submitted','ambiguous') OR "
                 "(state = 'confirmed' AND NOT EXISTS "
                 "(SELECT 1 FROM positions b WHERE b.token = l.token AND b.chain = l.chain "
                 "AND b.mode != 'shadow' AND (b.protected = 1 OR b.closed_ms IS NOT NULL)))) "
-                "LIMIT 1", (p.chain.value,))
+                "LIMIT 1", (p.chain.value, p.tweet_id))
             if pending is not None:
                 refusal = "launch_exposure_unresolved"
         if refusal is None:
@@ -1032,9 +1114,12 @@ def handle_post(conn: sqlite3.Connection, post: XPost, cfg: Config, *,
                                              hermes_profile=cfg.hermes_profile, majors=MAJORS)
         ident_name = ai.name if ai else (first[0].name if first else None)
         ident_sym = ai.symbol if ai else (first[0].symbol if first else None)
-        if not post.media and cfg.logo_generate and (ai is None or ai.launch):
+        if cfg.logo_generate and (ai is None or ai.launch):
+            # make_logo keeps the post's image only when it is logo-shaped; a screenshot, banner
+            # or video frame is replaced by a generated (or drawn) logo.
             logo = (logo_maker or tc.make_logo)(post.media, ident_name, ident_sym,
-                                                ai.logo_prompt if ai else "", timeout_s=cfg.logo_timeout_s)
+                                                ai.logo_prompt if ai else "", timeout_s=cfg.logo_timeout_s,
+                                                post_raw=dict(post.raw))
     plans = plan_post(post, cfg, ai=ai, logo=logo) if worth_it else first
     for p in plans:
         record_plan(conn, p)
@@ -1093,6 +1178,19 @@ async def run(cfg_path: Path | None = None) -> None:
     sub = asyncio.create_task(subscriber()) if feed.sync_monitored_accounts else None
     act = asyncio.create_task(activity())
 
+    async def warm() -> None:
+        # Keep the pump.fun Global read (launch pre-flight, 60 s cache) warm so a launch never
+        # waits on it.
+        from kaiba.execution import launch_preflight as lp
+        while True:
+            try:
+                await asyncio.to_thread(lp.read_pump_global)
+            except Exception as exc:  # noqa: BLE001
+                log.warning("warm: %s", exc)
+            await asyncio.sleep(30)
+
+    wrm = asyncio.create_task(warm())
+
     async def vamper() -> None:
         while True:
             try:
@@ -1119,14 +1217,21 @@ async def run(cfg_path: Path | None = None) -> None:
             sub.cancel()
         act.cancel()
         vmp.cancel()
+        wrm.cancel()
 
 
 def _process_post(post: XPost, cfg: Config) -> None:
     c = connect()
     try:
-        for p in handle_post(c, post, cfg):
-            if p.verdict == "launch" and p.mode == "live":
-                send(c, p, cfg)
+        live = [p for p in handle_post(c, post, cfg) if p.verdict == "launch" and p.mode == "live"]
+        if len(live) == 1:
+            send(c, live[0], cfg)
+        elif live:
+            # several chains / launchpads for one post: in parallel, each on its own connection,
+            # so the second venue is not sent after the post has gone stale.
+            from concurrent.futures import ThreadPoolExecutor
+            with ThreadPoolExecutor(len(live)) as ex:
+                list(ex.map(lambda p: _send_own_conn(p, cfg), live))
     except Exception:  # noqa: BLE001 - recorded where possible; never crash the stream
         log.exception("tweet-launch post %s", post.tweet_id)
     try:

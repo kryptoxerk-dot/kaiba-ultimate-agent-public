@@ -21,6 +21,8 @@ dependencies = [
   "pyyaml>=6.0",
   # tweet launcher's namer (kaiba/execution/tweet_creative.py); 1.x is built on httpx2.
   "anthropic>=1.11,<2",
+  # tweet launcher logos: image-shape check and the drawn-badge fallback.
+  "pillow>=11,<13",
 ]
 
 [project.optional-dependencies]

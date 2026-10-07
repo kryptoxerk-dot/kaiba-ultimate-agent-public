@@ -154,6 +154,20 @@ def ai_identity(text: str, author: str, *, model: str = DEFAULT_MODEL, timeout_s
 #: to call: a tweet that says "sell everything" has to land on a model with no hands.
 HERMES_SAFE_ARGS = ("--safe-mode", "-t", "context_engine")
 HERMES_BIN = os.path.expanduser("~/.local/bin/hermes")
+#: After a failed Hermes call, skip Hermes for this long. MEASURED 2026-10-07: with every profile
+#: logged out, each post spent ~8.1 s waiting on a Hermes call that could only fail (40 calls in
+#: 8 h) -- the single biggest delay between a post reaching us and our launch.
+HERMES_COOLDOWN_S = 600.0
+_hermes_down_until = 0.0
+
+
+def hermes_available(now: float | None = None) -> bool:
+    return (now if now is not None else time.monotonic()) >= _hermes_down_until
+
+
+def _hermes_failed(now: float | None = None) -> None:
+    global _hermes_down_until
+    _hermes_down_until = (now if now is not None else time.monotonic()) + HERMES_COOLDOWN_S
 
 
 def _first_json_object(text: str) -> dict[str, Any] | None:
@@ -185,6 +199,8 @@ def hermes_identity(text: str, author: str, *, profile: str = "kaiba-operator", 
     """
     import subprocess
 
+    if runner is None and not hermes_available():
+        return None                                   # failed recently: do not spend the budget again
     prompt = (SYSTEM + "\n\nAnswer with ONE JSON object and nothing else, with keys "
               '"launch" (true/false), "name", "symbol", "logo_prompt", "reason".\n\n'
               f"Author: @{author}\n<post>\n{_fenced(text)}\n</post>")
@@ -196,11 +212,15 @@ def hermes_identity(text: str, author: str, *, profile: str = "kaiba-operator", 
         res = run([exe, *HERMES_SAFE_ARGS, "-z", prompt], capture_output=True, text=True,
                   timeout=timeout_s, env=env)
     except Exception as exc:  # noqa: BLE001 - timeout, missing binary: fall back
-        log.warning("hermes_identity failed: %s", type(exc).__name__)
+        log.warning("hermes_identity failed: %s (skipping Hermes for %.0f s)", type(exc).__name__, HERMES_COOLDOWN_S)
+        if runner is None:
+            _hermes_failed()
         return None
     if getattr(res, "returncode", 1) != 0:
-        log.warning("hermes_identity exit %s: %s", getattr(res, "returncode", "?"),
-                    (getattr(res, "stderr", "") or "")[-200:])
+        log.warning("hermes_identity exit %s: %s (skipping Hermes for %.0f s)", getattr(res, "returncode", "?"),
+                    (getattr(res, "stderr", "") or "")[-200:], HERMES_COOLDOWN_S)
+        if runner is None:
+            _hermes_failed()
         return None
     data = _first_json_object(getattr(res, "stdout", "") or "")
     if not data:
@@ -278,23 +298,135 @@ def generate_pollinations(prompt: str, timeout_s: float, http: httpx.Client) -> 
     return (None, f"pollinations_{why}") if why else (r.content, "ok")
 
 
+# ---------------------------------------------------------------- is the post's image a logo?
+
+#: A logo is roughly square. MEASURED 2026-10-07 on the owner's two complaints: $YO shipped a
+#: 406x680 phone screenshot of someone else's thread (faces, names, a stock chart), and $FOX a
+#: 16:9 video thumbnail of a TV guest. Anything outside this band -- tall screenshots, wide
+#: banners, video frames -- gets a generated logo instead.
+LOGO_ASPECT_MIN, LOGO_ASPECT_MAX = 0.75, 1.34
+
+
+def media_shape(post_raw: dict[str, Any] | None, url: str) -> tuple[str | None, int | None, int | None]:
+    """(type, width, height) of the post's first media, from the provider's full tweet shape."""
+    for src in ((post_raw or {}).get("extendedEntities") or {}, (post_raw or {}).get("entities") or {}):
+        for m in src.get("media") or []:
+            oi = m.get("original_info") or {}
+            return m.get("type"), oi.get("width"), oi.get("height")
+    return None, None, None
+
+
+def image_dims(data: bytes) -> tuple[int, int] | None:
+    """Width/height of a JPEG/PNG/WEBP/GIF from its header (Pillow, lazily)."""
+    try:
+        import io
+
+        from PIL import Image
+        with Image.open(io.BytesIO(data)) as im:
+            return im.size
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def usable_as_logo(url: str, post_raw: dict[str, Any] | None = None, *,
+                   fetch: Any = None) -> tuple[bool, str]:
+    """(usable, why). Video frames and non-square images are not logos."""
+    if not url:
+        return False, "no_media"
+    if "video_thumb" in url or "amplify_video" in url:
+        return False, "video_frame"
+    kind, w, h = media_shape(post_raw, url)
+    if kind and kind != "photo":
+        return False, f"media_{kind}"
+    if not (w and h):
+        try:
+            get = fetch or (lambda u: httpx.get(u, timeout=4.0, follow_redirects=True).content[:400_000])
+            dims = image_dims(get(url + ("&" if "?" in url else "?") + "name=small"))
+        except Exception:  # noqa: BLE001
+            dims = None
+        if dims is None:
+            return False, "dims_unknown"
+        w, h = dims
+    ratio = w / h
+    if not LOGO_ASPECT_MIN <= ratio <= LOGO_ASPECT_MAX:
+        return False, f"not_square:{w}x{h}"
+    return True, f"square:{w}x{h}"
+
+
+def render_text_logo(name: str, symbol: str) -> bytes | None:
+    """Last resort when no image model answers: a clean, square ticker badge drawn locally.
+    Not AI art, but never a screenshot, never someone's face, and it always works."""
+    try:
+        import hashlib
+        import io
+
+        from PIL import Image, ImageDraw, ImageFont
+    except Exception:  # noqa: BLE001
+        return None
+    size = 512
+    hue = int(hashlib.sha256(symbol.encode()).hexdigest()[:6], 16)
+    bg = ((hue >> 16) & 0xFF) // 2 + 40, ((hue >> 8) & 0xFF) // 2 + 40, (hue & 0xFF) // 2 + 40
+    im = Image.new("RGB", (size, size), bg)
+    d = ImageDraw.Draw(im)
+    d.ellipse((24, 24, size - 24, size - 24), outline=(255, 255, 255), width=14)
+    text = f"${symbol}"[:11]
+    for path in ("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", "C:/Windows/Fonts/arialbd.ttf"):
+        try:
+            font = ImageFont.truetype(path, 10)
+            break
+        except OSError:
+            font = None
+    if font is None:
+        font = ImageFont.load_default()
+    else:
+        pt = 160
+        while pt > 20:
+            font = ImageFont.truetype(font.path, pt)
+            x0, y0, x1, y1 = d.textbbox((0, 0), text, font=font)
+            if x1 - x0 <= size - 120:
+                break
+            pt -= 8
+    x0, y0, x1, y1 = d.textbbox((0, 0), text, font=font)
+    d.text(((size - (x1 - x0)) / 2 - x0, (size - (y1 - y0)) / 2 - y0), text, font=font, fill=(255, 255, 255))
+    buf = io.BytesIO()
+    im.save(buf, format="JPEG", quality=85)
+    return buf.getvalue()
+
+
 def make_logo(media: tuple[str, ...], name: str | None, symbol: str | None, logo_prompt: str = "",
               *, generate: bool = True, timeout_s: float = 15.0,
-              http: httpx.Client | None = None) -> Logo:
-    """The post's own image first; otherwise a generated one; otherwise none."""
+              http: httpx.Client | None = None, post_raw: dict[str, Any] | None = None,
+              media_check: Any = None, retry_wait_s: float = 2.0) -> Logo:
+    """The post's own image if it is logo-shaped; otherwise AI-generated; otherwise a drawn badge."""
+    reject = ""
     if media:
-        return Logo(source="tweet_media", url=media[0])
+        ok, why = (media_check or usable_as_logo)(media[0], post_raw)
+        if ok:
+            return Logo(source="tweet_media", url=media[0], note=why)
+        reject = f"media_rejected:{why};"
     if not generate or not name or not symbol:
         return Logo(source="none", note="no_media" if generate else "generation_off")
     prompt = _prompt_for(name, symbol, logo_prompt)
     own = http is None
     client = http or httpx.Client()
-    notes = []
+    notes = [reject] if reject else []
     try:
         key = os.environ.get("OPENAI_API_KEY", "")
-        tries = ([("openai", lambda: generate_openai(prompt, key, timeout_s, client))] if key else []) + \
-                [("pollinations", lambda: generate_pollinations(prompt, timeout_s, client))]
+        # ``timeout_s`` is the WHOLE budget for AI art (speed is the edge): each try gets what is
+        # left, the Pollinations retry runs only if >= 1.5 s remain, then the drawn badge (ms).
+        deadline = time.monotonic() + timeout_s
+
+        def left() -> float:
+            return deadline - time.monotonic()
+
+        tries = ([("openai", lambda: generate_openai(prompt, key, max(0.5, left()), client))] if key else []) + \
+                [("pollinations", lambda: generate_pollinations(prompt, max(0.5, left()), client)),
+                 ("pollinations", lambda: (time.sleep(min(retry_wait_s, max(0.0, left() - 1.5))),
+                                           generate_pollinations(prompt, max(0.5, left()), client))[1])]
         for source, fn in tries:
+            if left() < (1.5 if notes else 0.5):
+                notes.append(f"{source}_skipped_budget")
+                continue
             try:
                 img, why = fn()
             except Exception as exc:  # noqa: BLE001
@@ -305,6 +437,9 @@ def make_logo(media: tuple[str, ...], name: str | None, symbol: str | None, logo
                     return Logo(source=source, b64=base64.b64encode(img).decode("ascii"))
                 why = f"{source}_{bad}"
             notes.append(why)
+        drawn = render_text_logo(name, symbol)
+        if drawn is not None and len(drawn) <= MAX_LOGO_BYTES:
+            return Logo(source="drawn_badge", b64=base64.b64encode(drawn).decode("ascii"), note=";".join(notes))
         return Logo(source="none", note=";".join(notes))
     finally:
         if own:

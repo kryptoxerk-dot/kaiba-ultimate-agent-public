@@ -1,0 +1,16 @@
+[Unit]
+Description=Kaiba social NFT/airdrop/token research inbox (shared stream fan-out)
+Before=kaiba-tweet-launch.service
+
+[Service]
+Type=simple
+WorkingDirectory=%h/kaiba
+Environment=PYTHONUNBUFFERED=1
+ExecStart=%h/kaiba/.venv/bin/python -m kaiba.hunters.social_hunt run
+Restart=on-failure
+RestartSec=2
+MemoryMax=160M
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target

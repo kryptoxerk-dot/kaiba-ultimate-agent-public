@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import types
 from decimal import Decimal
 from pathlib import Path
 
@@ -117,8 +118,11 @@ def test_pons_five_percent_and_unmodelled_launchpads():
     amt, share, basis = tl.dev_buy_native(tl.ChainRoute(Chain.BSC, "flap", Decimal(1)), 5.0)
     # measured on chain: 0.29043 BNB for 5% on the BNB curve, plus the 1% fee
     assert basis == "flap_bnb_curve" and share == 5.0 and Decimal("0.2932") <= amt <= Decimal("0.2934")
+    amt, share, basis = tl.dev_buy_native(tl.ChainRoute(Chain.BSC, "brew", Decimal(1)), 5.0)
+    assert amt is None and share is None and basis == "no_curve_model:bsc/brew"
+    # four.meme: measured BNB curve, 0.301003 BNB + 1% fee
     amt, share, basis = tl.dev_buy_native(tl.ChainRoute(Chain.BSC, "fourmeme", Decimal(1)), 5.0)
-    assert amt is None and share is None and basis == "no_curve_model:bsc/fourmeme"
+    assert basis == "fourmeme_bnb_curve" and Decimal("0.3040") <= amt <= Decimal("0.3041")
     amt, share, basis = tl.dev_buy_native(tl.ChainRoute(Chain.BSC, "flap", Decimal(1), Decimal("0.2")), 5.0)
     assert amt == Decimal("0.2000") and share is None and basis == "configured_amount"
 
@@ -133,7 +137,8 @@ def test_a_short_image_post_from_a_watched_account_plans_a_launch():
     assert argv[:2] == ["cooking", "create"] and argv[-1] == "--yes"
     assert argv[argv.index("--twitter") + 1] == "https://x.com/elonmusk/status/2045879341243043889"
     assert argv[argv.index("--image-url") + 1] == "https://pbs.twimg.com/media/x.jpg"
-    assert argv[argv.index("--from") + 1] == "W" and "--anti-mev" in argv
+    assert argv[argv.index("--from") + 1] == "W" and "--anti-mev" not in argv     # speed: no bundling
+    assert argv[argv.index("--priority-fee") + 1] == "0.0005"
     desc = argv[argv.index("--description") + 1]
     assert desc.startswith("Inspired by a post on X") and "official" not in desc.lower()
 
@@ -361,11 +366,17 @@ def test_holder_fee_flags_reach_the_argv():
     c = cfg(chains=shipped.chains)
     [p] = tl.plan_post(post("Kekius Maximus"), c, now_ms=NOW, wallets={Chain.SOL: "W"})
     assert "--is-cashback" in p.argv
-    bsc = cfg(chains=shipped.chains, accounts={"cz_binance": (Chain.BSC,)})
-    [b] = tl.plan_post(post('my dog is named "Broccoli"', author="cz_binance"), bsc, now_ms=NOW,
-                       wallets={Chain.BSC: "0xW"})
-    conf = json.loads(b.argv[b.argv.index("--flap-rate-conf") + 1])
+    bsc = cfg(chains=shipped.chains, extra_routes=shipped.extra_routes, accounts={"cz_binance": (Chain.BSC,)})
+    plans = tl.plan_post(post('my dog is named "Broccoli"', author="cz_binance"), bsc, now_ms=NOW,
+                         wallets={Chain.BSC: "0xW"})
+    by = {p.dex: p for p in plans}
+    assert set(by) == {"flap", "fourmeme"}                     # owner: four.meme + flap combo
+    assert by["flap"].launch_id.endswith(":bsc") and by["fourmeme"].launch_id.endswith(":bsc:fourmeme")
+    conf = json.loads(by["flap"].argv[by["flap"].argv.index("--flap-rate-conf") + 1])
     assert conf["dividend_bps"] == 10000 and conf["split_conf"] == [{"recipient": "0xW", "bps": 10000}]
+    fm = json.loads(by["fourmeme"].argv[by["fourmeme"].argv.index("--fourmeme-rate-conf") + 1])
+    assert fm["divide_rate"] == 100 and fm["fee_rate"] == 1 and fm["recipient_address"] == "0xW"
+    assert by["fourmeme"].argv[by["fourmeme"].argv.index("--dex") + 1] == "fourmeme"
 
 
 def test_unsupported_holder_fees_fail_loudly():
@@ -496,8 +507,19 @@ def test_no_key_means_no_model_call(monkeypatch):
     assert tc.ai_identity("x", "a") is None
 
 
+class _NoNet:
+    """An httpx stand-in that fails every call: tests never touch the network."""
+
+    def get(self, *a, **k):
+        raise OSError("no network in tests")
+
+    post = get
+
+
 def test_make_logo_prefers_the_post_image_and_refuses_oversized_generations():
-    assert tc.make_logo(("https://pbs.twimg.com/a.jpg",), "N", "S").url == "https://pbs.twimg.com/a.jpg"
+    square = lambda url, raw: (True, "square:800x800")  # noqa: E731
+    got = tc.make_logo(("https://pbs.twimg.com/a.jpg",), "N", "S", media_check=square, http=_NoNet())
+    assert got.url == "https://pbs.twimg.com/a.jpg" and got.source == "tweet_media"
     assert tc._check_image(b"x" * (tc.MAX_LOGO_BYTES + 1), "image/jpeg").startswith("too_big")
     assert tc._check_image(b"{}", "application/json").startswith("not_an_image")
 
@@ -758,3 +780,138 @@ def test_a_fresh_post_with_an_image_launches_at_the_shipped_threshold():
     long_news = "Cointelegraph reports the Starship launch window opened for the third flight of the year"
     [p] = tl.plan_post(post(long_news), cfg(), now_ms=NOW, wallets={Chain.SOL: "W"})
     assert p.verdict == "launch", p.reasons
+
+
+
+SCREENSHOT_RAW = {"extendedEntities": {"media": [{"type": "photo", "original_info": {"width": 1259, "height": 2111}}]}}
+SQUARE_RAW = {"extendedEntities": {"media": [{"type": "photo", "original_info": {"width": 1080, "height": 1080}}]}}
+
+
+def test_a_phone_screenshot_is_not_a_logo():
+    """$YO 2026-10-07 shipped a 1259x2111 screenshot of someone else's thread."""
+    ok, why = tc.usable_as_logo("https://pbs.twimg.com/media/x.jpg", SCREENSHOT_RAW)
+    assert not ok and why == "not_square:1259x2111"
+    assert tc.usable_as_logo("https://pbs.twimg.com/media/x.jpg", SQUARE_RAW) == (True, "square:1080x1080")
+
+
+def test_a_video_frame_is_not_a_logo():
+    """$FOX 2026-10-07 shipped a video thumbnail of a TV guest."""
+    ok, why = tc.usable_as_logo("https://pbs.twimg.com/amplify_video_thumb/1/img/a.jpg", None)
+    assert not ok and why == "video_frame"
+
+
+def test_unknown_dimensions_are_measured_from_the_image_itself():
+    import io
+
+    from PIL import Image
+    buf = io.BytesIO()
+    Image.new("RGB", (400, 680)).save(buf, format="JPEG")
+    ok, why = tc.usable_as_logo("https://pbs.twimg.com/media/y.jpg", None, fetch=lambda u: buf.getvalue())
+    assert not ok and why == "not_square:400x680"
+
+
+def test_when_every_generator_fails_a_drawn_badge_still_ships():
+    got = tc.make_logo(("https://pbs.twimg.com/media/x.jpg",), "SpaceX", "SPACEX", post_raw=SCREENSHOT_RAW,
+                       http=_NoNet(), retry_wait_s=0)
+    assert got.source == "drawn_badge" and got.b64 and "media_rejected:not_square" in got.note
+    import base64
+    import io
+
+    from PIL import Image
+    with Image.open(io.BytesIO(base64.b64decode(got.b64))) as im:
+        assert im.size == (512, 512)
+
+
+def test_the_launcher_uses_the_generated_logo_when_the_post_image_is_a_screenshot(tmp_db):
+    c = cfg(logo_generate=True)
+    p0 = XPost(tweet_id="77", author="elonmusk", text="SpaceX is still undervalued", kind="post",
+               media=("https://pbs.twimg.com/media/x.jpg",), created_ms=NOW - 800, received_ms=NOW,
+               feed_delay_ms=None, backend="test", raw=SCREENSHOT_RAW)
+    made = []
+
+    def maker(media, name, sym, prompt="", **kw):
+        made.append((media, name, sym))
+        return tc.make_logo(media, name, sym, prompt, http=_NoNet(), retry_wait_s=0, **kw)
+    [p] = tl.handle_post(tmp_db, p0, c, logo_maker=maker)
+    assert p.symbol == "SPACEX" and p.image_source == "drawn_badge" and p.image_url is None and p.image_b64
+
+
+@pytest.mark.parametrize("text, symbol, basis", [
+    # the owner's $FOX complaint: FOX is the channel, SpaceX the subject
+    ("SpaceX is still undervalued, says Kyle Reidhead on FOX Business.", "SPACEX", "brand_word"),
+    ("Tesla is still undervalued says Kyle Reidhead on CNBC", "TESLA", "subject"),
+    ("OpenAI launches a new model today", "OPENAI", "brand_word"),
+    ("CNN covered DOGGO energy today", "DOGGO", "caps_word"),
+])
+def test_context_subject_beats_outlets_and_acronyms(text, symbol, basis):
+    ident = tl.derive_identity(text)
+    assert ident is not None and (ident.symbol, ident.basis) == (symbol, basis)
+
+
+def test_a_bnb_combo_sends_both_venues_and_the_sibling_is_not_blocked(tmp_db, monkeypatch):
+    from kaiba.core.config import LaneConfig
+    calls: list = []
+    base = _risk(LaneMode.LIVE)
+    risk = base.model_copy(update={
+        "lanes": {**base.lanes, Lane.TWEET_LAUNCH: LaneConfig(mode=LaneMode.LIVE, chains=[Chain.BSC])},
+        "chains": {**base.chains, Chain.BSC: base.chain_budget(Chain.BSC).model_copy(update={"enabled": True})}})
+    _stub(monkeypatch, risk, calls)
+    n = iter(range(100))
+
+    def run(args, timeout_s=45, *, mutating=False):     # BNB-sized fills: 18 decimals, a token per create
+        calls.append(args)
+        if args[:2] == ["cooking", "create"]:
+            return {"data": {"order_id": f"od_bsc_{next(n)}", "status": "pending"}}
+        oid = args[args.index("--order-id") + 1]
+        return {"data": {"status": "confirmed", "report": {"output_token": f"0xtok{oid}",
+                                                           "output_amount": str(50_000_000 * 10**18)}}}
+    monkeypatch.setattr(ex, "_run_gmgn", run)
+    flap = tl.ChainRoute(Chain.BSC, "flap", Decimal("0.5"), live=True)
+    four = tl.ChainRoute(Chain.BSC, "fourmeme", Decimal("0.5"), live=True)
+    c = cfg(mode="live", armed_by="test", chains={Chain.BSC: flap}, extra_routes={Chain.BSC: (four,)},
+            accounts={"cz_binance": (Chain.BSC,)}, daily_native_cap={Chain.BSC: Decimal("1")},
+            per_author_cooldown_s=0)
+    plans = tl.handle_post(tmp_db, post('my dog is named "Broccoli"', author="cz_binance"), c)
+    assert {p.dex for p in plans} == {"flap", "fourmeme"}
+    for p in plans:                          # sequentially here; the first stays confirmed-but-unprotected
+        tl.send(tmp_db, p, c)
+    rows = dict(tmp_db.execute("SELECT launch_id, state FROM tweet_launches").fetchall())
+    assert set(rows.values()) == {"confirmed"}, rows
+    assert sum(a[:2] == ["cooking", "create"] for a in calls) == 2
+    # a DIFFERENT post on the same chain is still held back while those are unprotected
+    [p3] = [p for p in tl.handle_post(tmp_db, post('"Pepper" is here', author="cz_binance", tid="999"), c)
+            if p.dex == "flap"]
+    tl.send(tmp_db, p3, c)
+    assert tmp_db.execute("SELECT error FROM tweet_launches WHERE tweet_id='999' AND launch_id LIKE '%:bsc'").fetchone()[0] \
+        == "launch_exposure_unresolved"
+
+
+
+def test_a_failed_hermes_call_is_not_repeated_for_the_cooldown(monkeypatch):
+    import subprocess
+    monkeypatch.setattr(tc, "_hermes_down_until", 0.0)
+    calls = []
+
+    def fake_run(cmd, **kw):
+        calls.append(cmd)
+        return types.SimpleNamespace(returncode=1, stdout="", stderr="auth missing")
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    assert tc.hermes_identity("x", "a") is None and len(calls) == 1
+    assert tc.hermes_identity("y", "a") is None and len(calls) == 1          # skipped: no 8 s wait again
+    monkeypatch.setattr(tc, "_hermes_down_until", 0.0)
+    assert tc.hermes_identity("z", "a") is None and len(calls) == 2          # after the cooldown it retries
+
+
+def test_the_logo_budget_falls_back_to_the_badge_without_retrying(monkeypatch):
+    import time as _time
+    seen = []
+
+    class Slow:
+        def get(self, url, timeout=None, **k):
+            seen.append(timeout)
+            raise TimeoutError("slow")
+        post = get
+    t0 = _time.monotonic()
+    got = tc.make_logo((), "SpaceX", "SPACEX", http=Slow(), timeout_s=1.0, retry_wait_s=2.0)
+    assert got.source == "drawn_badge" and _time.monotonic() - t0 < 1.5        # no 2 s retry wait
+    assert len(seen) == 1 and seen[0] <= 1.0 and "skipped_budget" in got.note

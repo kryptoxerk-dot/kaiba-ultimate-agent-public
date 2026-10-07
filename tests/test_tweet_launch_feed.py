@@ -8,6 +8,14 @@ from kaiba.ingest import tweet_launch_feed as feed
 from kaiba.ingest.x_stream import XPost
 
 
+# Codex SOCIAL-HUNTS-FAST-20261007: legacy contracts isolate the optional research tee.
+@pytest.fixture(autouse=True)
+def isolated_social_config(monkeypatch):
+    monkeypatch.setattr(feed.social_dispatch, 'configuration', lambda: {'enabled': False})
+    monkeypatch.setattr(feed.social_dispatch, 'watched_accounts', lambda **kw: set())
+    monkeypatch.setattr(feed.social_dispatch, 'offer', lambda p: False)
+
+
 def config(**over):
     return SimpleNamespace(accounts={"elonmusk": ("sol", "bsc", "robinhood")},
                            max_tweet_age_s=20, require_image=True, logo_generate=False, **over)

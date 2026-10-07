@@ -40,6 +40,13 @@ chains:
     max_buy_native: 0.5
     holder_fees: { dividend_tax_bps: 100 }   # 1% buy/sell tax, 100% of it paid to holders as dividends
     live: false
+    # Owner 2026-10-07: "bnb four.meme + flap.sh combo" -- a BNB post launches on BOTH, in
+    # parallel. 5%: four.meme ~0.3040 BNB (measured curve) + Flap ~0.2933 BNB = ~0.60 BNB a post.
+    also:
+      - dex: fourmeme
+        max_buy_native: 0.5
+        holder_fees: { dividend_fee_pct: 1 }  # 1% fee, 100% to holders as dividends (UNVERIFIED live)
+        live: false
   robinhood:
     dex: pons
     max_buy_native: 0.1
@@ -143,13 +150,13 @@ namer:
   backends: [hermes, anthropic]
   hermes_profile: kaiba-operator
   model: claude-opus-5-5
-  timeout_s: 8
+  timeout_s: 2.5              # speed: the picker gets 2.5 s, then the word picker decides
 
 # Logo when the post has no image: OpenAI Images if OPENAI_API_KEY is set, else Pollinations
 # (free, rate-limited). Never the author's profile picture.
 logo:
   generate: true
-  timeout_s: 15
+  timeout_s: 3                # speed: 3 s total for AI art, then the drawn badge (ms)
 
 # How often the curves of our open launches are read for the "no volume" exit.
 # The exit rules themselves (sell in increments; sell all after 60 s with no trade) are the
@@ -197,3 +204,10 @@ vamp:
   mode: shadow
   targets: [bsc, robinhood, sol]
   same_chain: true
+
+# Speed (owner 2026-10-07: "as close to no delay as possible"). MEASURED on 5 live launches:
+# post -> chain 17-25 s = feed 10.8 s p50 (5 s rule polling + X search lag) + decide 8.1 s (a
+# logged-out Hermes call timing out every time) + GMGN create 2.3-3.8 s.
+speed:
+  sol_anti_mev: false          # a create+buy cannot be sandwiched; bundling only adds latency
+  sol_priority_fee: 0.0005     # SOL per create, for faster inclusion (~$0.10)

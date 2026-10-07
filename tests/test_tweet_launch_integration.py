@@ -57,6 +57,9 @@ def venue(monkeypatch):
     monkeypatch.setattr(tl.time, "time", lambda: NOW/1000)
     monkeypatch.setattr(tl.time, "sleep", lambda s: None)
     monkeypatch.setattr(ex, "_guarded_patiently", lambda *a, **k: contextlib.nullcontext())
+    # lead 2026-10-07: the pump.fun pre-flight reads the chain; tests never touch the network.
+    from kaiba.execution import launch_preflight as lp
+    monkeypatch.setattr(lp, "read_pump_global", lambda conn=None: (None, "fixture"))
     calls = []
     transitions = []
     def run(args, **kw):
@@ -115,20 +118,42 @@ def test_never_undersizes_five_percent_and_rounds_up(ch,dex):
     assert tl.dev_buy_native(small,5) == (None,None,"five_percent_exceeds_route_cap")
 
 
+# Lead 2026-10-07: the launcher's admission is ``tweet_launch._admission`` -- every entry brake
+# EXCEPT the flat per-trade size cap, which would refuse every owner-authorized 5% dev buy
+# (1.485 SOL vs a 0.1 SOL cap on the box). These tests pin that contract.
+
 def test_full_gate_denies_before_provider_call(conn, venue, monkeypatch):
     calls, _ = venue
-    seen = admit(monkeypatch, False)
+    seen = []
+
+    def deny(c, plan, cfg_, lane):
+        seen.append((plan.chain, lane, c.in_transaction))
+        return "risk:fixture_denied"
+    monkeypatch.setattr(tl, "_admission", deny)
     p = planned(conn)
     tl.send(conn,p,cfg())
-    assert calls == [] and state(conn,p)[0] == "failed"
-    assert seen == [(Chain.SOL,Lane.TWEET_LAUNCH,int(p.buy_amt_native*10**9),False,None)]
+    assert calls == [] and tuple(state(conn,p)) == ("failed", "risk:fixture_denied")
+    assert seen == [(Chain.SOL, Lane.TWEET_LAUNCH, False)]      # resolved outside any transaction
 
 
-def test_actual_existing_position_max_is_enforced(conn, venue):
+def test_the_flat_per_trade_cap_does_not_block_the_authorized_five_percent(conn, venue, monkeypatch):
     calls, _ = venue
+    risk = tl.get_risk()
+    tiny = risk.model_copy(update={"chains": {**risk.chains, Chain.SOL: risk.chain_budget(Chain.SOL).model_copy(
+        update={"max_position_base_units": 100_000_000})}})            # 0.1 SOL, the box's flat cap
+    monkeypatch.setattr(tl, "get_risk", lambda: tiny)
+    monkeypatch.setattr(ex, "get_risk", lambda: tiny)
     p = planned(conn)
     tl.send(conn,p,cfg())
-    assert calls == [] and state(conn,p)[1].startswith("risk:size_above_max")
+    assert [a[:2] for a in calls][0] == ["cooking","create"] and state(conn,p)[0] == "confirmed"
+
+
+def test_the_launch_lanes_own_caps_still_bind(conn, venue):
+    calls, _ = venue
+    c = cfg(daily_native_cap={Chain.SOL: Decimal("1.0")})                 # below one 5% buy
+    p = planned(conn, c)
+    tl.send(conn,p,c)
+    assert calls == [] and state(conn,p)[1].startswith("daily_native_cap:sol")
 
 
 def test_positive_admission_creates_once_and_submits_reconciliation(conn,venue,monkeypatch):
@@ -204,8 +229,8 @@ def test_ownership_change_during_admission_cannot_erase_inflight_state(conn,venu
     p=planned(conn)
     def gate(*a,**kw):
         conn.execute("UPDATE tweet_launches SET state='ambiguous' WHERE launch_id=?",(p.launch_id,))
-        return SimpleNamespace(allowed=False,reason="fixture_denied")
-    monkeypatch.setattr(RiskGate,"check_entry",gate)
+        return "risk:fixture_denied"
+    monkeypatch.setattr(tl,"_admission",gate)
     tl.send(conn,p,cfg())
     assert calls==[] and state(conn,p)[0]=="ambiguous"
 
@@ -300,6 +325,13 @@ def test_real_candidate_runner_uses_selected_feed_and_records_all_three_chains(c
     monkeypatch.setattr(tl,"connect",lambda:conn)
     monkeypatch.setattr(tl,"observe_once",lambda *a:0)
     monkeypatch.setattr(tl,"_activity_own_conn",lambda *a:None)
+    # lead 2026-10-07: background tasks added since (vamp scan, alpha marks) open and CLOSE their
+    # own connection; with connect() pinned to this shared test connection they closed it under the
+    # runner (ProgrammingError on Linux, a segfault on Windows). Production gives each task its own.
+    monkeypatch.setattr(tl,"_vamp_own_conn",lambda *a:None)
+    monkeypatch.setattr(tl,"_refs_marks_own_conn",lambda *a:None)
+    from kaiba.execution import launch_preflight as _lp
+    monkeypatch.setattr(_lp,"read_pump_global",lambda conn=None:(None,"fixture"))
     monkeypatch.setattr(tweet_launch_feed,"load_config",lambda *a:tweet_launch_feed.FeedConfig(backend))
     monkeypatch.setattr(x_stream,"sync_accounts",lambda *a:pytest.fail("must not subscribe"))
     done=threading.Event()

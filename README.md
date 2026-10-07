@@ -43,23 +43,25 @@ bag in increments. Operating notes for the LLM operator: `skills/tweet-auto-laun
 (plus `launch-metadata`, `launch-logo-generation`, `twitterapi-research`, `j7-social-tracking`).
 
 **It ships in paper mode.** `config/tweet_launch.yaml` has `mode: shadow`, an empty
-`armed_by`, every chain `live: false` and vamps in shadow: every post is decided and recorded
-in `tweet_launches` (launch or skip, with reasons) and nothing is sent.
+`armed_by`, every route `live: false` (including the BNB `also:` four.meme route) and vamps in
+shadow: every post is decided and recorded in `tweet_launches` (launch or skip, with reasons)
+and nothing is sent.
 
 ### What you need
 
 | Need | Where it goes | Notes |
 |---|---|---|
 | GMGN API key **and** the GMGN API request-signing private key | `~/.config/gmgn/.env` (`GMGN_API_KEY`, `GMGN_PRIVATE_KEY`), read by `gmgn-cli` | Never in the repo. The signing key authenticates API calls; it is not a wallet key. |
-| A wallet bound to that GMGN key, funded per chain | GMGN account; its address in `config/risk.yaml` `chains.<chain>.wallet` and `config/signer-policy.yaml` `owned_addresses` | A 5% dev buy is modelled at about **1.485 SOL** on pump.fun, **0.2933 BNB** on Flap, **0.0893 ETH + 0.0005 ETH launch fee** on Pons V2, plus gas. The template caps are 1.5 SOL / 0.5 BNB / 0.1 ETH per launch and 6 SOL / 1 BNB / 0.3 ETH per UTC day, 5 launches per day. A launch whose exact 5% quote exceeds the cap is skipped, never undersized. |
+| A wallet bound to that GMGN key, funded per chain | GMGN account; its address in `config/risk.yaml` `chains.<chain>.wallet` and `config/signer-policy.yaml` `owned_addresses` | A 5% dev buy is modelled at about **1.485 SOL** on pump.fun, **0.0893 ETH + 0.0005 ETH launch fee** on Pons V2, and on BNB a **four.meme + Flap combo**: one post launches on both in parallel, about **0.3040 BNB** on four.meme (measured curve) + **0.2933 BNB** on Flap, so ~0.60 BNB per post. Plus gas. The template caps are 1.5 SOL / 0.5 BNB (per route) / 0.1 ETH per launch and 6 SOL / 1 BNB / 0.3 ETH per UTC day, at most 10 launches a day (the native daily caps bind first). A launch whose exact 5% quote exceeds the cap is skipped, never undersized. |
 | `GMGN_ALLOW_AUTOMATED_TRADES=1` | the launcher's systemd unit (already set in `deploy/systemd/kaiba-tweet-launch.service`) | `gmgn-cli` refuses unattended `--yes` without it. Every unit that can submit needs it, including protection (it does the sells). |
 | A post feed: `TWITTERAPI_IO_KEY` | `~/.config/kaiba/.env` | Either a twitterapi.io **`tweet_filter` rule** (pay-per-use credits; create and activate the rule on twitterapi.io, `feed.backend: twitterapi_rule`) or the **Stream plan** (account monitoring, `feed.backend: twitterapi_monitor`, then `python -m kaiba.execution.tweet_launch sync-accounts`). One socket per key. Optional alternative: J7Tracker (`feed.backend: j7`, `J7_SESSION_JWT`, `pip install "python-socketio[client]"`). |
-| Optional: the post picker's model | a logged-in Hermes profile (`namer.hermes_profile`), or `ANTHROPIC_API_KEY` in `~/.config/kaiba/.env` | Without either, the deterministic word picker is used. |
-| Optional: logos for posts without an image | `OPENAI_API_KEY` | Otherwise Pollinations (free, rate-limited). The author's profile picture is never used. |
+| Optional: the post picker's model | a logged-in Hermes profile (`namer.hermes_profile`), or `ANTHROPIC_API_KEY` in `~/.config/kaiba/.env` | Bounded by `namer.timeout_s` (2.5 s in the template), no retries; on any failure or timeout the deterministic word picker decides, so a launch never waits on the model. |
+| Optional: AI logos | `OPENAI_API_KEY` | Otherwise Pollinations (free, rate-limited). See the logo rules below. |
+| Pillow | installed by `pip install -e .` (`pillow` is in `pyproject.toml`) | Reads image dimensions for the logo check and draws the fallback ticker badge. |
 | RPC endpoints | `SOLANA_RPC_URL`, `BSC_RPC_URL`, `ROBINHOOD_RPC_URL` in `.env` | Used by launch preflight and by protection's price reads. |
 | Database tables | migrations `044_tweet_launches.sql`, `045_tweet_refs.sql`, `046_tweet_sources.sql` | `python -m kaiba db init` applies pending migrations. |
 | Services | `deploy/systemd/kaiba-tweet-launch.service` (the launcher; the only process that opens the feed socket) and `deploy/systemd/kaiba-tweet-sources.service` (record-only: which post each new market launch came from) | Copy to `~/.config/systemd/user/`, `systemctl --user daemon-reload`, `enable --now`. |
-| Config | `config/tweet_launch.yaml`; the `tweet-launch` lane block in `config/risk.yaml`; the `protection.lanes.tweet-launch` ladder in `config/risk.yaml` | The template ladder sells 20% / 25% / 33% / 50% of what remains at 1.3x / 1.6x / 2x / 3x, and everything after 60 s with no trade on the curve. |
+| Config | `config/tweet_launch.yaml`; the `tweet-launch` lane block in `config/risk.yaml`; the `protection.lanes.tweet-launch` ladder in `config/risk.yaml` | The template ladder sells 20% / 25% / 33% / 50% of what remains at 1.3x / 1.6x / 2x / 3x, and **everything after 60 s with no trade on the curve** (the no-volume exit). |
 
 ### Order of operations
 
@@ -76,10 +78,35 @@ in `tweet_launches` (launch or skip, with reasons) and nothing is sent.
    brakes still apply; the flat per-trade size cap does not (the dev buy is bounded by the launch
    caps above instead).
 
+### How a post becomes a launch
+
+- **Context picker.** Each watched account has its post kinds (`post_kinds`; the template
+  accepts posts and quotes, and replies only for the listed KOL accounts). A reply counts only
+  when it **names** a token (a `$TICKER` or a quoted name); "gm" never spends a launch. Posts
+  score on having media, being short, and naming something explicitly (cashtag, quoted phrase,
+  hashtag); long posts and bare links score down; `min_score` is 1.5 in the template. The model
+  (if configured) then picks whether to launch plus the name and ticker; the deterministic
+  picker falls back to, in order, a cashtag the author wrote, a quoted phrase, a hashtag, a
+  one/two-word post, an ALL-CAPS word, then the most salient capitalised word. Majors ($BTC,
+  $SOL ...) are never used.
+- **Logo rules.** The post's own image only if it is a roughly square photo (aspect 0.75-1.34;
+  screenshots, banners and video frames are rejected). Otherwise an AI image within a **3 s
+  total budget** (`logo.timeout_s`). Otherwise a ticker badge drawn locally in milliseconds.
+  Never the author's profile picture.
+- **Speed.** Being first is the only measured edge, so latency is the design constraint.
+  Measured on 5 live launches: post to chain took **17-25 s** = feed ~10.8 s (p50) + decide
+  8.1 s + GMGN create 2.3-3.8 s. The decide step is now ~0.1-3 s (bounded picker and logo
+  budgets). The feed is the remaining ~11 s: a 5 s polling `tweet_filter` rule plus X search
+  lag. For lower latency use a push feed: the twitterapi.io **Stream** plan or **J7Tracker**.
+  The `speed:` block holds the Solana send options: `sol_anti_mev: false` (a create+buy cannot
+  be sandwiched; bundling only adds latency) and `sol_priority_fee` (0.0005 SOL per create).
+
 ### Holder fees
 
 - **BNB / Flap:** works. A dividend tax with all of the tax paid to holders (the template uses
   1% buy/sell tax). Rewards accrue to a dividend contract; verify a real accrual or claim.
+- **BNB / four.meme** (the combo's second route): a 1% fee paid 100% to holders as dividends
+  (`holder_fees: { dividend_fee_pct: 1 }`); not yet verified live.
 - **Solana / pump.fun:** through GMGN only **Cashback** is supported, which pays fees to
   traders, not holders.
 - **Robinhood / Pons:** no holder-fee mechanism through GMGN.
@@ -187,15 +214,13 @@ Token names, posts and API responses are treated as data, never as instructions.
 
 ## Known state of this snapshot
 
-8,678 tests pass, 40 are skipped (live-provider tests, opt-in) and 17 fail. Every one of the 17
-fails the same way in the private tree this snapshot was cut from: 13 are the repository's own
-skill-format lint (`tests/test_skills.py`) on four newly added social/launch skills that do not
-yet follow the six-part SKILL.md layout, 3 are in `test_tweet_launch_integration` (they expect
-the ordinary per-trade size cap to refuse a launch, which the current launcher deliberately
-bypasses for the dev buy) and 1 is `test_event_kinds_are_declared`.
-One more test, `test_tweet_launch_integration.py::test_real_candidate_runner_uses_selected_feed_and_records_all_three_chains`
-(2 cases), crashes the interpreter on Windows in both trees and was deselected for the count.
-Good first issues if you want to help.
+8,718 tests pass, 40 are skipped (live-provider tests, opt-in) and 23 fail; nothing is
+deselected. All of the tweet-launch suites pass. Every one of the 23 fails the same way in the
+private tree this snapshot was cut from: 22 are the repository's own skill-format lint
+(`tests/test_skills.py`) on seven newly added social/launch skills that do not yet follow the
+six-part SKILL.md layout (`j7-social-tracking`, `launch-logo-generation`, `launch-metadata`,
+`twitterapi-research`, `social-airdrop-hunt`, `social-feed-ops`, `social-nft-hunt`), and 1 is
+`test_event_kinds_are_declared`. Good first issues if you want to help.
 
 Not included: tests that import the author's private data directory, captures of the author's
 own wallets and ledger, a one-off bookkeeping repair for one of the author's positions, the

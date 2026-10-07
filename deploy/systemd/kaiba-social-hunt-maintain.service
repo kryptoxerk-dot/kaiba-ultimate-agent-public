@@ -1,0 +1,12 @@
+[Unit]
+Description=Kaiba social hunt bounded retention and latency report
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/kaiba
+ExecStart=%h/kaiba/.venv/bin/python -m kaiba.hunters.social_hunt maintain
+Nice=19
+IOSchedulingClass=idle
+TimeoutStartSec=45
+MemoryMax=160M
+NoNewPrivileges=true

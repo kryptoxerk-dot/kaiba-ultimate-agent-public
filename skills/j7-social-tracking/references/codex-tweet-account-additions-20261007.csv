@@ -1,0 +1,22 @@
+handle,profile_url,source_tokens,source_posts,chains,graduation_records,earliest_sampled_token_graduations,tokens_with_8_prints,reach_2x_first_observed_price,j7_member,live_launch_tracked_snapshot,identity_status,net_ev,role,source_post_url,source_post_verified,priority,promoted_to_live
+sama,https://x.com/sama,32,1,bsc|sol,0,0,3,0,True,False,metadata_claim,UNPROVEN,AI narrative catalyst,https://x.com/sama/status/2107623610483720463,True,research_next,False
+rawsalerts,https://x.com/rawsalerts,10,1,sol,2,0,4,2,True,False,metadata_claim,UNPROVEN,news source; revive/tragedy context,https://x.com/rawsalerts/status/2106895231471788184,True,context_or_validation,False
+_tjrtrades,https://x.com/_tjrtrades,15,1,sol,1,0,2,0,True,False,metadata_claim,UNPROVEN,meme phrase origin,https://x.com/_TJRTrades/status/2107618844227314131,True,research_next,False
+austin_federa,https://x.com/austin_federa,9,1,bsc|sol,0,0,2,0,True,False,metadata_claim,UNPROVEN,Solana/AI infrastructure narrative,https://x.com/Austin_Federa/status/2107628665303667159,True,research_next,False
+whitehouse,https://x.com/whitehouse,12,3,bsc|sol,0,0,1,0,True,False,metadata_claim,UNPROVEN,political narrative; old-post revivals,https://x.com/WhiteHouse/status/2106731532694028310,True,context_or_validation,False
+zerohedge,https://x.com/zerohedge,8,1,bsc|sol,0,0,1,1,True,False,metadata_claim,UNPROVEN,news narrative,https://x.com/zerohedge/status/2107616924750299300,True,research_next,False
+mkbhd,https://x.com/mkbhd,5,1,sol,0,0,0,0,False,False,metadata_claim,UNPROVEN,tech news; sampled revival,https://x.com/MKBHD/status/2092644929780482292,True,context_or_validation,False
+okpasquale,https://x.com/okpasquale,11,3,sol,1,1,1,1,True,False,metadata_claim,UNPROVEN,visual/reply context needed,https://x.com/okpasquale/status/2107616156261769388,True,research_next,False
+crossyfun,https://x.com/crossyfun,6,1,bsc|sol,1,1,2,1,False,False,metadata_claim,UNPROVEN,project-associated; unresolved source post,,False,context_or_validation,False
+nfadyorky,https://x.com/nfadyorky,25,1,sol,0,0,0,0,False,False,metadata_claim,UNPROVEN,existing-token amplification,https://x.com/nfadyorky/status/2107623969314701384,True,context_or_validation,False
+chrisfell7,https://x.com/chrisfell7,23,3,bsc,0,0,0,0,False,False,metadata_claim,UNPROVEN,Chinese-language meme amplification,https://x.com/ChrisFell7/status/2107618376449474744,True,context_or_validation,False
+stonkshirebiz,https://x.com/stonkshirebiz,20,1,sol,0,0,0,0,False,False,metadata_claim,UNPROVEN,high launch count; unresolved source post,,False,context_or_validation,False
+jimothy_phd,https://x.com/jimothy_phd,16,3,bsc|sol,0,0,2,2,False,False,metadata_claim,UNPROVEN,meme discovery/revival,https://x.com/jimothy_phd/status/2107617283401027918,True,research_next,False
+jncquant,https://x.com/jncquant,13,4,bsc|sol,0,0,2,0,False,False,metadata_claim,UNPROVEN,animal story amplification,https://x.com/jncquant/status/2107616517978251452,True,context_or_validation,False
+ddddddd8a,https://x.com/ddddddd8a,16,3,bsc|sol,0,0,2,2,False,False,metadata_claim,UNPROVEN,animal meme discovery,https://x.com/ddddddd8a/status/2107618791693725759,True,research_next,False
+esotericpigeon,https://x.com/esotericpigeon,9,4,bsc|sol,0,0,1,0,False,False,metadata_claim,UNPROVEN,AI product/creator-fee narrative,https://x.com/esotericpigeon/status/2107625500105650309,True,research_next,False
+aimind_ai,https://x.com/aimind_ai,,,,,,,,False,False,verified_quoted_author,UNPROVEN,quoted upstream source via chrisfell7,https://x.com/AIMind_Ai/status/2107435499686154557,True,upstream_source_research,False
+certchampmamii,https://x.com/certchampmamii,,,,,,,,False,False,verified_quoted_author,UNPROVEN,quoted upstream source via jimothy_phd,https://x.com/CertChampMamii/status/2107492598890049558,True,upstream_source_research,False
+ketonsolana_xd,https://x.com/ketonsolana_xd,,,,,,,,False,False,verified_quoted_author,UNPROVEN,quoted upstream source via ddddddd8a,https://x.com/ketonsolana_xd/status/2107605621503660056,True,upstream_source_research,False
+kevinpicchi,https://x.com/kevinpicchi,,,,,,,,False,False,verified_quoted_author,UNPROVEN,quoted upstream source via esotericpigeon,https://x.com/KevinPicchi/status/2107497028494450775,True,upstream_source_research,False
+powergacha_sol,https://x.com/powergacha_sol,,,,,,,,False,False,verified_quoted_author,UNPROVEN,quoted upstream source via nfadyorky,https://x.com/powergacha_sol/status/2107621473649123644,True,upstream_source_research,False

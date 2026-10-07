@@ -1,0 +1,12 @@
+# Codex 2026-10-07: purpose-scoped research only; this file never arms a transaction.
+enabled: true
+socket_path: data/social-hunt.sock
+database: data/social-hunt.db
+max_post_age_s: 86400
+retention_days: 7
+all_j7_for_hunts: true  # when the shared source is J7, use its already-delivered roster
+roster: skills/j7-social-tracking/references/j7-accounts.csv
+accounts:
+  nft: [doodles, magiceden, opensea, lucanetz, frankdegods, notthreadguy, dingalingts, farokh, 0xsunnft]
+  airdrop: [phantom, hyperliquidx, jupiterexchange, jup_dao, meteoraag, doublezero, base, defituna, beacon_defi]
+  token: [sama, rawsalerts, _tjrtrades, austin_federa, whitehouse, zerohedge, mkbhd, okpasquale, crossyfun, nfadyorky, chrisfell7, stonkshirebiz, jimothy_phd, jncquant, ddddddd8a, esotericpigeon, aimind_ai, certchampmamii, ketonsolana_xd, kevinpicchi, powergacha_sol]
