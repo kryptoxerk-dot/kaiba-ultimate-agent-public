@@ -24,7 +24,7 @@ Method
 
    * ``before``  -- landed before the seed (same block counts when it is earlier in the block);
    * ``copier``  -- landed AFTER the seed by at most ``copier_ms`` (0.6 s: GMGN copy bots land
-     0.2-0.4 s behind their leader, MEASURED 2026-10-03 on the owner's 0x41a0);
+     0.2-0.4 s behind their leader, MEASURED 2026-10-03 on the owner's 0x7243);
    * ``near``    -- after the seed by more than ``copier_ms`` but within ``cobuy_near_ms``.
 
    A wallet whose co-buys are mostly ``copier`` is a follower and is excluded. A candidate

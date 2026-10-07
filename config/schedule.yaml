@@ -762,7 +762,7 @@ jobs:
     # action=copy_manager_rule) for the forward measurement.
     # Caps: 3 sells per pass, 30 per UTC day.
     # DISABLED 2026-10-04: owner stopped GMGN copy trading and moved all funds to 0x46df;
-    # 0x41a0 holds 0.0002 ETH and 5 unsellable tokens (honeypot / thin pools / dust).
+    # 0x7243 holds 0.0002 ETH and 5 unsellable tokens (honeypot / thin pools / dust).
     enabled: false
     interval_s: 30
     timeout_s: 90

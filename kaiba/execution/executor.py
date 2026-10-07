@@ -485,7 +485,7 @@ def _assert_sell_is_ours(order: Order, c: sqlite3.Connection, from_wallet: str |
     and never more than it bought:
 
     * a sell from any wallet other than the chain wallet is refused outright (the copy_manager
-      path that sold the owner's GMGN copy trades on 0x41a0: 14 such sells 09-21..10-04, none
+      path that sold the owner's GMGN copy trades on 0x7243: 14 such sells 09-21..10-04, none
       bought by Kaiba);
     * Kaiba's own buys of this token on this chain (non-shadow; the larger of its filled buy
       orders and its position ledger ``qty_total``) minus every sell that

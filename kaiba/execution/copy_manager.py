@@ -80,7 +80,7 @@ the copy trade sell before it rug"). Kaiba now trades from its own wallet (risk.
 
 "SELL BEFORE IT RUGS": three sell-everything rules, each a named decision kind with its own
 ``off | dry | live`` mode, MEASURED read-only 2026-10-03 on the copy book's last 30 days
-(GMGN holdings incl. closed for 0x41a0: 595 tokens; 302 holding windows with Kaiba swap tape,
+(GMGN holdings incl. closed for 0x7243: 595 tokens; 302 holding windows with Kaiba swap tape,
 outcome = GMGN's own total_profit; 10pp execution haircut):
 
 * ``fast_crash`` -- price down ``crash_drop`` from its high inside ``crash_window_s``.
