@@ -27,7 +27,7 @@ known to within one tick. That resolution is fine against a median 36 s feed fre
 Run on the box (read-only, bounded, indexed reads)::
 
     nice -n 19 .venv/bin/python -m kaiba.learning.onchain_vs_feed \\
-        --db /home/ubuntu/kaiba/data/kaiba.db --since-days 14
+        --db /home/kaiba/kaiba/data/kaiba.db --since-days 14
 """
 
 from __future__ import annotations

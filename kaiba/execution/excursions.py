@@ -3,6 +3,15 @@
 AUDIT-INTEGRATE delegated writer. The watchdog owns quote acceptance; this module adds
 no provider read or trading decision. Marks use observation time, not polling time.
 Existing marks/events/kv hold the evidence, so no core migration is needed.
+
+A quote the watchdog accepts for PROTECTION is not automatically evidence for a STUDY.
+Protection deliberately accepts scope-less quotes (the curve, router and Jupiter readers
+answer the (chain, token) they were asked for without stamping it) because refusing them
+would blind live stops. A mark is read later, by exit and loss studies, with no memory of
+what was asked -- so it needs the stricter bar in :func:`sample_rejection`. Fixed
+2026-10-05: the sampler had no bar of its own and wrote marks observed before the
+position opened, marks with no chain/token, marks from source ``none``/blank, and marks
+for shadow/off positions the paper broker already owns.
 """
 from __future__ import annotations
 
@@ -12,14 +21,53 @@ from typing import TYPE_CHECKING
 
 from kaiba.core.db import fetch_one, jdump, jload, tx, upsert
 from kaiba.core.events import emit
-from kaiba.core.schemas import EventKind, Position
+from kaiba.core.schemas import EventKind, LaneMode, Position
 
 if TYPE_CHECKING:
     from kaiba.execution.watchdog import PriceQuote
 
+#: The modes this sampler owns. SHADOW is marked by ``PaperBroker.mark_to_market``; OFF
+#: is not traded. Sampling either here would double-write or invent a path.
+LIVE_MODES = frozenset({LaneMode.LIVE, LaneMode.CANARY})
+
+#: Source strings that name no producer (``PriceQuote.source`` defaults to "none").
+_NO_SOURCE = frozenset({"", "none"})
+
+
+def sample_rejection(position: Position, quote: PriceQuote) -> str | None:
+    """Why ``quote`` must not become an excursion mark for ``position``; None if it may.
+
+    Checks the sampler's own contract on top of ``quote.invalid_reason`` (basis, price,
+    observation time, freshness), which is re-checked so a caller that skips the
+    watchdog's validation cannot write a mark either.
+    """
+    if position.mode not in LIVE_MODES:
+        return f"mode_not_live:{position.mode.value}"
+    reason = quote.invalid_reason
+    if reason is not None:
+        return reason
+    if quote.chain is None:
+        return "scope_missing_chain"
+    if quote.token is None or not str(quote.token).strip():
+        return "scope_missing_token"
+    if quote.chain != position.chain:
+        return "scope_wrong_chain"
+    if quote.token != position.token:
+        return "scope_wrong_token"
+    if (quote.source or "").strip().lower() in _NO_SOURCE:
+        return "source_missing"
+    if position.opened_ms is not None and quote.observed_ms < position.opened_ms:
+        return "observed_before_open"
+    return None
+
 
 def record_live_quote(conn: sqlite3.Connection, position: Position, quote: PriceQuote) -> bool:
-    """Record one accepted observation and its sampled (not full-path) extrema."""
+    """Record one accepted observation and its sampled (not full-path) extrema.
+
+    Returns False, writing nothing, when :func:`sample_rejection` refuses the quote.
+    """
+    if sample_rejection(position, quote) is not None:
+        return False
     key = f"watchdog.excursion:{position.position_id}"
     with tx(conn):
         row = fetch_one(conn, "SELECT * FROM positions WHERE position_id=?", (position.position_id,))

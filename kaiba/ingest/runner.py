@@ -30,10 +30,32 @@ from kaiba.core.config import get_settings
 from kaiba.core.db import ensure_db, get_conn
 from kaiba.core.events import emit
 from kaiba.core.schemas import EventKind, now_ms
-from kaiba.ingest import gmgn_feeds, pumpportal, rhscannerr, robinhood, telegram_calls
+from kaiba.ingest import (
+    alpha_feeds,
+    flap,
+    gmgn_feeds,
+    pumpportal,
+    rhscannerr,
+    robinhood,
+    telegram_calls,
+    wallet_stream,
+    wallet_stream_sol,
+)
 from kaiba.ingest.pumpportal import AlreadyRunning, backoff_delay
 
 log = logging.getLogger(__name__)
+
+
+def _leader_exit_run(stop):
+    from kaiba.learning import leader_exit
+
+    return leader_exit.run(stop=stop)
+
+
+def _graduation_observer_run(stop):
+    from kaiba.learning import graduation_observer
+
+    return graduation_observer.run(stop=stop)
 
 #: name -> coroutine factory taking the shared stop event.
 FeedFactory = Callable[[asyncio.Event], Awaitable[None]]
@@ -54,6 +76,37 @@ REGISTRY: dict[str, FeedFactory] = {
     # It is not the `telegram` listener and the licensing reasoning below does not reach
     # it: no account, no API, no channel history -- the same page any browser is served.
     "rhscannerr": lambda stop: rhscannerr.run(stop=stop),
+    # The owner's trusted Robinhood wallets over the Alchemy WebSocket (owner decision
+    # 2026-10-04: strong evidence for sm-trenches confluence, never a blind copy). Writes
+    # CONFIRMED trades to `swaps` as source `alchemy:ws`; see kaiba/ingest/wallet_stream.py.
+    # Not in DEFAULT_FEEDS, like `robinhood`: it needs the Alchemy endpoint
+    # (ROBINHOOD_RPC_URL with /v2/) and returns idle without one. `kaiba ingest run`
+    # (kaiba-ingest.service) runs every registered listener, so on the box it starts with
+    # the next restart of that service.
+    "rh_wallets": lambda stop: wallet_stream.run(stop=stop),
+    # The Solana twin (owner decision 2026-10-04: launch-snipe's `trusted_early` on sol, on
+    # the owner's paid Alchemy plan). Tracks sol `trusted_copy` wallets plus the newest
+    # proven:sol cohort, minus bots and routers; writes CONFIRMED swaps to `swaps` as source
+    # `alchemy:ws`; see kaiba/ingest/wallet_stream_sol.py. Not in DEFAULT_FEEDS; idles
+    # without an Alchemy SOLANA_RPC_URL (/v2/). Starts with the next kaiba-ingest restart.
+    "sol_wallets": lambda stop: wallet_stream_sol.run(stop=stop),
+    # Flap (BSC) launches and graduations over the Alchemy WebSocket (owner 2026-10-05: "enable
+    # bnb snipes", PAPER first). Writes `tokens` rows (launchpad `flap`, source
+    # `alchemy:ws:flap`) and `tokens.migrated_ms`; see kaiba/ingest/flap.py. Not in
+    # DEFAULT_FEEDS, and IDLE until `lanes.launch-snipe.params.chains` lists bsc and
+    # BSC_SNIPE_RPC_URL (its OWN Alchemy app; never BSC_RPC_URL, whose key protection's price
+    # reads use) is an Alchemy /v2/ URL: ~38M CU a month at the 2026-10-05 launch rate plus
+    # ~12M for sender lookups, capped per day by `bsc_feed_max_cu_per_day`. The lead's call.
+    "flap": lambda stop: flap.run(stop=stop),
+    # SHADOW narrative/early-alpha feeds (Binance meme-rush/topic-rush/smart-money, GMGN hot-searches
+    # at DISCOVERY priority every 5 min). Records only; nothing gates, sizes or trades on it.
+    "alpha_feeds": lambda stop: alpha_feeds.run(stop=stop, status_name="alpha_feeds"),
+    # PAPER graduation observer (kaiba/learning/graduation_observer.py): pre-declared hypotheses A/B/C,
+    # new-pool on-chain prices only, own RPC buckets at RESEARCH priority, capped. Places no orders.
+    "graduation_observer": lambda stop: _graduation_observer_run(stop),
+    # RECORD-ONLY leader-exit observer (kaiba/learning/leader_exit.py): watches the signal wallets of
+    # open sol sm-trenches positions on chain for their first sell; own capped RPC bucket. No orders.
+    "leader_exit": lambda stop: _leader_exit_run(stop),
 }
 
 #: Feeds started when the operator names none. ``telegram`` is deliberately absent.

@@ -38,7 +38,7 @@ mark_to_fill            trigger mark observed -> order filled
 Read-only. Run on the box::
 
     nice -n 19 .venv/bin/python -m kaiba.learning.exit_latency \\
-        --db /home/ubuntu/kaiba/data/kaiba.db --since-days 30 --legacy
+        --db /home/kaiba/kaiba/data/kaiba.db --since-days 30 --legacy
 """
 
 from __future__ import annotations

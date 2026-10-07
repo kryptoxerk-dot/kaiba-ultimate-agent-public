@@ -33,6 +33,16 @@ lift is reported beside the rate rather than instead of it, and a band with no
 observations prints as "-" rather than as zero -- an unmeasured thing is never a measured
 zero (CONTRACT rule 2).
 
+**4. The outcome is priced on ONE source.** (2026-10-04) ``swaps`` mixes feeds, and the
+feeds disagree print by print: MEASURED on the box, 6.3% of sol ``gmgn:smartmoney`` /
+``pumpfun:trades`` prints for the same token within 60 s differ by more than 2x. A maximum
+over the mixed tape picks up the other feed's high misprint and calls it a mooner. So the
+outcome's base and peak come from the one source
+:func:`kaiba.intelligence.deployer.series_source` picks for the token (most priced prints
+over the tape read). The feature window and its wallets/flow are still read from every
+source: they are not prices, and choosing the feature tape by a count that includes the
+outcome period would let the future pick the features.
+
 What it does NOT claim: that a feature which separates mooners will make money. Reaching
 5x on the tape is not the same as our realised P&L -- we exit on a ladder and pay ~6.5%
 round trip -- and the gap between those two is exactly where the live lane's -19.3% mean
@@ -45,11 +55,13 @@ import collections
 import logging
 import re
 import sqlite3
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any, Iterable
+from typing import Any
 
 from kaiba.core.db import fetch_all, get_conn
 from kaiba.core.schemas import Chain, now_ms
+from kaiba.intelligence.deployer import series_source
 
 log = logging.getLogger(__name__)
 
@@ -98,6 +110,7 @@ class Print:
     price: float
     side: str
     wallet: str | None
+    source: str = ""
 
 
 @dataclass
@@ -116,6 +129,8 @@ class TokenCase:
     symbol: str | None = None
     name: str | None = None
     launchpad: str | None = None
+    #: The one swap source the outcome's prices were read from.
+    price_source: str | None = None
 
     @property
     def mooned(self) -> bool:
@@ -175,7 +190,7 @@ class Autopsy:
 def _series(conn: sqlite3.Connection, chain: Chain | None, since_ms: int) -> dict[tuple[str, str], list[Print]]:
     """Every token's prints, oldest first. Prices that cannot be parsed are dropped."""
     sql = (
-        "SELECT chain, token, ts_ms, price_usd, side, wallet FROM swaps "
+        "SELECT chain, token, ts_ms, price_usd, side, wallet, source FROM swaps "
         "WHERE price_usd IS NOT NULL AND price_usd != '' AND ts_ms >= ?"
     )
     params: list[Any] = [int(since_ms)]
@@ -193,7 +208,8 @@ def _series(conn: sqlite3.Connection, chain: Chain | None, since_ms: int) -> dic
         if price <= 0:
             continue
         out[(str(row["chain"]), str(row["token"]))].append(
-            Print(int(row["ts_ms"] or 0), price, str(row["side"] or "").lower(), row["wallet"])
+            Print(int(row["ts_ms"] or 0), price, str(row["side"] or "").lower(), row["wallet"],
+                  str(row["source"] or ""))
         )
     return out
 
@@ -215,46 +231,76 @@ def build_cases(
     identity = _identity(conn)
     cases: list[TokenCase] = []
     for (chain_value, token), prints in _series(conn, chain, since_ms).items():
-        if len(prints) < MIN_PRINTS:
-            continue
-        opened = prints[0].ts_ms
-        window = [
-            p for i, p in enumerate(prints)
-            if i < EARLY_PRINTS and (p.ts_ms - opened) <= EARLY_WINDOW_MS
-        ]
-        if len(window) < 2:
-            continue
-        # Timestamp ordering has no executable order within a tied timestamp.
-        # A print at the feature cutoff cannot be counted as a future opportunity.
-        after = [p for p in prints[len(window):] if p.ts_ms > window[-1].ts_ms]
-        if not after:
-            continue
-        # The outcome is measured from the END of the feature window, never from the first
-        # print. See the module docstring: measuring from the first print would count the
-        # move that happened while the features were still being read.
-        base = window[-1].price
-        if base <= 0:
-            continue
-        meta = identity.get((chain_value, token), {})
-        cases.append(
-            TokenCase(
-                chain=Chain(chain_value),
-                token=token,
-                early_wallets=tuple(
-                    sorted({p.wallet for p in window if p.side == "buy" and p.wallet})
-                ),
-                early_buys=sum(1 for p in window if p.side == "buy"),
-                early_sells=sum(1 for p in window if p.side == "sell"),
-                first_price=window[0].price,
-                window_end_price=base,
-                window_end_ms=window[-1].ts_ms,
-                multiple=max(p.price for p in after) / base,
-                symbol=(meta.get("symbol") or None),
-                name=(meta.get("name") or None),
-                launchpad=(meta.get("launchpad") or None),
-            )
-        )
+        case = case_from_prints(chain_value, token, prints, identity.get((chain_value, token), {}))
+        if case is not None:
+            cases.append(case)
     return cases
+
+
+def case_from_prints(
+    chain_value: str,
+    token: str,
+    prints: Sequence[Print],
+    meta: Mapping[str, Any] | None = None,
+    *,
+    price_source: str | None = None,
+) -> TokenCase | None:
+    """One token's case from its prints (every source, oldest first), or ``None``.
+
+    The feature window is read from every source. The outcome's base and peak are read
+    from ONE source: ``price_source`` when given, else the one
+    :func:`~kaiba.intelligence.deployer.series_source` picks over ``prints``. ``None`` when
+    the tape is too short, or when that source has no print inside the window to measure
+    from or none after it to measure to.
+    """
+    if len(prints) < MIN_PRINTS:
+        return None
+    opened = prints[0].ts_ms
+    window = [
+        p for i, p in enumerate(prints)
+        if i < EARLY_PRINTS and (p.ts_ms - opened) <= EARLY_WINDOW_MS
+    ]
+    if len(window) < 2:
+        return None
+    if price_source is None:
+        counts: dict[str, int] = collections.Counter(p.source for p in prints)
+        price_source = series_source(counts, chain_value)
+    priced_window = [p for p in window if p.source == price_source]
+    if not priced_window:
+        return None
+    # Timestamp ordering has no executable order within a tied timestamp.
+    # A print at the feature cutoff cannot be counted as a future opportunity.
+    after = [
+        p for p in prints[len(window):]
+        if p.ts_ms > window[-1].ts_ms and p.source == price_source
+    ]
+    if not after:
+        return None
+    # The outcome is measured from the END of the feature window, never from the first
+    # print. See the module docstring: measuring from the first print would count the
+    # move that happened while the features were still being read. The base is the price
+    # source's last print inside the window: its price as the window closed.
+    base = priced_window[-1].price
+    if base <= 0:
+        return None
+    meta = meta or {}
+    return TokenCase(
+        chain=Chain(chain_value),
+        token=token,
+        early_wallets=tuple(
+            sorted({p.wallet for p in window if p.side == "buy" and p.wallet})
+        ),
+        early_buys=sum(1 for p in window if p.side == "buy"),
+        early_sells=sum(1 for p in window if p.side == "sell"),
+        first_price=priced_window[0].price,
+        window_end_price=base,
+        window_end_ms=window[-1].ts_ms,
+        multiple=max(p.price for p in after) / base,
+        symbol=(meta.get("symbol") or None),
+        name=(meta.get("name") or None),
+        launchpad=(meta.get("launchpad") or None),
+        price_source=price_source,
+    )
 
 
 # --------------------------------------------------------------------------------------

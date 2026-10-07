@@ -1,0 +1,3 @@
+interface:
+  display_name: "Launch Metadata"
+  short_description: "Let Hermes choose token names, tickers and descriptions"

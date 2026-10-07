@@ -105,25 +105,46 @@ def test_hand_off_records_one_signal_after_a_dossier_and_the_token_row(tmp_db):
     scan = lambda token, chain: scans.append(token) or SimpleNamespace(grade=SimpleNamespace(value="B"), blockers=[])  # noqa: E731
     p = {**snipe.DEFAULT_PARAMS, "token_row_wait_s": 0.01}
     budget = snipe.DossierBudget(10)
-    sid, note = snipe.hand_to_engine(tmp_db, sol_launch(), FIRE, p, budget, scan=scan)
-    assert sid is None and note.endswith(":no_token_row")  # the ingest service has not written it: no signal
+    published = []
+    publish = lambda conn, launch: published.append(launch.token) or (1, "snapshot")  # noqa: E731
+    sized = lambda conn, launch, strength: (True, "band_ok")  # noqa: E731
+    kw = {"scan": scan, "publish": publish, "precheck": sized}
+    assert snipe.hand_to_engine(tmp_db, sol_launch(), FIRE, p, budget, **kw) == (None, "no_token_row")
+    assert published == [] and scans == []  # nothing spent on a token the engine cannot see yet
     tmp_db.execute("INSERT INTO tokens (chain, address, launchpad, first_seen_ms) VALUES ('sol', 'Mint1111', 'pump.fun', 1)")
-    sid, note = snipe.hand_to_engine(tmp_db, sol_launch(), FIRE, p, budget, scan=scan)
+    sid, note = snipe.hand_to_engine(tmp_db, sol_launch(), FIRE, p, budget, **kw)
+    assert note == "depth_snapshot:dossier:B:depth_snapshot:signal", note
+    assert published == ["Mint1111", "Mint1111"]
     sig = fetch_one(tmp_db, "SELECT * FROM signals WHERE signal_id=?", (sid,))
     assert sig["lane"] == snipe.LANE_VALUE and sig["chain"] == "sol" and sig["strength"] >= 0.70
     assert jload(sig["payload_json"])["source"] == "launch_snipe"
-    assert snipe.hand_to_engine(tmp_db, sol_launch(), FIRE, p, budget, scan=scan) == (None, "dossier:B:signal_exists")
-    assert snipe.snipes_today(tmp_db, Chain.SOL, at_ms=sig["created_ms"]) == 1
+    assert snipe.hand_to_engine(tmp_db, sol_launch(), FIRE, p, budget, **kw)[0] is None  # recorded once
+    assert snipe.snipes_today(tmp_db, Chain.SOL, at_ms=sig["created_ms"]) == 0  # a signal is not a snipe; an entry is
 
 
 def test_no_dossier_budget_or_a_failed_dossier_means_no_signal(tmp_db):
+    tmp_db.execute("INSERT INTO tokens (chain, address, launchpad, first_seen_ms) VALUES ('sol', 'Mint1111', 'pump.fun', 1)")
     p = {**snipe.DEFAULT_PARAMS, "token_row_wait_s": 0.01}
-    assert snipe.hand_to_engine(tmp_db, sol_launch(), FIRE, p, snipe.DossierBudget(0), scan=lambda *a: None) == (None, "dossier_budget_exhausted")
+    kw = {"publish": lambda conn, launch: (1, "snapshot"), "precheck": lambda conn, launch, strength: (True, "band_ok")}
+    assert snipe.hand_to_engine(tmp_db, sol_launch(), FIRE, p, snipe.DossierBudget(0), scan=lambda *a: None, **kw) == (
+        None, "depth_snapshot:dossier_budget_exhausted")
 
     def boom(*a):
         raise TimeoutError("gmgn")
 
-    assert snipe.hand_to_engine(tmp_db, sol_launch(), FIRE, p, snipe.DossierBudget(5), scan=boom) == (None, "dossier_failed:TimeoutError")
+    assert snipe.hand_to_engine(tmp_db, sol_launch(), FIRE, p, snipe.DossierBudget(5), scan=boom, **kw) == (
+        None, "depth_snapshot:dossier_failed:TimeoutError")
+    assert fetch_one(tmp_db, "SELECT COUNT(*) AS n FROM signals")["n"] == 0
+
+
+def test_a_launch_the_gate_cannot_size_never_spends_a_dossier(tmp_db):
+    tmp_db.execute("INSERT INTO tokens (chain, address, launchpad, first_seen_ms) VALUES ('robinhood', ?, 'pons', 1)", (TOKEN,))
+    scans, budget = [], snipe.DossierBudget(5)
+    unsized = lambda conn, launch, strength: (False, "no_band:no_viable_size:cheapest_is_8.49pct>7.0pct")  # noqa: E731
+    got = snipe.hand_to_engine(tmp_db, rh_launch(), FIRE, {**snipe.DEFAULT_PARAMS, "token_row_wait_s": 0.01}, budget,
+                               scan=lambda *a: scans.append(a), precheck=unsized)
+    assert got == (None, "no_band:no_viable_size:cheapest_is_8.49pct>7.0pct")
+    assert scans == [] and len(budget.used) == 0
     assert fetch_one(tmp_db, "SELECT COUNT(*) AS n FROM signals")["n"] == 0
 
 

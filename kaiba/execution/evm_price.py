@@ -121,6 +121,28 @@ SEL_GET_TOKEN_V8_SAFE = "0x62fafcca"
 #: fallback rather than guessed at — an unknown status is not an invitation to price.
 FLAP_STATUS_ON_CURVE = 1
 
+#: The rest of Flap's documented ``TokenStatus`` (0 Invalid, 1 Tradable, 2 InDuel, 3 Killed,
+#: 4 DEX, 5 Staged). MEASURED 2026-10-05 from the box: graduated samples read 4 with the pool
+#: word set and progress at 100%. Named so a caller can tell "graduated" from "dead".
+FLAP_STATUS_KILLED = 3
+FLAP_STATUS_DEX = 4
+
+#: ``maxBuyPerOrigin(address token)`` on the portal: ``(uint16 bps, uint256 maxBuyAmount)``,
+#: ``(0, 0)`` when the token has no Buy Quota. Selector verified by keccak in this tree
+#: (``policy.keccak256``) and MEASURED readable on 371 of 371 fresh launches 2026-10-05.
+SEL_MAX_BUY_PER_ORIGIN = "0x4b02c8e9"
+
+#: ``quoteExactInput((address inputToken, address outputToken, uint256 inputAmount))`` on the
+#: portal: the tokens a buy of ``inputAmount`` would deliver, by the venue's own arithmetic --
+#: fee, the token's buy tax and any Buy Quota cap included. MEASURED 2026-10-05: 0.15 BNB in
+#: returned 25.88M / 25.37M / 23.82M tokens at 1% / 3% / 8.99% tax, and exactly the 20M quota
+#: on a quota token. The tuple is all static types, so it is encoded inline (three words).
+SEL_QUOTE_EXACT_INPUT = "0xfc847c2b"
+
+#: Flap's protocol fee per side, bps. MEASURED 2026-10-05 on our own 8 on-curve GMGN fills:
+#: the portal's ``TokenBought``/``TokenSold`` ``fee`` word is exactly 1% of its ``eth`` word.
+FLAP_PROTOCOL_FEE_BPS = 100
+
 #: Flap's fixed-point scale for ``r``, ``h``, ``K`` and the price word. It is 1e18 because
 #: those are the curve's own units, **not** because the quote token has 18 decimals: the
 #: reserve word is in quote base units and is scaled separately. Both readings were
@@ -145,6 +167,22 @@ FLAP_CURVE_DECIMALS = 18
 #: **not** a gate: gating on it would silently skip the other 0.7%, and the portal read is
 #: itself the authoritative answer to "is this a Flap token".
 FLAP_ADDRESS_FINGERPRINT = "7777"
+
+#: Every vanity suffix the Flap launchpad mines (``7777`` and ``8888``). Used for ONE thing:
+#: a ``TokenNotFound`` answer for an address carrying it contradicts itself, so it refuses
+#: rather than routing the token to a pool (:func:`read_flap`). Never a gate on its own.
+FLAP_ADDRESS_FINGERPRINTS: tuple[str, ...] = ("7777", "8888")
+
+#: ``TokenNotFound(address)`` -- the custom error the portal's ``getTokenV8Safe`` REVERTS
+#: with for a token it never launched. Selector verified by keccak in this tree
+#: (``policy.keccak256``). MEASURED 2026-10-05 from the box: all 18 non-Flap bsc tokens
+#: that reached an sm-trenches decision in the prior 7 days (four.meme, PancakeSwap pools,
+#: geniusfun, o1_rwa) answered ``{"code": 3, "message": "execution reverted", "data":
+#: "0xde6137d1" + <the token, left-padded>}``; two live Flap tokens answered a record.
+#: ``json_rpc_batch`` used to flatten that revert into ``None`` -- the same value a dead
+#: endpoint produces -- so every non-Flap token read as ``flap_portal_read_failed`` and was
+#: refused outright (24 of 161 bsc sm-trenches decisions in those 7 days).
+SEL_FLAP_TOKEN_NOT_FOUND = "0xde6137d1"
 
 #: How far the venue's own price word may sit from this module's independent recomputation
 #: of ``K / (x + h)^2`` before the quote is refused.
@@ -210,6 +248,39 @@ RPC_TIMEOUT_S = 12.0
 #: ``(to, data)`` pairs in, raw hex results out, ``None`` per call that failed. Injectable
 #: so every parser and every refusal below is testable without a network.
 RpcBatch = Callable[[Sequence[tuple[str, str]]], list[str | None]]
+
+
+@dataclass(frozen=True, slots=True)
+class RpcRevert:
+    """An ``eth_call`` that the CONTRACT refused, with the revert data it gave.
+
+    Only a transport built with ``json_rpc_batch(..., keep_reverts=True)`` produces one;
+    every other transport still answers ``None`` for a revert, so no existing caller sees
+    a new type. It is deliberately NOT a ``str``: every parser in this module treats a
+    non-string result as unreadable, so a caller that did not ask for reverts and gets one
+    anyway refuses rather than decoding revert data as a return value.
+
+    The distinction it exists for: ``None`` means "we do not know" (timeout, 429, dead
+    node) and a revert means "the contract answered no". Those want opposite handling.
+    """
+
+    data: str
+
+    @property
+    def selector(self) -> str:
+        return self.data[:10].lower()
+
+    def address_arg(self, index: int = 0) -> str | None:
+        """The ``index``-th 32-byte argument of the error, as an address, or ``None``."""
+        body = self.data[10:]
+        start = 64 * int(index)
+        word = body[start : start + 64]
+        if len(word) != 64:
+            return None
+        try:
+            return "0x" + format(int(word, 16) & ((1 << 160) - 1), "040x")
+        except ValueError:
+            return None
 
 
 # --------------------------------------------------------------------------------------
@@ -347,8 +418,24 @@ class FlapRecord:
                                         USDT/SPCXB addresses on the other two
     ==== ============================== =========================================
 
-    Words 4, 10-17 are read but not interpreted, and nothing here depends on them. They are
-    left alone rather than named on a guess.
+    Words 4 and 10-17, ESTABLISHED 2026-10-05 (read from the box against Flap's documented
+    ``TokenStateV8`` field order; the record is exactly 18 words on every sample):
+
+    ==== ============================== =========================================
+    4    token version                  6 (Tax V3) on 1,167 of 1,170 launches in an hour
+    10   nativeToQuoteSwapEnabled       0 on an ERC-20 curve ``quoteExactInput``
+                                        refused BNB for; 1 on one it accepted
+    12   buy tax, bps                   899 / 300 / 100 / 0 on samples, equal to the
+                                        launch's own ``FlapTokenAsymmetricTaxSet``
+    13   sell tax, bps                  as word 12 (0/100 is the commonest graduate)
+    14   pool                           zero on the curve; the PancakeSwap pair after
+    15   progress, 1e18 = 100%          1e18 on both graduated samples
+    16   lpFeeProfile, 17 dexId         read, not used
+    ==== ============================== =========================================
+
+    Those fields are ``None`` on a record shorter than 18 words, so a caller that needs the
+    tax must handle its absence (a 10-word record still prices). Word 11 (extension id) is
+    kept raw.
     """
 
     status: int
@@ -360,6 +447,15 @@ class FlapRecord:
     k_scaled: int
     graduation_tokens_atoms: int
     quote_token: str | None
+    token_version: int | None = None
+    native_to_quote_swap_enabled: int | None = None
+    extension_id: int | None = None
+    buy_tax_bps: int | None = None
+    sell_tax_bps: int | None = None
+    pool: str | None = None
+    progress_wad: int | None = None
+    lp_fee_profile: int | None = None
+    dex_id: int | None = None
 
     @property
     def on_curve(self) -> bool:
@@ -377,16 +473,33 @@ _FLAP_W_K = 7
 _FLAP_W_GRADUATION = 8
 _FLAP_W_QUOTE_TOKEN = 9
 _FLAP_MIN_WORDS = 10
+_FLAP_W_VERSION = 4
+_FLAP_W_N2Q = 10
+_FLAP_W_EXTENSION = 11
+_FLAP_W_BUY_TAX = 12
+_FLAP_W_SELL_TAX = 13
+_FLAP_W_POOL = 14
+_FLAP_W_PROGRESS = 15
+_FLAP_W_LP_FEE = 16
+_FLAP_W_DEX_ID = 17
+_FLAP_FULL_WORDS = 18
+
+
+def _tax_word(word: int) -> int | None:
+    """A tax word in bps, or ``None`` when it cannot be one (over 100%)."""
+    return word if 0 <= word <= 10_000 else None
 
 
 def flap_record(words: Sequence[int]) -> FlapRecord | None:
     """The raw words -> :class:`FlapRecord`, or ``None`` when the record is too short.
 
     A short record means the portal answered something this module does not understand —
-    a proxy upgrade to a ``V9`` layout, say. Short is refused rather than padded.
+    a proxy upgrade to a ``V9`` layout, say. Short is refused rather than padded. The
+    fields after word 9 are filled only from a full 18-word record.
     """
     if len(words) < _FLAP_MIN_WORDS:
         return None
+    full = len(words) >= _FLAP_FULL_WORDS
     return FlapRecord(
         status=words[_FLAP_W_STATUS],
         quote_raised_base=words[_FLAP_W_QUOTE_RAISED],
@@ -397,7 +510,71 @@ def flap_record(words: Sequence[int]) -> FlapRecord | None:
         k_scaled=words[_FLAP_W_K],
         graduation_tokens_atoms=words[_FLAP_W_GRADUATION],
         quote_token=_word_address(words[_FLAP_W_QUOTE_TOKEN]),
+        token_version=words[_FLAP_W_VERSION],
+        native_to_quote_swap_enabled=words[_FLAP_W_N2Q] if full else None,
+        extension_id=words[_FLAP_W_EXTENSION] if full else None,
+        buy_tax_bps=_tax_word(words[_FLAP_W_BUY_TAX]) if full else None,
+        sell_tax_bps=_tax_word(words[_FLAP_W_SELL_TAX]) if full else None,
+        pool=_word_address(words[_FLAP_W_POOL]) if full else None,
+        progress_wad=words[_FLAP_W_PROGRESS] if full else None,
+        lp_fee_profile=words[_FLAP_W_LP_FEE] if full else None,
+        dex_id=words[_FLAP_W_DEX_ID] if full else None,
     )
+
+
+@dataclass(frozen=True, slots=True)
+class FlapBuyQuota:
+    """``maxBuyPerOrigin(token)``: Flap's per-``tx.origin`` Buy Quota on one token.
+
+    THE HAZARD. A buy over the quota does not revert: the portal fills up to the quota and
+    REFUNDS the rest (Flap docs; MEASURED 2026-10-05: ``quoteExactInput`` of 0.15 BNB on a
+    2% quota token returned exactly the 20,000,000-token cap, ~0.114 BNB of curve). Our
+    executor assumes fill-or-revert, so a capped buy would book a size it never got and a
+    refund it may never see. ``(0, 0)`` means no quota. MEASURED 2026-10-05: non-zero on 0 of
+    371 fresh launches; ``FlapBuyQuotaUpdated`` on 12 tokens in 72 h, all ending ``8888``,
+    all 2% of supply.
+    """
+
+    bps: int
+    max_buy_atoms: int
+
+    @property
+    def active(self) -> bool:
+        return self.bps > 0 or self.max_buy_atoms > 0
+
+
+def parse_buy_quota(raw: Any) -> FlapBuyQuota | None:
+    """A ``maxBuyPerOrigin`` return -> :class:`FlapBuyQuota`; ``None`` when unreadable.
+
+    ``None`` is not "no quota": a caller deciding whether a buy can be capped must refuse
+    on it.
+    """
+    words = _words(raw)
+    if len(words) < 2:
+        return None
+    return FlapBuyQuota(bps=words[0], max_buy_atoms=words[1])
+
+
+def quote_exact_input_call(token: str, size_base_units: int) -> tuple[str, str]:
+    """``(portal, calldata)`` for ``quoteExactInput((native, token, size))`` -- a BNB buy."""
+    data = (SEL_QUOTE_EXACT_INPUT + ZERO_ADDRESS[2:].rjust(64, "0")
+            + token[2:].lower().rjust(64, "0") + format(int(size_base_units), "064x"))
+    return FLAP_PORTAL, data
+
+
+def flap_buy_net_quote(size_base_units: int, buy_tax_bps: int) -> int:
+    """The part of a BNB buy that reaches the curve: the protocol fee and the token's buy
+    tax both come off the INPUT.
+
+    DERIVED 2026-10-05 from the venue's own ``quoteExactInput`` at three tax rates on a
+    fresh native curve (r=6.14, h=107,036,752, K=6,797,205,657.28): 0.15 BNB at 1% / 3% /
+    8.99% tax returned 25.88M / 25.37M / 23.82M tokens, and ``tokens_out`` of
+    ``0.15 * (1 - (100 + tax)/10000)`` gives 25.884M / 25.368M / 23.820M. Taking the tax
+    off the tokens instead gives 23.79M at 8.99% and does not fit. Three points, one curve:
+    UNVERIFIED against a fill.
+    """
+    keep = 10_000 - FLAP_PROTOCOL_FEE_BPS - int(buy_tax_bps)
+    return max(0, int(size_base_units) * keep // 10_000)
 
 
 def _div_wad_up(numerator: int, denominator: int) -> int:
@@ -448,6 +625,11 @@ class FlapCurve:
     quote_reserve_base: int | None
     token_decimals: int
     quote_decimals: int
+    #: The token's own buy and sell tax, bps, from the same record (words 12 and 13).
+    #: ``None`` when the record did not carry them -- unknown, never zero. Not used by the
+    #: fill arithmetic below (which prices the curve leg only); the cost model reads them.
+    buy_tax_bps: int | None = None
+    sell_tax_bps: int | None = None
 
     @property
     def refusal(self) -> str | None:
@@ -533,6 +715,60 @@ class FlapCurve:
             return None
         size = (self.k_scaled * FLAP_WAD - 1) // (target - 1) - quote
         return size if size > 0 else None
+
+    def quote_out(self, atoms: int) -> int | None:
+        """Quote base units the curve pays for ``atoms`` sold back, BEFORE the protocol fee
+        and the sell tax. The mirror of :meth:`tokens_out` on the same constant product.
+
+        Rounds the way :meth:`tokens_out` does, against the trader: the quote side the
+        curve keeps is rounded up, so the seller's answer is the smaller one. Never more
+        than the corroborated reserve. ``None`` -- never 0 -- when there is no fill to price:
+        an unusable curve, a non-positive amount, or more tokens than the curve has sold.
+
+        **UNVERIFIED against a live sell**, exactly as :meth:`tokens_out` is unverified
+        against a live buy. It values paper positions (``snipe.mark_bsc``); nothing sizes
+        or exits on it.
+        """
+        if self.token_decimals != FLAP_CURVE_DECIMALS or self.quote_decimals != FLAP_CURVE_DECIMALS:
+            return None
+        if self.r_scaled <= 0 or self.h_scaled <= 0 or self.k_scaled <= 0:
+            return None
+        quote = self.virtual_quote_base
+        n = int(atoms)
+        if quote is None or self.quote_reserve_base is None or n <= 0 or n > self.tokens_sold_atoms:
+            return None
+        out = quote - _div_wad_up(self.k_scaled, self.virtual_token_atoms + n)
+        return max(0, min(out, self.quote_reserve_base))
+
+    def with_buy(self, net_quote_base: int, atoms: int) -> FlapCurve:
+        """This curve as it would be had a buy of ``net_quote_base`` (what reached the
+        curve, after fee and tax) for ``atoms`` landed on it. For valuing a paper holding
+        on the live curve: our paper buy never reached it, so a mark that ignored it would
+        sell our tokens into a curve that never received our BNB."""
+        from dataclasses import replace
+
+        reserve = self.quote_reserve_base
+        return replace(
+            self,
+            tokens_sold_atoms=self.tokens_sold_atoms + max(0, int(atoms)),
+            quote_reserve_base=None if reserve is None else reserve + max(0, int(net_quote_base)),
+        )
+
+    def at_graduation(self) -> FlapCurve | None:
+        """This curve bought exactly to its graduation point: the state it is in the moment
+        it leaves for the DEX. A curve that graduated was, by definition, bought to there --
+        the least it reached, the same reading ``snipe.curve_end_value`` gives pump.fun. The
+        reserve follows from the constant product, ``(x + h)(y + r) = K``. ``None`` when the
+        constants do not allow it."""
+        from dataclasses import replace
+
+        remaining = self.total_supply_atoms + self.h_scaled - self.graduation_tokens_atoms
+        if remaining <= 0 or self.k_scaled <= 0 or self.graduation_tokens_atoms <= 0:
+            return None
+        reserve = _div_wad_up(self.k_scaled, remaining) - self.r_scaled
+        if reserve < 0:
+            return None
+        return replace(self, tokens_sold_atoms=self.graduation_tokens_atoms, quote_reserve_base=reserve)
 
 
 def parse_flap_record(
@@ -653,10 +889,29 @@ def parse_flap_record(
                 quote_reserve_base=reserve_base,
                 token_decimals=token_decimals,
                 quote_decimals=quote_decimals,
+                buy_tax_bps=record.buy_tax_bps,
+                sell_tax_bps=record.sell_tax_bps,
             ),
         ),
         "ok",
     )
+
+
+#: The refusal :func:`read_flap` gives when the portal reverted ``TokenNotFound`` for this
+#: token: it was never launched on Flap. A prefix callers match on, not prose.
+FLAP_NOT_A_FLAP_TOKEN = "flap_not_a_flap_token"
+
+
+def flap_token_not_found(result: Any, token: str) -> bool:
+    """True only for the portal's ``TokenNotFound(token)`` revert naming THIS token.
+
+    The address argument is checked as well as the selector: a revert that names some
+    other address is an answer to a different question.
+    """
+    if not isinstance(result, RpcRevert) or result.selector != SEL_FLAP_TOKEN_NOT_FOUND:
+        return False
+    named = result.address_arg(0)
+    return named is not None and named == str(token or "").strip().lower()
 
 
 def read_flap(token: str, rpc: RpcBatch) -> VenueRead:
@@ -681,6 +936,18 @@ def read_flap(token: str, rpc: RpcBatch) -> VenueRead:
         return None, f"flap_rpc_raised:{type(exc).__name__}"
     if len(results) < 3:
         return None, "flap_rpc_short_response"
+    if isinstance(results[0], RpcRevert):
+        # The portal ANSWERED, by reverting. Only a TokenNotFound naming this very token is
+        # the portal saying "never launched here"; any other revert is not understood and
+        # refuses like a failed read.
+        if not flap_token_not_found(results[0], addr):
+            return None, f"flap_portal_reverted:{results[0].selector}"
+        if addr.endswith(FLAP_ADDRESS_FINGERPRINTS):
+            # The launchpad mines this suffix on 99.3% of its tokens. A portal that disowns
+            # one is more likely a lagging node or a new portal than a coincidence, and a
+            # Flap token priced off a pool is the mistake FLAP_PROBE_UNAVAILABLE prevents.
+            return None, "flap_token_not_found_but_fingerprinted"
+        return None, f"{FLAP_NOT_A_FLAP_TOKEN}:TokenNotFound"
     if results[0] is None:
         # Not the same fact as "the portal has no record of this token": the endpoint did
         # not answer. An operator reading a blind position needs to tell a rate limit from
@@ -710,6 +977,268 @@ def read_flap(token: str, rpc: RpcBatch) -> VenueRead:
         quote_decimals=quote_decimals,
         address_note=fingerprint,
     )
+
+
+# --------------------------------------------------------------------------------------
+# BSC / four.meme, and the "neither launchpad" case
+# --------------------------------------------------------------------------------------
+#
+# WHY (2026-10-05). Once a ``TokenNotFound`` from the Flap portal stopped reading as a
+# failed read, a non-Flap bsc token needed somewhere to go. Of the 18 non-Flap tokens that
+# reached a bsc sm-trenches decision in the prior 7 days, MEASURED on chain the same day:
+#
+# * 7 are four.meme (``TokenManagerHelper3.getTokenInfo`` answers version 2, manager
+#   :data:`FOURMEME_TOKEN_MANAGER_V2`): 3 still on the curve (1 quoted in BNB, 2 in an
+#   ERC-20), 4 graduated (``liquidityAdded`` true, ``_tokenInfos.status`` 3);
+# * 6 trade on PancakeSwap pools (every one has a V2 WBNB pair and V3 pools);
+# * 5 (geniusfun x3, o1_rwa x2) have NO PancakeSwap V2 or V3 pool against WBNB or USDT,
+#   no DexScreener pair, and the V2 router reverts on them: their venue is a launchpad
+#   curve nothing in this tree can read.
+#
+# The four.meme curve is a constant product on VIRTUAL reserves, read off TokenManager2's
+# ``_tokenInfos(token)``: ``T`` is the virtual token reserve (atoms) and ``K`` the product
+# scaled so the virtual quote reserve is ``K * 1e18 // T`` wei. MEASURED on all 7 four.meme
+# tokens: ``K * 1e36 // T**2`` equals the venue's own ``lastPrice`` EXACTLY (gap 0 on 7/7),
+# and on the 3 on-curve tokens ``T * cost // (K*1e18//T + cost)`` reproduces the venue's own
+# ``tryBuy`` ``estimatedAmount`` to within 1.6e-18, 2.0e-17 and 6.6e-17 relative. ``tryBuy``
+# also shows the fee is charged ON TOP: 0.01 BNB in -> 0.0099009901 on the curve + 1% of it.
+# Not yet replayed against a live four.meme fill of ours (we have none); the runtime
+# ``tryBuy`` cross-check below is what stands in for that, on every read.
+
+#: four.meme ``TokenManagerHelper3`` -- the read-only helper four.meme publishes for
+#: integrators. MEASURED 2026-10-05: answers ``getTokenInfo`` for all 7 four.meme tokens and
+#: all-zero words for the 11 non-four.meme ones.
+FOURMEME_HELPER = "0xf251f83e40a78868fcfa3fa4599dad6494e46034"
+
+#: four.meme ``TokenManager2`` (V2 tokens). The manager named by ``getTokenInfo`` for 7 of 7
+#: four.meme tokens sampled. A token managed by anything else is refused, not guessed at.
+FOURMEME_TOKEN_MANAGER_V2 = "0x5c952063c7fc8610ffdb798152d69f0b9550762b"
+
+#: ``getTokenInfo(address)`` on the helper: (version, tokenManager, quote, lastPrice,
+#: tradingFeeRate, minTradingFee, launchTime, offers, maxOffers, funds, maxFunds,
+#: liquidityAdded). ``_tokenInfos(address)`` on TokenManager2: (base, quote, template,
+#: totalSupply, maxOffers, maxRaising, launchTime, offers, funds, lastPrice, K, T, status).
+#: ``tryBuy(address,uint256,uint256)`` on the helper: (tokenManager, quote, estimatedAmount,
+#: estimatedCost, estimatedFee, amountMsgValue, amountApproval, amountFunds). All three
+#: selectors keccak-verified in this tree; the layouts decoded against the live answers.
+SEL_FOURMEME_GET_TOKEN_INFO = "0x1f69565f"
+SEL_FOURMEME_TOKEN_INFOS = "0xe684626b"
+SEL_FOURMEME_TRY_BUY = "0xe21b103a"
+
+#: ``_tokenInfos.status`` while trading on the curve (3 on all 4 graduated samples).
+FOURMEME_STATUS_TRADING = 0
+
+#: How much BNB the in-batch ``tryBuy`` cross-check asks about: 0.01 BNB, inside every
+#: configured bsc position size, so the check exercises the region sizing will use.
+FOURMEME_PROBE_FUNDS_WEI = 10**16
+
+#: Relative disagreement allowed between this module's curve arithmetic and the venue's own
+#: ``tryBuy``. MEASURED worst case 6.6e-17; 1e-9 is eight orders of slack, and a misread
+#: word or a different curve template is off by far more.
+FOURMEME_CROSS_CHECK_TOLERANCE = Decimal("1e-9")
+
+#: PancakeSwap V3 factory on BSC. MEASURED 2026-10-05: its ``getPool`` returned exactly the
+#: pool DexScreener reports as the token's pancakeswap-v3 pair for the three tokens checked.
+PANCAKE_V3_FACTORY = "0x0bfbcf9fa4f9c56b0f40a671ad40e0805a091865"
+
+#: ``getPair(address,address)`` (V2 factory) and ``getPool(address,address,uint24)`` (V3).
+SEL_GET_PAIR = "0xe6a43905"
+SEL_GET_POOL = "0x1698ee82"
+
+#: PancakeSwap V3's fee tiers, in hundredths of a bip.
+PANCAKE_V3_FEE_TIERS: tuple[int, ...] = (100, 500, 2500, 10000)
+
+#: What a bsc pool has to be paired against to count as evidence of a PancakeSwap venue:
+#: WBNB and BSC-USD, the two quote assets every one of the 6 pool tokens sampled pairs with.
+PANCAKE_POOL_PARTNERS: tuple[tuple[str, str], ...] = (
+    ("wbnb", "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c"),
+    ("usdt", "0x55d398326f99059ff775485246999027b3197955"),
+)
+
+
+@dataclass(frozen=True, slots=True)
+class FourMemeCurve:
+    """A four.meme curve's state, one batch, cross-checked against the venue twice.
+
+    Integers only. ``tokens_out`` is the arithmetic the venue's ``tryBuy`` was MEASURED to
+    match; it takes the CURVE leg (what reaches the curve after the on-top fee), and a
+    caller that passes the whole order instead asks about a slightly larger order, which
+    over-states impact -- the direction this tree errs in everywhere.
+    """
+
+    k_scaled: int
+    virtual_token_atoms: int
+    funds_wei: int
+    max_funds_wei: int
+    fee_bps: int
+    last_price_wei: int
+
+    @property
+    def virtual_quote_wei(self) -> int:
+        return self.k_scaled * 10**18 // self.virtual_token_atoms
+
+    @property
+    def headroom_wei(self) -> int:
+        """Quote the curve can still take before it fills and lists on a DEX."""
+        return max(0, self.max_funds_wei - self.funds_wei)
+
+    @property
+    def spot_wei_per_token(self) -> int:
+        """``K * 1e36 // T**2``: wei per WHOLE token. Equals ``lastPrice`` on 7 of 7."""
+        return self.k_scaled * 10**36 // (self.virtual_token_atoms * self.virtual_token_atoms)
+
+    def tokens_out(self, leg_wei: int) -> int | None:
+        """Atoms a curve leg of ``leg_wei`` buys, or ``None`` past graduation / at zero."""
+        leg = int(leg_wei)
+        if leg <= 0 or leg > self.headroom_wei:
+            return None
+        x = self.virtual_quote_wei
+        return self.virtual_token_atoms * leg // (x + leg)
+
+
+@dataclass(frozen=True, slots=True)
+class NonFlapVenue:
+    """Where a bsc token that is NOT on Flap trades, as the chain says.
+
+    ``kind`` is one of ``fourmeme_curve`` (``curve`` set), ``fourmeme_graduated``,
+    ``pancake_pool`` (``pools`` names what was found) or ``no_known_venue``.
+    """
+
+    kind: str
+    note: str
+    curve: FourMemeCurve | None = None
+    pools: tuple[str, ...] = ()
+
+
+def _addr_word(word: int) -> str:
+    return "0x" + format(word & ((1 << 160) - 1), "040x")
+
+
+def _non_flap_calls(addr: str) -> list[tuple[str, str]]:
+    """One batch: four.meme record, curve, tryBuy cross-check, then PancakeSwap pools."""
+    calls = [
+        _call(FOURMEME_HELPER, SEL_FOURMEME_GET_TOKEN_INFO, addr),
+        _call(FOURMEME_TOKEN_MANAGER_V2, SEL_FOURMEME_TOKEN_INFOS, addr),
+        (
+            FOURMEME_HELPER,
+            SEL_FOURMEME_TRY_BUY + addr[2:].rjust(64, "0") + format(0, "064x")
+            + format(FOURMEME_PROBE_FUNDS_WEI, "064x"),
+        ),
+    ]
+    for _label, partner in PANCAKE_POOL_PARTNERS:
+        calls.append(
+            (PANCAKE_V2_FACTORY, SEL_GET_PAIR + addr[2:].rjust(64, "0") + partner[2:].rjust(64, "0"))
+        )
+        for fee in PANCAKE_V3_FEE_TIERS:
+            calls.append(
+                (PANCAKE_V3_FACTORY, SEL_GET_POOL + addr[2:].rjust(64, "0")
+                 + partner[2:].rjust(64, "0") + format(fee, "064x"))
+            )
+    return calls
+
+
+def _fourmeme_curve(addr: str, info: list[int], state: list[int], try_buy: Any) -> tuple[FourMemeCurve | None, str]:
+    """The cross-checked curve of an on-curve, BNB-quoted, TokenManager2 token, or a refusal."""
+    if len(state) < 13:
+        return None, "fourmeme_curve_unreadable"
+    if _addr_word(state[0]) != addr:
+        return None, "fourmeme_record_names_another_token"
+    k, t = state[10], state[11]
+    if k <= 0 or t <= 0:
+        return None, "fourmeme_curve_constants_zero"
+    if state[7] != info[7] or state[8] != info[9] or state[9] != info[3]:
+        # offers / funds / lastPrice read twice in one batch must agree.
+        return None, "fourmeme_record_disagrees_with_helper"
+    if state[12] != FOURMEME_STATUS_TRADING:
+        return None, f"fourmeme_not_trading:status={state[12]}"
+    fee = info[4]
+    if fee < 0 or fee >= 10_000:
+        return None, f"fourmeme_fee_unusable:{fee}"
+    if info[5] != 0:
+        # A floor on the fee makes small orders dearer than ``fee`` bps. 0 on 7 of 7
+        # sampled; anything else is a fee schedule this module does not price.
+        return None, f"fourmeme_min_fee_unmodelled:{info[5]}"
+    curve = FourMemeCurve(
+        k_scaled=k, virtual_token_atoms=t, funds_wei=info[9], max_funds_wei=info[10],
+        fee_bps=fee, last_price_wei=info[3],
+    )
+    gap = _relative_gap(Decimal(curve.spot_wei_per_token), Decimal(curve.last_price_wei))
+    if gap is None or gap > FOURMEME_CROSS_CHECK_TOLERANCE:
+        return None, f"fourmeme_price_disagrees:derived={curve.spot_wei_per_token} reported={curve.last_price_wei}"
+    if curve.headroom_wei <= 0:
+        return None, "fourmeme_curve_full"
+    bought = _words(try_buy)
+    if len(bought) < 4:
+        return None, "fourmeme_try_buy_unreadable"
+    venue_out, venue_leg = bought[2], bought[3]
+    mine = curve.tokens_out(venue_leg)
+    if mine is None or venue_out <= 0:
+        return None, "fourmeme_try_buy_unreadable"
+    gap = _relative_gap(Decimal(mine), Decimal(venue_out))
+    if gap is None or gap > FOURMEME_CROSS_CHECK_TOLERANCE:
+        return None, f"fourmeme_try_buy_disagrees:model={mine} venue={venue_out}"
+    return curve, "ok"
+
+
+def read_bsc_non_flap(token: str, rpc: RpcBatch) -> tuple[NonFlapVenue | None, str]:
+    """Where a token the Flap portal disowned trades: a four.meme curve, a pool, or nowhere.
+
+    One batched ``eth_call`` (13 calls). ``(None, why)`` whenever the answer would be a
+    guess -- a failed read, a four.meme record that fails its cross-checks, a four.meme
+    curve quoted in something other than BNB, a manager this module has not decoded.
+    ``NonFlapVenue('no_known_venue')`` is NOT a refusal by itself; it is the chain
+    answering that there is no four.meme record and no PancakeSwap pool, and the caller
+    decides (viability refuses it). Never raises.
+    """
+    try:
+        addr = token.strip().lower()
+        if not looks_evm(addr):
+            return None, "not_an_evm_address"
+        calls = _non_flap_calls(addr)
+        results = rpc(calls)
+    except Exception as exc:  # noqa: BLE001 - a dead RPC is blindness, not a crash
+        return None, f"non_flap_rpc_raised:{type(exc).__name__}"
+    if not isinstance(results, list) or len(results) < len(calls):
+        return None, "non_flap_rpc_short_response"
+    info = _words(results[0])
+    if len(info) < 12:
+        # The helper answers all-zero words for a token it does not know, so an
+        # unreadable answer is a failed read, never "not four.meme".
+        return None, "fourmeme_helper_read_failed"
+    manager = _word_address(info[1])
+    if info[0] != 0 or manager is not None:
+        if manager != FOURMEME_TOKEN_MANAGER_V2:
+            return None, f"fourmeme_manager_unsupported:{manager}"
+        if info[11] != 0:
+            return NonFlapVenue("fourmeme_graduated", "fourmeme:graduated"), "ok"
+        quote = _word_address(info[2])
+        if quote is not None:
+            return None, f"fourmeme_quote_not_native:{quote}"
+        curve, why = _fourmeme_curve(addr, info, _words(results[1]), results[2])
+        if curve is None:
+            return None, why
+        progress = Decimal(curve.funds_wei) * 100 / Decimal(curve.max_funds_wei) if curve.max_funds_wei else None
+        note = f"fourmeme:curve:fee{curve.fee_bps}bps" + (f":progress{progress:.1f}%" if progress is not None else "")
+        return NonFlapVenue("fourmeme_curve", note, curve=curve), "ok"
+
+    pools: list[str] = []
+    at = 3
+    for label, _partner in PANCAKE_POOL_PARTNERS:
+        for kind in ["v2", *[f"v3:{fee}" for fee in PANCAKE_V3_FEE_TIERS]]:
+            raw = results[at]
+            at += 1
+            if raw is None:
+                # Not knowing whether a pool exists is not knowing the venue.
+                return None, f"pancake_factory_read_failed:{kind}:{label}"
+            words = _words(raw)
+            if not words:
+                return None, f"pancake_factory_read_failed:{kind}:{label}"
+            if _word_address(words[0]) is not None:
+                pools.append(f"{kind}:{label}")
+    if pools:
+        note = f"pancake:{len(pools)}pools:{pools[0]}"
+        return NonFlapVenue("pancake_pool", note, pools=tuple(pools)), "ok"
+    return NonFlapVenue("no_known_venue", "no_fourmeme_record_and_no_pancake_pool"), "ok"
 
 
 # --------------------------------------------------------------------------------------
@@ -1251,6 +1780,7 @@ def json_rpc_batch(
     priority: Priority = Priority.EXIT,
     endpoint: str = "rpc.price",
     wait_for_slot_s: float = WAIT_FOR_SLOT_S,
+    keep_reverts: bool = False,
 ) -> RpcBatch:
     """An :data:`RpcBatch` that sends every ``eth_call`` as one JSON-RPC batch.
 
@@ -1266,6 +1796,10 @@ def json_rpc_batch(
     ``wait_for_slot_s`` is a parameter rather than only the module constant so that a
     *last-resort* caller can bound itself tighter than a first-choice one. The default is
     unchanged for every existing caller.
+
+    ``keep_reverts`` (default off, so every existing caller is unchanged): a call the
+    contract reverted WITH revert data comes back as :class:`RpcRevert` instead of ``None``.
+    A failed request, a missing item and an error carrying no hex data are still ``None``.
     """
     url = _rpc_url(chain)
 
@@ -1305,8 +1839,21 @@ def json_rpc_batch(
         out: list[str | None] = []
         for index in range(len(calls)):
             item = by_id.get(index + 1)
-            if not isinstance(item, Mapping) or item.get("error") is not None:
+            if not isinstance(item, Mapping):
                 out.append(None)
+                continue
+            error = item.get("error")
+            if error is not None:
+                data = error.get("data") if isinstance(error, Mapping) else None
+                if (
+                    keep_reverts
+                    and isinstance(data, str)
+                    and data.startswith("0x")
+                    and len(data) >= 10
+                ):
+                    out.append(RpcRevert(data.lower()))  # type: ignore[arg-type]
+                else:
+                    out.append(None)
                 continue
             result = item.get("result")
             out.append(result if isinstance(result, str) else None)
@@ -2102,11 +2649,31 @@ def _dex_fallback() -> Any | None:
 __all__ = [
     "BSC_WRAPPED_NATIVE",
     "FLAP_ADDRESS_FINGERPRINT",
+    "FLAP_ADDRESS_FINGERPRINTS",
+    "FLAP_NOT_A_FLAP_TOKEN",
+    "FOURMEME_HELPER",
+    "FOURMEME_TOKEN_MANAGER_V2",
+    "FourMemeCurve",
+    "NonFlapVenue",
+    "PANCAKE_V3_FACTORY",
+    "RpcRevert",
+    "SEL_FLAP_TOKEN_NOT_FOUND",
+    "flap_token_not_found",
+    "read_bsc_non_flap",
     "FLAP_CURVE_DECIMALS",
     "FLAP_FIXED_POINT",
     "FLAP_PORTAL",
+    "FLAP_PROTOCOL_FEE_BPS",
+    "FLAP_STATUS_DEX",
+    "FLAP_STATUS_KILLED",
     "FLAP_STATUS_ON_CURVE",
     "FLAP_WAD",
+    "SEL_MAX_BUY_PER_ORIGIN",
+    "SEL_QUOTE_EXACT_INPUT",
+    "FlapBuyQuota",
+    "flap_buy_net_quote",
+    "parse_buy_quota",
+    "quote_exact_input_call",
     "NATIVE_DECIMALS",
     "NATIVE_USD_REFERENCE",
     "PANCAKE_V2_FACTORY",

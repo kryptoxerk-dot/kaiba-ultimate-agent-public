@@ -1,0 +1,11 @@
+# J7 API facts verified 2026-10-06
+
+Primary sources: [Connect](https://docs.j7tracker.io/docs/feed), [Accounts](https://docs.j7tracker.io/docs/accounts), [Events](https://docs.j7tracker.io/docs/feed-events), [Data types](https://docs.j7tracker.io/docs/data-types), [Limits](https://docs.j7tracker.io/docs/errors).
+
+Accounts: `GET https://core.j7tracker.io/api/watched-accounts`, `Authorization: Bearer <jwt>`. Response has `success`, `x.accounts`, `custom.accounts`, `custom.availableAccounts`, `available.accounts`, `hidden`, and non-X platform lists. The bundled helper exports only handles/category/source, not account preferences or authentication. Main-feed accounts are already delivered; available pool accounts require adding before they are delivered. A roster export contains already-delivered main and user-available handles, not a global popularity ranking.
+
+Feed: Socket.IO v4 at `https://nyc.j7tracker.io` or `https://dfw.j7tracker.io`, WebSocket transport with `auth.token`. Every connect must emit `user_connected` with the JWT. Listen to `initialTweets`, `tweet`, `tweet_update`, `external_message` and `auth_error`; the helper handles these only. Follows, deletions and profile changes have separate event types in the docs and are not captured by this small post collector. Five connections per account, 15 client messages/sec, server ping every 30s. No retry loop after auth failure. A bounded capture is not a daemon.
+
+Partial tweets arrive before enrichment. Treat id-based updates as revisions, with original first_seen_ms and a separate observed_ms for each revision; never backdate later CA/text enrichment. X author fields are nested under `author`. Non-X text is HTML-entity encoded. Chain/CA annotations are upstream hints, not verified chain evidence.
+
+[Platforms](https://docs.j7tracker.io/docs/platforms) includes Solana launchpads, four.meme/Genius/Flap on BNB and Pons/Flap/Long/Pools/Bags on Robinhood. [Buy](https://docs.j7tracker.io/docs/buy) supports Solana and Pons only; [Sell](https://docs.j7tracker.io/docs/sell) explicitly excludes `bnb` and `clanker` on `/submit`. [Wallet keys](https://docs.j7tracker.io/docs/api-keys) are encrypted per-wallet signing credentials. Social reading needs only the session JWT. No wallet key or token creation endpoint belongs in this collection helper.

@@ -153,3 +153,79 @@ def test_the_job_fails_while_bootstrapping_and_shares_its_budget(tmp_db):
     share = S.JobContext("x", tmp_db, {}, S.ScheduleConfig(), 0, 1_000_000 + 330_000, clock=clock)
     assert S._share_deadline(share, 3) == pytest.approx(1000.0 + 300.0 / 3)
     assert S._share_deadline(share, 1) == pytest.approx(1300.0)
+
+
+def test_the_wallet_index_folds_incrementally_by_id_range(tmp_db, monkeypatch):
+    """2026-10-06: no whole-tape SELECT DISTINCT; new swap rows are folded by PK range."""
+    monkeypatch.setattr(SD, "WALLET_SCAN_CHUNK", 2)
+    a_seed(tmp_db, "Seed1", ["w1", "w2", "w3"])
+    from kaiba.core.db import connect
+    w = connect()
+    first = SD.refresh_wallet_index(tmp_db, w, deadline=0.0, clock=lambda: 1.0)
+    assert first["added"] >= 1 and not first["complete"], "one chunk, then the deadline stops it"
+    rest = SD.refresh_wallet_index(tmp_db, w)
+    assert rest["complete"] and rest["cursor"] == rest["max_id"]
+    got = {r[0] for r in tmp_db.execute("SELECT wallet FROM seed_wallets WHERE chain='sol'")}
+    assert {"w1", "w2", "w3"} <= got
+    again = SD.refresh_wallet_index(tmp_db, w)
+    assert again["added"] == 0, "caught up: nothing re-read"
+
+
+def test_run_never_scans_the_whole_tape(tmp_db, monkeypatch):
+    import inspect
+    assert "SELECT DISTINCT wallet FROM swaps" not in inspect.getsource(SD.run)
+
+
+def test_counts_never_group_the_swaps_tape(tmp_db):
+    """2026-10-06: ``GROUP BY wallet ... token IN (seeds)`` on swaps walked idx_swaps_wallet
+    for the whole chain (> 60 s a chunk on the box). Counts come from ``seed_buyers``."""
+    a_seed(tmp_db, "Seed1", ["alice"])
+    statements: list[str] = []
+    tmp_db.set_trace_callback(statements.append)
+    try:
+        rep = SD.run(Chain.SOL, tmp_db)
+    finally:
+        tmp_db.set_trace_callback(None)
+    assert meta(tmp_db, "alice")["seed_confluence"] == 1, rep
+    assert not [s for s in statements if "FROM swaps" in s and "GROUP BY" in s], statements
+
+
+def test_a_cut_backfill_writes_nothing_then_resumes_mid_token(tmp_db, monkeypatch):
+    """An unfinished backfill is an undercount: nothing is written until every seed is read,
+    and a token cut part-way resumes from its saved position rather than restarting."""
+    monkeypatch.setattr(SD, "BACKFILL_PAGE", 3)
+    a_seed(tmp_db, "Seed1", ["b1", "b2", "b3", "b4", "b5"])
+    swap(tmp_db, "b1", "Dud", "1.0")
+    PE.advance(tmp_db)
+    first = SD.run(Chain.SOL, tmp_db, deadline=1.0, clock=lambda: 9.0)  # one unit of work
+    assert first["backfilling"] is True and first["written"] == 0, first
+    assert meta(tmp_db, "b1") == {}
+    at = tmp_db.execute("SELECT at_id, done_ms FROM seed_buyer_tokens WHERE token='Seed1'").fetchone()
+    assert at[0] > 0 and at[1] is None, "position saved, not done"
+
+    reads: list[str] = []
+    tmp_db.set_trace_callback(reads.append)
+    try:
+        second = SD.run(Chain.SOL, tmp_db)
+    finally:
+        tmp_db.set_trace_callback(None)
+    assert not second.get("backfilling"), second
+    assert second["seed_buyers"]["backfilled"] == 1
+    pages = [s for s in reads if "INDEXED BY idx_swaps_token" in s]
+    assert pages and f"id > {at[0]}" in pages[0], "resumed from the saved position"
+    assert not [s for s in pages if "id > -1" in s], "never restarted from the beginning"
+    assert all(meta(tmp_db, w)["seed_confluence"] == 1 for w in ("b1", "b3", "b5"))
+    assert meta(tmp_db, "maker")["seed_confluence"] == 0, "the maker only sold"
+
+
+def test_new_buys_of_a_seed_arrive_through_the_cursor(tmp_db):
+    a_seed(tmp_db, "Seed1", ["alice"])
+    a_seed(tmp_db, "Seed2", ["alice"])
+    SD.run(Chain.SOL, tmp_db)
+    assert meta(tmp_db, "alice")["seed_confluence"] == 2
+    swap(tmp_db, "late", "Seed1", "3.0")
+    swap(tmp_db, "late", "Seed2", "3.0")
+    swap(tmp_db, "late", "Seed2", "3.0", chain="bsc")  # another chain's buy is not ours
+    rep = SD.run(Chain.SOL, tmp_db)
+    assert rep["seed_buyers"]["backfilled"] == 0, "already-read seeds are not re-read"
+    assert meta(tmp_db, "late")["seed_confluence"] == 2

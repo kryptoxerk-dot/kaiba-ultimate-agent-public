@@ -601,6 +601,10 @@ class Lane(StrEnum):
     #: Launch sniping on robinhood (Pons) and sol (pump.fun / LaunchLab): kaiba/execution/snipe.py
     #: records signals; the engine decides them under every gate. Owner, 2026-10-04: live small.
     LAUNCH_SNIPE = "launch-snipe"
+    #: Our own launches on a watched account's post (kaiba/execution/tweet_launch.py): the dev
+    #: buy in the create tx is booked as this lane's position; the ladder exits it. Owner, 2026-10-06.
+    #: OFF until config/risk.yaml gives it a block; live also needs config/tweet_launch.yaml armed.
+    TWEET_LAUNCH = "tweet-launch"
     MANUAL = "manual"
 
 

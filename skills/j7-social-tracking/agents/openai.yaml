@@ -1,0 +1,4 @@
+interface:
+  display_name: "J7 Social Tracking"
+  short_description: "Collect J7 social evidence and tracked accounts"
+  default_prompt: "Use $j7-social-tracking to collect J7 accounts and timestamped social evidence for Solana, BNB and Robinhood."

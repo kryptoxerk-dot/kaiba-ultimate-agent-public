@@ -145,6 +145,20 @@ def http(tmp_db, tmp_path, monkeypatch):
     get_settings.cache_clear()
 
 
+
+def seed_gmgn_volume(address: str = SOL_MINT, chain: Chain = Chain.SOL, usd: str = "250000") -> None:
+    """A fresh gmgn ``token.info`` cache entry carrying ``price.volume_24h``.
+
+    ``volume_24h_usd`` joined the dossier on 2026-09-24 and is read only from this cache
+    (``dyor.collect_cached_gmgn_volume``, never a fetch). Tests asserting that GMGN
+    answered EVERYTHING seed it, so ``unknowns == []`` keeps meaning exactly that.
+    """
+    from kaiba.providers._http import cache_write
+
+    key = f"gmgn-cli token info --address {address} --chain {chain.value} --raw"
+    cache_write("gmgn", key, {"address": address, "price": {"address": address, "volume_24h": usd}})
+
+
 def wire_solana(
     http: Http,
     *,
@@ -619,8 +633,10 @@ def test_clean_solana_token_passes_with_no_blockers(http, tmp_db):
     assert dossier.grade is Grade.B
     assert dossier.mint_authority_revoked is True
     assert dossier.can_sell is True  # derived: no freeze authority and no transfer hook
-    # The only things nobody could answer are the two GMGN-only supply splits.
-    assert dossier.unknowns == ["bundler_pct", "sniper_pct"]
+    # The only things nobody could answer are the GMGN-only fields: the two supply splits
+    # and (since 2026-09-24) the 24 h volume, which dyor reads ONLY from a fresh gmgn
+    # token.info cache (collect_cached_gmgn_volume) -- empty in this fixture.
+    assert dossier.unknowns == ["bundler_pct", "sniper_pct", "volume_24h_usd"]
     assert {r.provider for r in dossier.receipts} >= {"goplus", "rugcheck"}
 
     reach = coverage.assess_unknowns(dossier.unknowns)
@@ -949,6 +965,7 @@ def test_gmgn_supplying_the_two_dark_splits_is_what_makes_an_A_possible(http, tm
     monkeypatch.setitem(sys.modules, "kaiba.providers.gmgn_cli", module)
 
     wire_solana(http)
+    seed_gmgn_volume()
     dossier = dyor.scan_token(SOL_MINT, Chain.SOL, conn=tmp_db)
 
     assert dossier.unknowns == []
@@ -1005,6 +1022,7 @@ def test_the_bundles_collector_is_wired_into_the_scan(http, tmp_db, monkeypatch)
 
     monkeypatch.setattr(bundles, "collect_bundles", fake)
     wire_solana(http)
+    seed_gmgn_volume()
     dossier = dyor.scan_token(SOL_MINT, Chain.SOL, conn=tmp_db)
 
     assert called == [SOL_MINT]

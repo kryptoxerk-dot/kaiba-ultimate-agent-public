@@ -115,10 +115,20 @@ log = logging.getLogger(__name__)
 #: venue we *can* name is charged that venue's own rate instead — see
 #: ``PaperBroker.curve_fee_bps`` and ``PaperBroker.pumpswap_fee_bps``. EVM venues are
 #: cheaper on fee and dearer on gas, which the tip covers.
+#:
+#: bsc is 200, not 60 (review 2026-10-05, launch-snipe on Flap): every bsc order goes out
+#: through GMGN, whose commission ``viability.ROUTER_BPS_PER_LEG`` charges at 100 bps a leg
+#: (UNVERIFIED, 2026-09-21 execution review), on top of the venue's own fee -- Flap's curve
+#: 100 bps a side (MEASURED on our 8 on-curve fills, ``evm_price.FLAP_PROTOCOL_FEE_BPS``) or
+#: a PancakeSwap pool bounded at 100 (``viability.DEX_FEE_BPS_UPPER``). At 60 a bsc paper
+#: twin was charged ~0.6% a leg against ~2% real, so a paper result flattered by ~2.8% a
+#: round trip would have been the evidence for arming money. The token's own tax is still
+#: not charged here (this broker has no tax read); the bsc snipe lane admits 0-tax tokens
+#: only, and its ``snipe_observations`` marks charge the tax.
 DEFAULT_FEE_BPS: dict[Chain, int] = {
     Chain.SOL: CURVE_TOTAL_FEE_BPS,
     Chain.ETH: 60,
-    Chain.BSC: 60,
+    Chain.BSC: 200,
     Chain.BASE: 60,
     Chain.ROBINHOOD: 60,
     Chain.ARC: 60,

@@ -33,6 +33,69 @@ research and reporting over Telegram.
 The withdrawal path is the one hard gate: there is no tool that moves funds to an address
 you did not declare in `config/signer-policy.yaml`.
 
+## Tweet auto-launch (new)
+
+When a watched X account posts, `kaiba/execution/tweet_launch.py` decides whether the post is
+launchable, picks a name and ticker from it (a model, with a deterministic fallback), and
+launches a token through GMGN `cooking create` from the agent wallet with a dev buy of about
+**5% of total supply** inside the creation transaction. The watchdog's ladder then sells the
+bag in increments. Operating notes for the LLM operator: `skills/tweet-auto-launch/SKILL.md`
+(plus `launch-metadata`, `launch-logo-generation`, `twitterapi-research`, `j7-social-tracking`).
+
+**It ships in paper mode.** `config/tweet_launch.yaml` has `mode: shadow`, an empty
+`armed_by`, every chain `live: false` and vamps in shadow: every post is decided and recorded
+in `tweet_launches` (launch or skip, with reasons) and nothing is sent.
+
+### What you need
+
+| Need | Where it goes | Notes |
+|---|---|---|
+| GMGN API key **and** the GMGN API request-signing private key | `~/.config/gmgn/.env` (`GMGN_API_KEY`, `GMGN_PRIVATE_KEY`), read by `gmgn-cli` | Never in the repo. The signing key authenticates API calls; it is not a wallet key. |
+| A wallet bound to that GMGN key, funded per chain | GMGN account; its address in `config/risk.yaml` `chains.<chain>.wallet` and `config/signer-policy.yaml` `owned_addresses` | A 5% dev buy is modelled at about **1.485 SOL** on pump.fun, **0.2933 BNB** on Flap, **0.0893 ETH + 0.0005 ETH launch fee** on Pons V2, plus gas. The template caps are 1.5 SOL / 0.5 BNB / 0.1 ETH per launch and 6 SOL / 1 BNB / 0.3 ETH per UTC day, 5 launches per day. A launch whose exact 5% quote exceeds the cap is skipped, never undersized. |
+| `GMGN_ALLOW_AUTOMATED_TRADES=1` | the launcher's systemd unit (already set in `deploy/systemd/kaiba-tweet-launch.service`) | `gmgn-cli` refuses unattended `--yes` without it. Every unit that can submit needs it, including protection (it does the sells). |
+| A post feed: `TWITTERAPI_IO_KEY` | `~/.config/kaiba/.env` | Either a twitterapi.io **`tweet_filter` rule** (pay-per-use credits; create and activate the rule on twitterapi.io, `feed.backend: twitterapi_rule`) or the **Stream plan** (account monitoring, `feed.backend: twitterapi_monitor`, then `python -m kaiba.execution.tweet_launch sync-accounts`). One socket per key. Optional alternative: J7Tracker (`feed.backend: j7`, `J7_SESSION_JWT`, `pip install "python-socketio[client]"`). |
+| Optional: the post picker's model | a logged-in Hermes profile (`namer.hermes_profile`), or `ANTHROPIC_API_KEY` in `~/.config/kaiba/.env` | Without either, the deterministic word picker is used. |
+| Optional: logos for posts without an image | `OPENAI_API_KEY` | Otherwise Pollinations (free, rate-limited). The author's profile picture is never used. |
+| RPC endpoints | `SOLANA_RPC_URL`, `BSC_RPC_URL`, `ROBINHOOD_RPC_URL` in `.env` | Used by launch preflight and by protection's price reads. |
+| Database tables | migrations `044_tweet_launches.sql`, `045_tweet_refs.sql`, `046_tweet_sources.sql` | `python -m kaiba db init` applies pending migrations. |
+| Services | `deploy/systemd/kaiba-tweet-launch.service` (the launcher; the only process that opens the feed socket) and `deploy/systemd/kaiba-tweet-sources.service` (record-only: which post each new market launch came from) | Copy to `~/.config/systemd/user/`, `systemctl --user daemon-reload`, `enable --now`. |
+| Config | `config/tweet_launch.yaml`; the `tweet-launch` lane block in `config/risk.yaml`; the `protection.lanes.tweet-launch` ladder in `config/risk.yaml` | The template ladder sells 20% / 25% / 33% / 50% of what remains at 1.3x / 1.6x / 2x / 3x, and everything after 60 s with no trade on the curve. |
+
+### Order of operations
+
+1. Deploy the code first (including `kaiba/core/schemas.py`, which declares the `tweet-launch`
+   lane) and **restart every Kaiba service**. Only then add the `tweet-launch` block to an
+   existing `config/risk.yaml`: a service still running the old schema cannot parse a lane it
+   does not know. (A fresh install from this snapshot already has both.)
+2. Apply the migrations, install the two units, start them, and run in **shadow** for a while.
+   `python -m kaiba.execution.tweet_launch report` summarises what it would have done;
+   `... plan --author <handle> --text "..."` dry-runs one post with no I/O.
+3. To arm one chain: `config/tweet_launch.yaml` `mode: live` + `armed_by` (who, when) + that
+   chain's `live: true`; in `config/risk.yaml` the chain enabled with a wallet and bankroll and the
+   `tweet-launch` lane `mode: live`. The kill switch, reduce-only, paused-entries and halted-day
+   brakes still apply; the flat per-trade size cap does not (the dev buy is bounded by the launch
+   caps above instead).
+
+### Holder fees
+
+- **BNB / Flap:** works. A dividend tax with all of the tax paid to holders (the template uses
+  1% buy/sell tax). Rewards accrue to a dividend contract; verify a real accrual or claim.
+- **Solana / pump.fun:** through GMGN only **Cashback** is supported, which pays fees to
+  traders, not holders.
+- **Robinhood / Pons:** no holder-fee mechanism through GMGN.
+
+### Measured caveats (read before arming)
+
+- Tweet-launched tokens graduate **less** often than the baseline launch (8.1% vs 10.3% in our
+  census; reaching 2x: 11.5% vs 24.1%).
+- The only cell with a visible edge is **being first**: the first launcher on a multi-launch
+  post graduated 3.9% vs 1.3% for later ones, and that comparison carries lookahead (counting
+  every first launcher, 1.8%). The median first launch lands 23 s after the post.
+- Copycats / vamps of an existing launch graduate about **0.86%** of the time vs ~9.2% for
+  originals (published study), and every later-than-first launch on a post was negative in our
+  census. Vamping ships in shadow.
+- Nothing here shows the launcher makes money. It is shared as a measured, bounded experiment.
+
 ## What's new in this snapshot
 
 - **Protection fixes.** A position whose wallet balance is already zero can no longer halt
@@ -75,7 +138,7 @@ you did not declare in `config/signer-policy.yaml`.
 kaiba/          the agent (core, providers, ingest, execution, intelligence, learning, hunters, ops, mcp, cli)
 hermes/         Hermes Agent profiles: SOUL.md personalities + config for operator / research / reflect, cron jobs
 skills/         agentskills.io-format SKILL.md folders the LLM operator uses
-config/         risk.yaml, schedule.yaml, signer-policy.yaml — TEMPLATES, shipped in paper mode
+config/         risk.yaml, schedule.yaml, signer-policy.yaml, tweet_launch.yaml — TEMPLATES, shipped in paper mode
 dashboard/      operator console (FastAPI + HTMX + SSE)
 deploy/         VPS install scripts, systemd units, Caddy front end, backups
 docs/           trading method, contract, edge/variables notes, runbooks
@@ -92,7 +155,7 @@ Python 3.12. Node 24 only for `gmgn-cli`.
 python -m venv .venv && . .venv/bin/activate
 pip install -e ".[dev]"
 cp .env.example .env            # fill in only the keys you have; most providers are optional
-python -m pytest -q             # ~7,300 tests, all offline (known failures in this snapshot, below)
+python -m pytest -q             # ~8,700 tests, all offline (known failures in this snapshot, below)
 python deploy/run-local.py      # ingest + scan + engine + protection + ops + dashboard, paper only
 ```
 
@@ -124,17 +187,21 @@ Token names, posts and API responses are treated as data, never as instructions.
 
 ## Known state of this snapshot
 
-7,257 tests pass, 40 are skipped (live-provider tests, opt-in) and 73 fail. Every one of the 73
-fails the same way in the private tree this snapshot was cut from: they are policy and fixture
-tests that drifted from the lane and wallet code during live tuning (`test_source_row_veto` 29,
-`test_source_qualification` 9, `test_lanes` 9, `test_live_excursion_marks` 7,
-`test_wallet_failure_reporting` 4, `test_dyor` 3, and one or two each in `test_gmgn_cli`,
-`test_dashboard`, `test_concentration_sizing`, `test_watchdog_quote_provenance`, `test_tracker`,
-`test_tape_job_failure_visibility_diagnostic`, `test_shadow_never_blocks_live`,
-`test_nft_mint_study` and `test_audit_volume_policy`). Good first issues if you want to help.
+8,678 tests pass, 40 are skipped (live-provider tests, opt-in) and 17 fail. Every one of the 17
+fails the same way in the private tree this snapshot was cut from: 13 are the repository's own
+skill-format lint (`tests/test_skills.py`) on four newly added social/launch skills that do not
+yet follow the six-part SKILL.md layout, 3 are in `test_tweet_launch_integration` (they expect
+the ordinary per-trade size cap to refuse a launch, which the current launcher deliberately
+bypasses for the dev buy) and 1 is `test_event_kinds_are_declared`.
+One more test, `test_tweet_launch_integration.py::test_real_candidate_runner_uses_selected_feed_and_records_all_three_chains`
+(2 cases), crashes the interpreter on Windows in both trees and was deselected for the count.
+Good first issues if you want to help.
 
 Not included: tests that import the author's private data directory, captures of the author's
-own wallets and ledger, and a one-off bookkeeping repair for one of the author's positions.
+own wallets and ledger, a one-off bookkeeping repair for one of the author's positions, the
+tweet launcher's deployment receipts (`skills/tweet-auto-launch/references/readiness.md` is a
+stub) and the J7Tracker account roster (export your own with
+`skills/j7-social-tracking/scripts/collect.py accounts`).
 The author's own wallet addresses, transaction ids and chat ids are replaced with fakes throughout.
 
 ## License

@@ -680,6 +680,8 @@ async def stream(
     idle_timeout_s: float = 600.0,
     poll_s: float = 1.0,
     dedupe_size: int = 50_000,
+    from_block: int | None = None,
+    anchor_on_subscribe: bool = False,
 ) -> AsyncIterator[WalletTransfer]:
     """Yield :class:`WalletTransfer` records for the tracked wallets until ``stop`` is set.
 
@@ -702,6 +704,20 @@ async def stream(
     for minutes on a healthy socket, and the websocket ping (20 s) already catches a dead
     TCP path. The idle check catches the remaining case, a socket that pongs but whose
     subscriptions have silently gone away.
+
+    ``from_block`` (ADDED 2026-10-04, default ``None`` = unchanged behaviour) makes the
+    FIRST connection backfill from that block as well, exactly as a reconnect would. A
+    caller that replaces one stream with another (a new wallet set) passes the head it
+    read before stopping the old one, so the switch leaves no gap; the overlap is
+    duplicates, which the caller dedupes by transaction.
+
+    ``anchor_on_subscribe`` (ADDED 2026-10-04, default ``False`` = unchanged behaviour)
+    reads the head after every successful subscribe and moves the backfill point up to
+    it. Without it the backfill point is the last block that CARRIED a record, so a small,
+    quiet wallet set that has produced nothing yet reconnects with no backfill at all.
+    MEASURED 2026-10-04 on the box with 15 wallets: the socket went 600 s without a frame,
+    ``StaleConnection`` fired, and the reconnect could not backfill the ~1.3 s it was down.
+    One ``eth_blockNumber`` (10 CU) per connection closes that.
     """
     target = ws_url(url)
     stop = stop or asyncio.Event()
@@ -713,7 +729,7 @@ async def stream(
     if not subs:
         raise ValueError("no valid wallet addresses to track")
     seen = _RecentKeys(dedupe_size)
-    last_block: int | None = None
+    last_block: int | None = int(from_block) if from_block is not None else None
     attempt = 0
 
     def _decode(entry: Any, at_ms: int, sub_key: str | None, backfilled: bool) -> list[WalletTransfer]:
@@ -752,6 +768,7 @@ async def stream(
                 _status(on_status, "subscribed", target, subscriptions=len(by_id),
                         wallets=len(watch), connects=stats.connects)
 
+                head: int | None = None
                 if last_block is not None:
                     head_hex = await session.call("eth_blockNumber", [])
                     stats.other_calls += 1
@@ -776,6 +793,14 @@ async def stream(
                                         yield rec
                         _status(on_status, "backfilled", target, from_block=start, to_block=head,
                                 blocks=head - start + 1, records=got)
+
+                if anchor_on_subscribe:
+                    if head is None:
+                        head = _hex_int(await session.call("eth_blockNumber", []))
+                        stats.other_calls += 1
+                    if head is not None:
+                        # Everything up to the head is now either backfilled or pushed.
+                        last_block = head if last_block is None else max(last_block, head)
 
                 last_frame = time.monotonic()
                 while not stop.is_set():

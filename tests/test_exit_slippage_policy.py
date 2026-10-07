@@ -13,7 +13,7 @@ SOL_WALLET = '9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM'
 
 
 @pytest.fixture
-def book(tmp_db, tmp_path, monkeypatch):
+def book(tmp_db, tmp_path, monkeypatch, kaiba_bought):
     cfg = load_risk()
     cfg.bounds.max_slippage_bps = 2500
     cfg.bounds.max_exit_slippage_bps = 8800
@@ -31,6 +31,10 @@ def book(tmp_db, tmp_path, monkeypatch):
         sent.append(args)
         return {'data': {'order_id': 'fixture-wide-exit'}}
     monkeypatch.setattr(executor, '_run_gmgn', send)
+    # A live sell must sell what Kaiba bought (owner rule 2026-10-05).
+    kaiba_bought(tmp_db, Chain.SOL, SOL_TOKEN)
+    for chain in (Chain.BSC, Chain.ROBINHOOD):
+        kaiba_bought(tmp_db, chain, '0x' + 'b' * 40)
     return tmp_db, sent, path
 
 
@@ -59,7 +63,8 @@ def test_wrong_tolerance_refuses_before_transport(book, side, bps):
     with pytest.raises(executor.ExecutionRefused, match='slippage_out_of_range'):
         executor.submit_gmgn(order(side=side, bps=bps), db)
     assert sent == []
-    assert db.execute('SELECT COUNT(*) FROM orders').fetchone()[0] == 0
+    # the only rows are the fixture's seeded Kaiba buys (state filled)
+    assert db.execute("SELECT COUNT(*) FROM orders WHERE state != 'filled'").fetchone()[0] == 0
 
 
 def test_entry_at_its_bound_still_sends(book):

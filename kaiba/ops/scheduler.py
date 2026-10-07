@@ -1851,35 +1851,121 @@ def job_execute_planned(ctx: JobContext) -> dict[str, Any]:
     Stale plans are abandoned rather than sent. An order planned an hour ago was sized
     against a price and a liquidity depth that no longer exist, and submitting it is a
     market order into a book nobody looked at. ``max_plan_age_s`` is the freshness bound.
+
+    DRAIN WINDOW (2026-10-05). ``drain_window_s`` > 0 keeps the run alive for that long,
+    re-reading ``planned`` every ``poll_s`` and re-reconciling in-flight orders every
+    ``reconcile_every_s``. MEASURED on the box, 12 days / 227 live buys: with
+    ``interval_s: 5`` the job actually started every 10 or 15 s (median gap 10.2 s, p90
+    15.1 s), because the scheduler reaps a finished run on one 5 s tick and re-checks due
+    on the next, so no job can recur faster than two ticks. That cost decision -> first
+    reservation a median 7.8 s (p90 14.9 s); every limiter deferral ("gmgn: max inflight",
+    "minimum interval": 61 of 227 orders) cost another whole 10-15 s cycle; and a sol buy
+    whose first ``order get`` came back "processed" without a fill quantity waited a cycle
+    for its position to be booked (sol submitted -> booked median 10.3 s, max 166 s). On
+    2026-10-05 ``ord_746dd87e`` (EGTvz...pump) was SENT 8.4 s after the decision and
+    landed; the next six reconciles were refused "gmgn: max inflight" one cycle apart, so
+    the position opened 98 s after the decision -- unprotected the whole time -- and was
+    closed at -79% (emergency_loss) 30 s later. Polling inside the run makes each of those
+    waits one ``poll_s`` instead of one scheduler cycle. ``drain_window_s: 0`` is the old
+    single pass.
     """
     from kaiba.core.db import fetch_all
     from kaiba.core.schemas import Chain, Lane, LaneMode, Order, OrderState, Side
     from kaiba.execution import executor as ex
 
-    max_age_s = int(ctx.param("max_plan_age_s", 300))
+    max_age_s = float(ctx.param("max_plan_age_s", 30))
     max_batch = int(ctx.param("max_submits_per_run", 3))
-    now = ctx.now()
+    window_s = max(0.0, float(ctx.param("drain_window_s", 0)))
+    poll_s = max(0.2, float(ctx.param("poll_s", 1.0)))
+    reconcile_every_s = max(0.5, float(ctx.param("reconcile_every_s", 2.0)))
+    # Never START a send the run's own timeout could cut off: one gmgn-cli call may take
+    # its full 45 s timeout. A pass that runs past the job timeout orphans the run, and a
+    # critical job that is an orphan is not re-dispatched until it returns.
+    submit_headroom_s = float(ctx.param("submit_headroom_s", 50))
+    run_started = ctx.now()
+    window_end = min(run_started + int(window_s * 1000),
+                     ctx.deadline_ms - int(submit_headroom_s * 1000))
 
+    submitted: list[str] = []
+    refused: list[dict[str, str]] = []
+    abandoned: list[str] = []
+    submit_age_s: dict[str, float] = {}
+    reconciled: dict[str, str] = {}
+    planned_seen: set[str] = set()
+    passes = 0
+    last_reconcile_ms: int | None = None
+
+    while True:
+        passes += 1
+        _execute_planned_pass(
+            ctx, ex, fetch_all, (Chain, Lane, LaneMode, Order, OrderState, Side),
+            max_age_s=max_age_s, max_batch=max_batch,
+            allow_submit=passes == 1 or ctx.time_left_s() > submit_headroom_s,
+            submitted=submitted, refused=refused, abandoned=abandoned,
+            submit_age_s=submit_age_s, planned_seen=planned_seen,
+        )
+        # Then resolve anything already in flight, so SUBMITTED does not pile up
+        # unwatched. Every pass on the first; afterwards only while something is in
+        # flight, and no faster than reconcile_every_s (scaled by how many are pending, so
+        # a pile of stuck orders cannot turn this into a provider hammer).
+        now = ctx.now()
+        pending = 1 if passes == 1 else len(ex.unresolved_orders(ctx.conn))
+        spacing_ms = int(max(reconcile_every_s, float(pending)) * 1000)
+        if pending and (last_reconcile_ms is None or now - last_reconcile_ms >= spacing_ms):
+            last_reconcile_ms = now
+            try:
+                reconciled.update({k: (v.value if hasattr(v, "value") else str(v))
+                                   for k, v in ex.reconcile_all(ctx.conn).items()})
+            except Exception as exc:  # noqa: BLE001
+                log.warning("execute_planned: reconcile_all failed: %s", exc)
+                reconciled["error"] = f"{type(exc).__name__}"
+        if ctx.now() + int(poll_s * 1000) > window_end:
+            break
+        time.sleep(poll_s)
+        # `enabled: false` is the entry path's own switch. The scheduler applies a config
+        # edit to ops_jobs on its reload; honour it mid-window, so a long window never
+        # delays a disable beyond what the single-pass job did.
+        flag = fetch_one(ctx.conn, "SELECT enabled FROM ops_jobs WHERE name=?", (ctx.name,))
+        if flag is not None and not flag["enabled"]:
+            break
+
+    out: dict[str, Any] = {
+        "planned_seen": len(planned_seen),
+        "submitted": submitted,
+        "refused": refused,
+        "abandoned_stale": abandoned,
+        "reconciled": reconciled,
+    }
+    if window_s > 0:
+        out["passes"] = passes
+        out["submit_age_s"] = submit_age_s
+    return out
+
+
+def _execute_planned_pass(
+    ctx: JobContext, ex: Any, fetch_all: Callable[..., list[dict[str, Any]]], types: tuple,
+    *, max_age_s: float, max_batch: int, allow_submit: bool,
+    submitted: list[str], refused: list[dict[str, str]], abandoned: list[str],
+    submit_age_s: dict[str, float], planned_seen: set[str],
+) -> None:
+    """One read of ``planned``: expire what is stale, submit what is fresh. Part of
+    :func:`job_execute_planned`; the accumulators are that run's result lists."""
+    Chain, Lane, LaneMode, Order, OrderState, Side = types
+    now = ctx.now()
     planned = fetch_all(
         ctx.conn,
         "SELECT * FROM orders WHERE state=? ORDER BY created_ms",
         (OrderState.PLANNED.value,),
     )
-
-    submitted: list[str] = []
-    refused: list[dict[str, str]] = []
-    abandoned: list[str] = []
-
     for row in planned:
-        if len(submitted) >= max_batch:
-            break
+        planned_seen.add(row["order_id"])
         age_s = (now - int(row["created_ms"])) / 1000.0
         if age_s > max_age_s:
             # Too old to trust the size it was given. Mark it and move on; the decision
             # stays in the record as planned-then-abandoned, which is the honest outcome.
             ctx.conn.execute(
                 "UPDATE orders SET state=?, error=?, updated_ms=? WHERE order_id=?",
-                (OrderState.EXPIRED.value, f"plan stale: {age_s:.0f}s > {max_age_s}s",
+                (OrderState.EXPIRED.value, f"plan stale: {age_s:.0f}s > {max_age_s:g}s",
                  now, row["order_id"]),
             )
             ctx.conn.execute(
@@ -1888,6 +1974,9 @@ def job_execute_planned(ctx: JobContext) -> dict[str, Any]:
                  f"abandoned by ops.execute_planned: stale by {age_s:.0f}s"),
             )
             abandoned.append(row["order_id"])
+            continue
+        if not allow_submit or len(submitted) >= max_batch:
+            # Still expire what is stale above; just send nothing more this run.
             continue
 
         order = Order(
@@ -1900,32 +1989,22 @@ def job_execute_planned(ctx: JobContext) -> dict[str, Any]:
             provider_order_id=row["provider_order_id"], tx_hash=row["tx_hash"],
             created_ms=row["created_ms"], updated_ms=row["updated_ms"],
         )
+        reason: str | None = None
         try:
             result = ex.submit(order, ctx.conn)
             submitted.append(f"{order.order_id}:{result.state.value}")
+            submit_age_s[order.order_id] = round((ctx.now() - int(row["created_ms"])) / 1000.0, 1)
         except ex.ExecutionRefused as exc:
             # A refusal is the gate doing its job, not an outage. Record and continue.
-            refused.append({"order_id": order.order_id, "reason": str(exc)[:200]})
+            reason = str(exc)[:200]
         except Exception as exc:  # noqa: BLE001 - one bad order is not an outage
             log.warning("execute_planned: %s failed: %s", order.order_id, exc)
-            refused.append({"order_id": order.order_id, "reason": f"{type(exc).__name__}: {exc}"[:200]})
-
-    # Then resolve anything already in flight, so SUBMITTED does not pile up unwatched.
-    reconciled: dict[str, str] = {}
-    try:
-        reconciled = {k: (v.value if hasattr(v, "value") else str(v))
-                      for k, v in ex.reconcile_all(ctx.conn).items()}
-    except Exception as exc:  # noqa: BLE001
-        log.warning("execute_planned: reconcile_all failed: %s", exc)
-        reconciled = {"error": f"{type(exc).__name__}"}
-
-    return {
-        "planned_seen": len(planned),
-        "submitted": submitted,
-        "refused": refused,
-        "abandoned_stale": abandoned,
-        "reconciled": reconciled,
-    }
+            reason = f"{type(exc).__name__}: {exc}"[:200]
+        if reason is not None:
+            # One entry per order per run: a plan deferred on every pass of a drain
+            # window would otherwise repeat itself once a second in the run record.
+            refused[:] = [r for r in refused if r["order_id"] != order.order_id]
+            refused.append({"order_id": order.order_id, "reason": reason})
 
 
 def job_copy_manager(ctx: JobContext) -> dict[str, Any]:
@@ -2449,6 +2528,7 @@ def job_wallet_seeds(ctx: JobContext) -> dict[str, Any]:
     per_chain: dict[str, Any] = {}
     totals = {"seeds": 0, "written": 0, "unchanged": 0, "failed": 0}
     not_ready: list[str] = []
+    backfilling: dict[str, Any] = {}
     for i, name in enumerate(names):
         try:
             chain = Chain(name)
@@ -2460,9 +2540,17 @@ def job_wallet_seeds(ctx: JobContext) -> dict[str, Any]:
         per_chain[chain.value] = rep
         if rep.get("not_ready"):
             not_ready.append(chain.value)
+        if rep.get("backfilling"):
+            # Progress, not failure: seed_buyers is still reading some seed's history and
+            # nothing was written for this chain. Visible in the result, not silent.
+            sb = rep.get("seed_buyers") or {}
+            backfilling[chain.value] = {"pending": sb.get("pending"),
+                                        "backfilled": sb.get("backfilled")}
         for k in totals:
             totals[k] += int(rep.get(k) or 0)
     result = {**totals, "per_chain": per_chain}
+    if backfilling:
+        result["backfilling"] = backfilling
     if not_ready:
         raise JobFailed(f"price extent still folding the tape; no seeds counted on {not_ready}",
                         result)
@@ -2798,7 +2886,7 @@ def job_exit_study(ctx: JobContext) -> dict[str, Any]:
         if mean is not None and (best is None or mean > best[1]):
             best = (policy.name, mean)
     incumbent = next(
-        (p for p in result.policies if "incumbent" in p.name), None
+        (p for p in result.policies if p.name.startswith("stop-30-only")), None
     )
     out = {
         "replayable": result.eligibility.get("replayable"),
@@ -2807,7 +2895,7 @@ def job_exit_study(ctx: JobContext) -> dict[str, Any]:
         "live_only": result.n_live,
         "span_hours": round(result.span_hours, 1),
         "best_oos": {"policy": best[0], "mean_pct": round(best[1], 2)} if best else None,
-        "incumbent_oos_mean_pct": (
+        "stop30_only_oos_mean_pct": (  # NOT the deployed ladder; see signal_audit
             round(incumbent.out_of_sample.mean_pct, 2)
             if incumbent is not None and incumbent.out_of_sample.mean_pct is not None
             else None
@@ -2817,6 +2905,91 @@ def job_exit_study(ctx: JobContext) -> dict[str, Any]:
         ),
     }
     log.info("ops: exit_study %s", out)
+    return out
+
+
+def job_signal_audit(ctx: JobContext) -> dict[str, Any]:
+    """Replay every lane signal with the live exit ladder and costs; score what predicts profit.
+
+    RECORDS ONLY (kaiba/learning/signal_audit.py). The operator agent reads the scorecard
+    through ``kaiba_signal_audit``; nothing here moves a gate. Reads go through
+    ``signal_audit.Reader``: one short read-only connection per query, WAL checked every 25.
+    """
+    from kaiba.core.config import get_risk
+    from kaiba.learning import signal_audit as sa
+
+    ladder = sa.ExitLadder.from_protection(getattr(get_risk(), "protection", None))
+    reader = sa.Reader(get_settings().db_path)
+    lanes = [x.strip() for x in str(ctx.param("lanes", ",".join(sa.DEFAULT_LANES))).split(",") if x.strip()]
+    chains = [x.strip() for x in str(ctx.param("chains", ",".join(sa.DEFAULT_CHAINS))).split(",") if x.strip()]
+    days = int(ctx.param("days", 12))
+    run = sa.run_audit(
+        reader, ladder=ladder, lanes=lanes, chains=chains, days=days,
+        max_signals=int(ctx.param("max_signals", 2000)),
+        deadline_ms=ctx.deadline_ms - 90_000, clock=ctx.clock,
+    )
+    now = ctx.now()
+    run_id = sa.record(ctx.conn, run, now_ms=now, days=days)
+    verdicts: dict[str, int] = {}
+    for c in run.card.cells:
+        verdicts[c.verdict] = verdicts.get(c.verdict, 0) + 1
+    out = {
+        "run_id": run_id, "considered": run.considered, "replayed": len(run.cases),
+        "no_tape": run.no_tape, "stopped": run.stopped, "queries": run.queries,
+        "wal_waits": run.wal_waits, "verdicts": verdicts,
+        "baselines": {
+            f"{lane}|{chain}": round(100 * (a.mean or 0.0), 1)
+            for (lane, chain), (a, _o, _n) in run.card.baselines.items()
+        },
+    }
+    log.info("ops: signal_audit %s", out)
+    return out
+
+
+def job_x_narrative(ctx: JobContext) -> dict[str, Any]:
+    """Search X for the contract address of every freshly signalled token; record what it shows.
+
+    RECORDS ONLY (kaiba/ingest/x_narrative.py). Read-only searches, a daily query cap, and a
+    one-hour park on 401/402 so an unfunded key cannot burn the cap on refusals.
+    """
+    from kaiba.ingest import x_narrative
+    from kaiba.providers import x_search
+
+    def _list(key: str, default: str) -> list[str]:
+        return [x.strip() for x in str(ctx.param(key, default)).split(",") if x.strip()]
+
+    out = x_narrative.observe(
+        ctx.conn, env=x_search.credentials(get_settings()), now_ms=ctx.now(),
+        lanes=_list("lanes", "sm-trenches,launch-snipe"), chains=_list("chains", "sol,robinhood,bsc"),
+        max_tokens=int(ctx.param("max_tokens", 8)), daily_cap=int(ctx.param("daily_query_cap", 400)),
+    )
+    log.info("ops: x_narrative %s", out)
+    return out
+
+
+def job_fill_costs(ctx: JobContext) -> dict[str, Any]:
+    """Decode what each live fill paid from its own transaction (kaiba/execution/fill_costs.py).
+
+    RECORDS ONLY. RPC reads go through the shared limiter at RESEARCH priority, so they can
+    never take a slot protection needs; one order per ``pace_s``; one short write at the end.
+    """
+    from kaiba.execution.fill_costs import record_fill_costs
+
+    chains = tuple(x.strip() for x in str(ctx.param("chains", "sol,robinhood")).split(",") if x.strip())
+    out = record_fill_costs(
+        ctx.conn, since_ms=ctx.now() - int(float(ctx.param("since_days", 3)) * 86_400_000),
+        limit=int(ctx.param("limit", 30)), pace_s=float(ctx.param("pace_s", 1.0)), chains=chains,
+    )
+    log.info("ops: fill_costs %s", out)
+    return out
+
+
+def job_grade_snapshot(ctx: JobContext) -> dict[str, Any]:
+    """Freeze today's wallet grades, so a later audit can test grades without lookahead."""
+    from kaiba.learning import signal_audit as sa
+
+    out = sa.snapshot_grades(ctx.conn, now_ms=ctx.now(), keep_days=int(ctx.param("keep_days", 90)))
+    log.info("ops: grade_snapshot %s", out)
     return out
 
 
@@ -3060,6 +3233,26 @@ JOBS: dict[str, JobSpec] = {
         "exit_study", job_exit_study,
         "score every exit policy on our own replayed episodes, in and out of sample, with "
         "a deflated Sharpe so 14 hypotheses cannot manufacture a winner; records only",
+    ),
+    "signal_audit": JobSpec(
+        "signal_audit", job_signal_audit,
+        "replay every lane signal with the live exit ladder and costs, then score which signal "
+        "properties predict profit on old AND new halves; the operator's daily scorecard; "
+        "records only",
+    ),
+    "x_narrative": JobSpec(
+        "x_narrative", job_x_narrative,
+        "search X (read-only) for each freshly signalled token's contract address and record "
+        "post count, authors and reach at signal time; feeds the signal audit; daily query cap",
+    ),
+    "fill_costs": JobSpec(
+        "fill_costs", job_fill_costs,
+        "decode each live fill's own transaction: venue fees, price impact, network and router "
+        "(GMGN) fees, and the move from decision to fill; records only",
+    ),
+    "grade_snapshot": JobSpec(
+        "grade_snapshot", job_grade_snapshot,
+        "freeze today's A/B/C wallet grades so wallet edges can be tested without lookahead",
     ),
     "copytrade": JobSpec(
         "copytrade", job_copytrade,

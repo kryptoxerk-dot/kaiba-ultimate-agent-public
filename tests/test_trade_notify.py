@@ -36,6 +36,20 @@ T0 = NOW - 120_000
 TOKEN = "8JVtwRnDiDmjV2pSRTmqzPtXZyNdgUkpijrufgYJRARA"
 
 
+@pytest.fixture(autouse=True)
+def _frozen_clock(monkeypatch):
+    """Pin the notifier's clock to NOW.
+
+    NOW is taken at import (collection) time. In a full-suite run the tests here execute
+    ~15+ minutes later, by which time every fixture row was older than
+    COLD_START_LOOKBACK_MS and the notifier correctly ignored it: 24 tests failed in the
+    suite and passed alone. ``time.time`` is the only clock trade_notify reads.
+    """
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(N, "time", SimpleNamespace(time=lambda: NOW / 1000))
+
+
 def put_token(conn, symbol: str = "KAPI", chain: Chain = Chain.SOL, address: str = TOKEN) -> None:
     conn.execute(
         "INSERT OR REPLACE INTO tokens (chain, address, symbol, name, decimals, first_seen_ms) "

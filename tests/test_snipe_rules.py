@@ -57,6 +57,28 @@ def test_a_deployer_record_fires_only_on_the_measured_runner_cells(label, fires)
         assert v.rule == f"record:{label}" and v.strength >= 0.70
 
 
+def test_fire_on_records_can_differ_per_chain():
+    """2026-10-04: robinhood mid/runner measured BELOW baseline (O/E 0.80), sol mid/runner above
+    (1.26). A {chain: [labels]} mapping keeps one lane config honest on both chains."""
+    per_chain = {**P, "fire_on_records": {"sol": ["low/runner", "mid/runner"], "robinhood": ["low/runner"]}}
+    assert snipe.evaluate(sol_launch(), per_chain, rec("mid/runner")).fire
+    rh = snipe.evaluate(rh_launch(), per_chain, rec("mid/runner"), book=CLEAN)
+    assert any(r.startswith("no_alpha") for r in rh.reasons), rh.reasons
+    rh_low = snipe.evaluate(rh_launch(), per_chain, rec("low/runner"), book=CLEAN)
+    assert rh_low.rule == "record:low/runner"
+    # a chain missing from the mapping fires on no record
+    only_sol = {**P, "fire_on_records": {"sol": ["low/runner"]}}
+    assert any(r.startswith("no_alpha") for r in snipe.evaluate(rh_launch(), only_sol, rec("low/runner"), book=CLEAN).reasons)
+
+
+def test_never_records_can_differ_per_chain():
+    per_chain = {**P, "never_records": {"robinhood": ["spam/all_dud"]}}
+    rh = snipe.evaluate(rh_launch(), per_chain, rec("spam/all_dud"), book=CLEAN)
+    assert "deployer_record:spam/all_dud" in rh.reasons
+    sol = snipe.evaluate(sol_launch(), per_chain, rec("spam/all_dud"))
+    assert "deployer_record:spam/all_dud" not in sol.reasons
+
+
 def test_watchlists_fire_and_an_explicit_dev_overrides_a_bad_record_but_a_name_does_not():
     p = {**P, "dev_watchlist": ["CREATOR1"], "name_watchlist": []}
     v = snipe.evaluate(sol_launch(creator="creator1"), p, rec("spam/all_dud"))

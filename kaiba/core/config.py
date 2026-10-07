@@ -70,6 +70,8 @@ class Settings(BaseSettings):
     # models
     anthropic_api_key: str = ""
     xai_api_key: str = ""
+    #: Official X API v2 bearer token (pay-per-use). Read-only search in kaiba/providers/x_search.py.
+    x_bearer_token: str = ""
     openrouter_api_key: str = ""
 
     # solana data
@@ -165,6 +167,7 @@ class Settings(BaseSettings):
             "mobula_api_key", "codex_io_api_key", "twitterscore_api_key", "xai_api_key",
             "cryptopanic_api_key", "dune_api_key", "vybe_api_key", "goldrush_api_key",
             "goldsky_api_key", "moralis_api_key", "twitterapi_io_key", "github_api_token",
+            "x_bearer_token",
         ]
         return {k: bool(getattr(self, k)) for k in keys}
 

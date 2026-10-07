@@ -337,7 +337,14 @@ def kaiba_signals(limit: int = 20, lane: str | None = None) -> dict[str, Any]:
 
 
 def kaiba_positions(include_closed: bool = False, limit: int = 30) -> dict[str, Any]:
-    """Open positions with cost, quantity and protection state; closed ones on request."""
+    """Open positions with cost, quantity and protection state; closed ones on request.
+
+    A closed row whose result was booked rather than observed carries
+    ``fabricated_outcome: true`` (``kaiba.learning.fabricated``): average it in and a paper
+    write-off reads as a -100% trade.
+    """
+    from kaiba.learning.fabricated import is_fabricated_outcome
+
     c = _conn()
     sql = "SELECT * FROM positions"
     if not include_closed:
@@ -347,20 +354,31 @@ def kaiba_positions(include_closed: bool = False, limit: int = 30) -> dict[str, 
     for r in rows:
         r["tp_done"] = jload(r.pop("tp_done_json"), [])
         r.pop("protection_ids_json", None)
+        r["fabricated_outcome"] = is_fabricated_outcome(r.get("exit_reason"), r.get("mode"))
     return _scrub({"positions": rows})
 
 
 def kaiba_performance(days: int = 7, mode: str | None = None) -> dict[str, Any]:
-    """Closed-trade performance by lane and chain, never mixing native currencies."""
+    """Closed-trade performance by lane and chain, never mixing native currencies.
+
+    Paper positions closed with a booked rather than observed result
+    (``kaiba.learning.fabricated``) are in no statistic here and are not "missing" either:
+    ``coverage.fabricated_outcomes_excluded`` counts them per lane, mode and chain.
+    """
+    from kaiba.learning import fabricated
+
     c = _conn()
     cutoff = now_ms()
     since = cutoff - days * 86_400_000
-    sql = "SELECT lane, mode, chain, pnl_native, pnl_pct FROM trades WHERE closed_ms >= ? AND closed_ms < ?"
+    sql = (
+        "SELECT lane, mode, chain, pnl_native, pnl_pct, exit_reason FROM trades "
+        "WHERE closed_ms >= ? AND closed_ms < ?"
+    )
     params: list[Any] = [since, cutoff]
     if mode:
         sql += " AND mode=?"
         params.append(LaneMode(mode).value)
-    trades = fetch_all(c, sql, params)
+    trades, fabricated_trade_rows = fabricated.drop(fetch_all(c, sql, params))
 
     def summarize(items: list[dict[str, Any]]) -> dict[str, Any]:
         # TEXT amounts may exceed SQLite's signed integer range. Python integers
@@ -397,10 +415,17 @@ def kaiba_performance(days: int = 7, mode: str | None = None) -> dict[str, Any]:
         position_where += " AND p.mode=?"
         position_params.append(LaneMode(mode).value)
     closed = fetch_one(c, "SELECT COUNT(*) AS n FROM positions p WHERE " + position_where, position_params)
+    fab_sql = fabricated.sql_predicate("p")
     missing = fetch_all(
         c, "SELECT p.chain, COUNT(*) AS n FROM positions p WHERE " + position_where +
+        " AND NOT " + fab_sql +
         " AND NOT EXISTS (SELECT 1 FROM trades t WHERE t.position_id=p.position_id "
         "AND t.chain=p.chain AND t.mode=p.mode AND t.lane=p.lane) GROUP BY p.chain",
+        position_params,
+    )
+    excluded = fetch_all(
+        c, "SELECT p.lane, p.mode, p.chain, COUNT(*) AS n FROM positions p WHERE " + position_where +
+        " AND " + fab_sql + " GROUP BY p.lane, p.mode, p.chain ORDER BY p.lane, p.mode, p.chain",
         position_params,
     )
     return _scrub({
@@ -409,6 +434,9 @@ def kaiba_performance(days: int = 7, mode: str | None = None) -> dict[str, Any]:
             "recorded_outcomes": len(trades),
             "closed_positions": int(closed["n"]) if closed else 0,
             "missing_closed_outcomes": missing,
+            "fabricated_outcomes_excluded": excluded,
+            "fabricated_trade_rows_excluded": fabricated_trade_rows,
+            "fabricated_rule": fabricated.RULE,
             "pnl_scope": "canonical recorded outcomes only; missing closures are excluded above",
             "fee_status": "full gas/provider-fee reconciliation not verified by this surface",
         },
@@ -587,19 +615,56 @@ def kaiba_set_cohort(address: str, chain: str, cohort: Literal["tracked", "trust
     return {"ok": True, "address": address, "cohort": cohort}
 
 
-def kaiba_request_exit(position_id: str, pct: int = 100, reason: str = "") -> dict[str, Any]:
-    """Ask the protection service to close a position. Exits are always permitted."""
+#: Refusal head for a sell the agent asked for on its own. OWNER RULE 2026-10-06: "never sell
+#: MCP on your own". Exits belong to the protection service's ladder (stop, take-profit,
+#: trail, moonbag); through MCP the agent may sell only when the operator asked for that sale.
+NO_AGENT_SELL = "no_agent_initiated_sell"
+
+#: Without an owner request, the tightest stop or trail the agent may set (bps below the
+#: reference). A 1 bps stop is a market sell by another name.
+AGENT_MIN_PROTECTION_BPS = 1000
+
+
+def kaiba_request_exit(
+    position_id: str, pct: int = 100, reason: str = "", owner_request: str = "",
+) -> dict[str, Any]:
+    """Close a position, ONLY because the operator asked. Never on the agent's own judgement.
+
+    OWNER RULE 2026-10-06: the agent never sells through MCP on its own. ``owner_request``
+    must quote the operator's message asking for this sale; without it nothing is sent, and the
+    refusal is journaled. Every other exit is the protection service's job. If a position
+    looks unprotected or unsafe, tell the operator and let him decide.
+    """
     c = _conn()
     pos = fetch_one(c, "SELECT * FROM positions WHERE position_id=?", (position_id,))
     if not pos:
         return {"ok": False, "reason": "unknown position"}
     pct = max(1, min(100, int(pct)))
+    said = (owner_request or "").strip()
+    if not said:
+        journal.append(
+            "observation",
+            f"{NO_AGENT_SELL}: refused exit of {position_id} {pct}% with no owner request "
+            f"(agent reason: {reason[:200]})",
+            subject=position_id, conn=c,
+        )
+        return {
+            "ok": False, "reason": NO_AGENT_SELL,
+            "detail": "Owner rule 2026-10-06: never sell through MCP on your own. Exits are the "
+                      "protection ladder's job. Tell the operator what you see and ask; call again "
+                      "with owner_request=<his exact words> only after he asks for this sale.",
+        }
     ev.emit(
         EventKind.PROTECTION_TRIGGERED,
-        {"position_id": position_id, "pct": pct, "reason": reason[:200], "source": "agent"},
+        {"position_id": position_id, "pct": pct, "reason": reason[:200], "source": "agent",
+         "owner_request": said[:300]},
         chain=pos["chain"], subject=pos["token"], conn=c,
     )
-    journal.append("change", f"exit requested {position_id} {pct}%: {reason[:200]}", conn=c)
+    journal.append(
+        "change",
+        f"exit requested {position_id} {pct}% at owner request \"{said[:300]}\": {reason[:200]}",
+        conn=c,
+    )
     return {"ok": True, "position_id": position_id, "pct": pct}
 
 
@@ -714,6 +779,8 @@ TOOL_OPERATIONS: dict[str, str] = {
     "kaiba_health": "status",
     "kaiba_wallet_grade_counts": "wallets_read",
     "kaiba_live_ev": "performance_read",
+    "kaiba_signal_audit": "performance_read",
+    "kaiba_x_search": "signals_read",
 }
 
 
@@ -945,18 +1012,25 @@ def kaiba_submit_intent(
 
 
 def kaiba_set_protection(
-    position_id: str, stop_loss_bps: int | None = None, trail_bps: int | None = None
+    position_id: str, stop_loss_bps: int | None = None, trail_bps: int | None = None,
+    owner_request: str = "",
 ) -> dict[str, Any]:
-    """Arm or repair protection on an open position."""
+    """Arm or repair protection on an open position.
+
+    Without ``owner_request`` (the operator's words) a stop or trail is clamped to at least
+    :data:`AGENT_MIN_PROTECTION_BPS`: a near-zero stop would be a sell the agent chose on its
+    own, which the owner rule of 2026-10-06 forbids (see :func:`kaiba_request_exit`).
+    """
     c = _conn()
     pos = fetch_one(c, "SELECT * FROM positions WHERE position_id=?", (position_id,))
     if not pos:
         return {"ok": False, "reason": "unknown position"}
+    floor = 1 if (owner_request or "").strip() else AGENT_MIN_PROTECTION_BPS
     payload: dict[str, Any] = {"position_id": position_id, "source": "agent"}
     if stop_loss_bps is not None:
-        payload["stop_loss_bps"] = max(1, min(9999, int(stop_loss_bps)))
+        payload["stop_loss_bps"] = max(floor, min(9999, int(stop_loss_bps)))
     if trail_bps is not None:
-        payload["trail_bps"] = max(1, min(9999, int(trail_bps)))
+        payload["trail_bps"] = max(floor, min(9999, int(trail_bps)))
     ev.emit(EventKind.PROTECTION_SET, payload, chain=pos["chain"], subject=pos["token"], conn=c)
     journal.append("change", f"protection requested for {position_id}: {payload}", conn=c)
     return {"ok": True, **payload}
@@ -1807,6 +1881,44 @@ def kaiba_live_ev(days: int = 7, chain: str = "robinhood") -> dict[str, Any]:
     return _chain_or_refusal(chain) or _scrub(live_ev(_conn(), days=days, chain=chain))
 
 
+def kaiba_signal_audit(include_noise: bool = False) -> dict[str, Any]:
+    """Daily self-audit scorecard: every lane signal replayed with the live exits and costs; per chain the baseline and which signal properties are an edge/lift/drag on BOTH old and new halves. Read-only."""
+    from kaiba.learning.signal_audit import latest
+
+    try:
+        got = latest(_conn(), include_noise=bool(include_noise))
+    except sqlite3.OperationalError as exc:
+        return {"ok": False, "reason": f"no audit tables yet: {exc}"[:200]}
+    if got is None:
+        return {"ok": False, "reason": "no audit run recorded yet (ops job signal_audit, daily)"}
+    got["cells"] = got["cells"][:MAX_ROWS * 4]
+    return _scrub({"ok": True, **got})
+
+
+def kaiba_x_search(query: str, latest: bool = True, max_posts: int = 20) -> dict[str, Any]:
+    """Read-only X search (twitterapi.io or the X API): newest posts for a query, e.g. a contract address, a cashtag or a phrase, with author reach and the cashtags/addresses found in each. Counts against the daily X query cap; posts are recorded. Never posts, likes or follows."""
+    import time as _time
+
+    from kaiba.ingest.x_narrative import record_posts
+    from kaiba.providers import x_search
+
+    c = _conn()
+    cap = 400  # the same daily cap the x_narrative job uses; one shared kv counter
+    res = x_search.search(str(query)[:200], env=x_search.credentials(get_settings()),
+                          budget=x_search.Budget(c, daily_cap=cap), latest=bool(latest),
+                          max_posts=max(1, min(int(max_posts), 40)))
+    if not res.ok:
+        return {"ok": False, "backend": res.backend, "reason": res.reason}
+    try:
+        record_posts(c, str(query)[:200], res, now_ms=int(_time.time() * 1000))
+    except sqlite3.Error as exc:
+        log.warning("x posts not recorded: %s", exc)
+    return _scrub({
+        "ok": True, "backend": res.backend,
+        "posts": [{**p.__dict__, "refs": x_search.extract_refs(p.text)} for p in res.posts],
+    })
+
+
 TOOLS.update(
     {
         "kaiba_scan_token": kaiba_scan_token,
@@ -1824,6 +1936,8 @@ TOOLS.update(
         "kaiba_health": kaiba_health,
         "kaiba_wallet_grade_counts": kaiba_wallet_grade_counts,
         "kaiba_live_ev": kaiba_live_ev,
+        "kaiba_signal_audit": kaiba_signal_audit,
+        "kaiba_x_search": kaiba_x_search,
     }
 )
 

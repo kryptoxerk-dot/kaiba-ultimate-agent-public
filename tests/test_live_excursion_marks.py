@@ -62,8 +62,8 @@ class QuoteFixture:
     name = "offline-quote"
 
     def __init__(self, price="120", *, observed_ms=NOW - 9_000, **changes):
-        from tests.test_accounting import TOKEN
         from kaiba.core.schemas import Chain, EvidenceBasis
+        from tests.test_accounting import TOKEN
 
         self.value = wd.PriceQuote(
             price_usd=Decimal(price), observed_ms=observed_ms,
@@ -187,6 +187,45 @@ def test_non_live_modes_remain_owned_by_paper_not_live_sampler(tmp_db, mode):
     source = QuoteFixture()
     assert dog(tmp_db, source).tick().errors == 0
     assert fetch_all(tmp_db, "SELECT * FROM position_marks") == before
+
+
+@pytest.mark.parametrize("mode", [LaneMode.LIVE, LaneMode.CANARY])
+def test_a_valid_live_quote_is_still_recorded(tmp_db, mode):
+    """Positive control for the sampler's bar: a fully scoped, post-open, sourced quote
+    on a live/canary position IS a mark. Without this the refusal tests above pass on a
+    sampler that refuses everything."""
+    from kaiba.execution.excursions import record_live_quote, sample_rejection
+
+    opened = open_live(tmp_db, mode=mode)
+    quote = QuoteFixture("130", observed_ms=opened.opened_ms).value  # exactly at open: allowed
+    assert sample_rejection(opened, quote) is None
+    assert record_live_quote(tmp_db, opened, quote) is True
+    marks = fetch_all(tmp_db, "SELECT * FROM position_marks")
+    assert len(marks) == 1 and Decimal(marks[0]["price_usd"]) == Decimal("130")
+    assert load_position(tmp_db, opened.position_id).mfe_pct == pytest.approx(30)
+
+
+@pytest.mark.parametrize(("changes", "mode", "reason"), [
+    ({"observed_ms": "pre_open"}, LaneMode.LIVE, "observed_before_open"),
+    ({"chain": None}, LaneMode.LIVE, "scope_missing_chain"),
+    ({"token": None}, LaneMode.LIVE, "scope_missing_token"),
+    ({"source": "none"}, LaneMode.LIVE, "source_missing"),
+    ({"source": "  "}, LaneMode.LIVE, "source_missing"),
+    ({}, LaneMode.SHADOW, "mode_not_live:shadow"),
+    ({}, LaneMode.OFF, "mode_not_live:off"),
+])
+def test_record_live_quote_refuses_directly_without_the_watchdog(tmp_db, changes, mode, reason):
+    """The sampler holds its own bar: a caller that bypasses `_validate_quote` still
+    cannot write a contaminated mark, and each refusal names its category."""
+    from kaiba.execution.excursions import record_live_quote, sample_rejection
+
+    opened = open_live(tmp_db, mode=mode)
+    if changes.get("observed_ms") == "pre_open":
+        changes = {"observed_ms": opened.opened_ms - 1}
+    quote = QuoteFixture().value.model_copy(update=changes)
+    assert sample_rejection(opened, quote) == reason
+    assert record_live_quote(tmp_db, opened, quote) is False
+    assert fetch_all(tmp_db, "SELECT * FROM position_marks") == []
 
 
 def test_source_validation_marks_only_accepted_fallback_not_rejected_original(tmp_db):

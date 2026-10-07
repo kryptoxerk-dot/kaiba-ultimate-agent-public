@@ -250,6 +250,21 @@ TOKEN_SOURCE_PREFIX = f"{PROVIDER}:"
 #: the rest of the tree cites it by name; every other feed gets :func:`token_source`.
 TOKEN_SOURCE = f"{TOKEN_SOURCE_PREFIX}trenches"
 
+#: Listener sources whose rows this module MERGES into instead of keeping untouched:
+#: ``alchemy:ws:flap`` (``launch_feed.FLAP_SOURCE``, written by ``ingest/flap.py``; a test
+#: pins the two spellings together). bsc is not in :data:`LISTENER_CHAINS`, so on bsc this
+#: module is the only caller of ``triage.screen_launch``. FOUND 2026-10-05 in review: the
+#: Flap listener writes a launch ~1 s after its block and GMGN surfaces it a median 71 s
+#: later, so with "kept" every Flap token GMGN found stopped being triaged -- the scanner
+#: never sees a ``tokens`` row alone (:data:`SCREEN_NEW_TOKENS`) -- and the live bsc
+#: candidates went with it. A merge fills only what the listener left NULL, keeps the
+#: listener's ``source`` (so the snipe tail still owns the row), and screens the token the
+#: first time GMGN sees it, latched by :data:`GMGN_SCREENED_KEY`.
+MERGEABLE_LISTENER_SOURCES: frozenset[str] = frozenset({"alchemy:ws:flap"})
+
+#: ``meta_json`` key latching "GMGN has screened this listener row once" (epoch ms).
+GMGN_SCREENED_KEY = "gmgn_screened"
+
 
 def token_source(feed: str) -> str:
     """``tokens.meta_json["source"]`` for a row this module registers from ``feed``.
@@ -1320,13 +1335,79 @@ def _screen_token(conn: Any, chain: Chain, facts: dict[str, Any], source: str) -
         log.debug("gmgn triage skipped %s (%s: %s)", facts.get("address", "")[:12], type(exc).__name__, exc)
 
 
+def _merge_into_listener_row(
+    conn: Any, row: AlphaRow, facts: dict[str, Any], address: str,
+    old_meta: dict[str, Any], meta: dict[str, Any],
+) -> str:
+    """Fill a :data:`MERGEABLE_LISTENER_SOURCES` row from a GMGN object; screen it once.
+
+    Only NULL columns are filled (the listener's chain facts win), the listener's meta
+    keys win over GMGN's and its ``source`` is kept, so the row stays the listener's. The
+    first GMGN sighting emits ``token.created`` (deduplicated, as an insert would) and
+    hands the token to tier-0 triage under GMGN's own source, exactly as an insert does;
+    :data:`GMGN_SCREENED_KEY` latches it so a later sighting refreshes and never re-screens.
+    Returns ``"merged"``.
+    """
+    gmgn_source = meta["source"]
+    first = not old_meta.get(GMGN_SCREENED_KEY)
+    merged = {**meta, **old_meta, "source": old_meta["source"]}
+    merged.setdefault("gmgn_source", gmgn_source)
+    if first:
+        merged[GMGN_SCREENED_KEY] = now_ms()
+    conn.execute(
+        "UPDATE tokens SET symbol=COALESCE(symbol, ?), name=COALESCE(name, ?), "
+        "creator=COALESCE(creator, ?), created_ms=COALESCE(created_ms, ?), "
+        "migrated_ms=COALESCE(migrated_ms, ?), launchpad=COALESCE(launchpad, ?), "
+        "pool=COALESCE(pool, ?), meta_json=? WHERE chain=? AND address=?",
+        (
+            facts.get("symbol"), facts.get("name"), facts.get("creator"), facts.get("created_ms"),
+            facts.get("migrated_ms"), facts.get("launchpad"), facts.get("pool"),
+            jdump(merged), row.chain.value, address,
+        ),
+    )
+    if not first:
+        return "merged"
+    stored = fetch_one(
+        conn,
+        "SELECT symbol, name, creator, created_ms, migrated_ms, launchpad, pool FROM tokens "
+        "WHERE chain=? AND address=?",
+        (row.chain.value, address),
+    ) or {}
+    screen = {"address": address, **{k: stored.get(k) for k in
+                                     ("symbol", "name", "creator", "created_ms", "migrated_ms", "launchpad", "pool")},
+              "meta": merged}
+    emit_once(
+        EventKind.TOKEN_CREATED,
+        {
+            "mint": address,
+            "symbol": screen["symbol"],
+            "name": screen["name"],
+            "creator": screen["creator"],
+            "launchpad": screen["launchpad"],
+            "created_ms": screen["created_ms"],
+            "migrated_ms": screen["migrated_ms"],
+            "trenches_category": merged.get("trenches_category"),
+            "source": gmgn_source,
+        },
+        chain=row.chain,
+        subject=address,
+        dedupe_key=f"{EventKind.TOKEN_CREATED.value}:{row.chain.value}:{address}",
+        conn=conn,
+    )
+    if SCREEN_NEW_TOKENS:
+        _screen_token(conn, row.chain, screen, gmgn_source)
+    return "merged"
+
+
 def write_token(conn: Any, row: AlphaRow) -> str:
     """Register a full feed object in ``tokens``.
 
     Returns what happened: ``"inserted"`` (new row, ``token.created`` emitted, screened),
-    ``"updated"`` (our own earlier row refreshed), ``"kept"`` (a row this module did not
-    write exists and is left untouched) or ``"skipped"`` (nothing to write, or a feed
-    whose chain has a listener that owns the row -- see :data:`LISTENER_OWNED_FEEDS`).
+    ``"updated"`` (our own earlier row refreshed), ``"merged"`` (a Flap listener row
+    filled in and, on GMGN's first sighting, screened -- :data:`MERGEABLE_LISTENER_SOURCES`),
+    ``"kept"`` (a row another writer owns exists and is left untouched) or ``"skipped"``
+    (nothing to write, or a feed whose chain has a listener that owns the row -- see
+    :data:`LISTENER_OWNED_FEEDS`).
     Mirrors ``pumpportal.record_new_token`` column for column: same table, same conflict
     target, same refusal to touch ``first_seen_ms`` on a later sighting. Existing birth
     and migration occurrence times are also retained: a provider pool-open refresh must
@@ -1350,9 +1431,10 @@ def write_token(conn: Any, row: AlphaRow) -> str:
     )
     if existing is not None:
         old_meta = jload(existing["meta_json"], {}) or {}
-        if not isinstance(old_meta, dict) or not str(
-            old_meta.get("source") or ""
-        ).startswith(TOKEN_SOURCE_PREFIX):
+        old_source = str(old_meta.get("source") or "") if isinstance(old_meta, dict) else ""
+        if old_source in MERGEABLE_LISTENER_SOURCES:
+            return _merge_into_listener_row(conn, row, facts, address, old_meta, meta)
+        if not old_source.startswith(TOKEN_SOURCE_PREFIX):
             return "kept"
         # Operator lifecycle repair: pool openings can move while token birth cannot.
         # Preserve the provenance of the retained birth, not the incoming pool timestamp.

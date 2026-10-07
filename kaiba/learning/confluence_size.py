@@ -50,6 +50,7 @@ from typing import Any
 
 from kaiba.core.db import fetch_all, fetch_one, jload
 from kaiba.core.schemas import Chain, Lane, digest
+from kaiba.learning import fabricated
 from kaiba.learning.copytrade import next_print
 from kaiba.learning.metrics import trade_return
 
@@ -157,6 +158,9 @@ def collect_paper_trades(
         skipped[why] = skipped.get(why, 0) + 1
 
     for row in fetch_all(conn, sql + " ORDER BY t.opened_ms", tuple(args)):
+        if fabricated.is_fabricated_outcome(row.get("exit_reason"), "shadow"):
+            skip("fabricated_outcome")
+            continue
         payload = _signal_payload(conn, row.get("signals_json"))
         if not payload:
             skip("no_signal_payload")
@@ -177,6 +181,21 @@ def collect_paper_trades(
             opened_ms=int(row["opened_ms"]), closed_ms=int(row["closed_ms"]), level=int(level),
             ret=ret, exit_reason=row.get("exit_reason"), cohort_id=payload.get("cohort_id"),
         ))
+    # A paper position written off with a booked result (kaiba.learning.fabricated) has no
+    # trades row, so the loop above never sees it. Counted lane-wide: with no trade there is
+    # no decision, so no signal to read a wallet_source or a level from.
+    no_trade = (
+        "SELECT COUNT(*) AS n FROM positions p WHERE p.lane = ? AND p.mode = 'shadow' "
+        f"AND p.closed_ms IS NOT NULL AND p.opened_ms >= ? AND {fabricated.sql_predicate('p')} "
+        "AND NOT EXISTS (SELECT 1 FROM trades t WHERE t.position_id = p.position_id)"
+    )
+    no_trade_args: list[Any] = [rule.lane, int(since_ms)]
+    if until_ms is not None:
+        no_trade += " AND p.closed_ms <= ?"
+        no_trade_args.append(int(until_ms))
+    unbooked = fetch_one(conn, no_trade, tuple(no_trade_args))
+    if unbooked and int(unbooked["n"] or 0):
+        skipped["fabricated_outcome"] = skipped.get("fabricated_outcome", 0) + int(unbooked["n"])
     return out, skipped
 
 

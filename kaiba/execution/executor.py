@@ -33,6 +33,9 @@ import shutil
 import signal
 import sqlite3
 import subprocess
+import time
+from collections.abc import Iterator
+from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -467,6 +470,87 @@ def _sent_from_other_wallet(order_id: str, conn: sqlite3.Connection) -> bool:
     return row is not None
 
 
+#: Refusal head for a sell of something Kaiba did not buy.
+NEVER_SELL_UNBOUGHT = "never_sell_unbought"
+
+#: Sell states that have spent (or may have spent) tokens. A failed, expired or cancelled sell
+#: sent nothing; a planned one has not been sent yet.
+_SELL_SPENDING_STATES = ("reserved", "submitting", "submitted", "partial", "filled", "unknown")
+
+
+def _assert_sell_is_ours(order: Order, c: sqlite3.Connection, from_wallet: str | None) -> None:
+    """OWNER RULE 2026-10-05: "NEVER SELL ANYTHING THEY DON'T BUY".
+
+    A live sell must sell only tokens Kaiba itself bought, from the wallet it bought them with,
+    and never more than it bought:
+
+    * a sell from any wallet other than the chain wallet is refused outright (the copy_manager
+      path that sold the owner's GMGN copy trades on 0x41a0: 14 such sells 09-21..10-04, none
+      bought by Kaiba);
+    * Kaiba's own buys of this token on this chain (non-shadow; the larger of its filled buy
+      orders and its position ledger ``qty_total``) minus every sell that
+      has spent or may have spent tokens must cover ``amount_in``. A token the owner bought by
+      hand on the same wallet is therefore never sold by Kaiba, not even as part of a 100% exit.
+
+    Checked at the executor, the one door every sell passes (watchdog stops, take-profits,
+    manual exits, MCP requests), before anything is persisted or sent. Shadow sells belong to
+    the paper broker and are not checked here. Amounts are compared as Python ints from the
+    TEXT columns: SQLite's CAST AS INTEGER clamps wei-sized amounts to 2**63-1.
+    """
+    if order.side is not Side.SELL or order.mode is LaneMode.SHADOW:
+        return
+    if from_wallet is not None:
+        raise ExecutionRefused(
+            f"{NEVER_SELL_UNBOUGHT}: a sell from another wallet ({from_wallet[:10]}...) sells "
+            "tokens Kaiba never bought; owner rule 2026-10-05"
+        )
+    bought = 0
+    for (out,) in c.execute(
+        "SELECT filled_out FROM orders WHERE chain=? AND token=? AND side='buy' "
+        "AND state IN ('filled','partial') AND mode != 'shadow' AND filled_out IS NOT NULL",
+        (order.chain.value, order.token),
+    ).fetchall():
+        try:
+            bought += int(str(out))
+        except (TypeError, ValueError):
+            continue
+    # Kaiba's own position ledger is the second record of what it bought: every live position
+    # is opened by apply_fill from Kaiba's buy (or, twice in 2026-09, booked by hand from
+    # Kaiba's own mainnet buy). Take the larger of the two records, never their sum.
+    ledger = 0
+    for (qty_total,) in c.execute(
+        "SELECT qty_total FROM positions WHERE chain=? AND token=? AND mode != 'shadow'",
+        (order.chain.value, order.token),
+    ).fetchall():
+        try:
+            ledger += int(str(qty_total))
+        except (TypeError, ValueError):
+            continue
+    bought = max(bought, ledger)
+    marks = ",".join("?" * len(_SELL_SPENDING_STATES))
+    spent = 0
+    for (amt,) in c.execute(
+        f"SELECT amount_in FROM orders WHERE chain=? AND token=? AND side='sell' AND mode != 'shadow' "
+        f"AND order_id != ? AND state IN ({marks})",
+        (order.chain.value, order.token, order.order_id, *_SELL_SPENDING_STATES),
+    ).fetchall():
+        try:
+            spent += int(str(amt))
+        except (TypeError, ValueError):
+            continue
+    want = int(order.amount_in)
+    if bought <= 0:
+        raise ExecutionRefused(
+            f"{NEVER_SELL_UNBOUGHT}: Kaiba never bought {order.token[:12]} on {order.chain.value}; "
+            "owner rule 2026-10-05"
+        )
+    if want > bought - spent:
+        raise ExecutionRefused(
+            f"{NEVER_SELL_UNBOUGHT}: sell {want} > Kaiba's remaining {bought - spent} "
+            f"(bought {bought}, already selling/sold {spent}); owner rule 2026-10-05"
+        )
+
+
 def submit_gmgn(
     order: Order, conn: sqlite3.Connection | None = None, *, from_wallet: str | None = None
 ) -> SubmitResult:
@@ -484,6 +568,7 @@ def submit_gmgn(
         raise ExecutionRefused(f"no wallet bound for {order.chain.value} in config/risk.yaml")
 
     _check_mode(order)
+    _assert_sell_is_ours(order, c, from_wallet)
     body = gmgn_swap_body(order, wallet)
     _authorize(order, body, wallet)
 
@@ -685,11 +770,55 @@ def _error_detail(stderr: str, stdout: str, limit: int = 1200) -> str:
     return f"{blob[:head]}{marker}{blob[-tail:]}"
 
 
+#: How long a reconcile query may wait for one of OUR OWN transient refusals ("max
+#: inflight", "minimum interval") to clear before giving up until the next pass.
+#:
+#: MEASURED 2026-10-05 on the box: 24 reconcile queries in 3 days were refused
+#: "gmgn: max inflight" (the shared gmgn slots were full of feed and scanner calls), and
+#: ``ord_746dd87e`` (EGTvz...pump) was refused six times in a row, one ops cycle apart:
+#: the buy landed 9 s after the decision and was not BOOKED for another 90 s, so
+#: protection could not see it; it was closed at -79% 30 s after booking. A sent order that is
+#: not yet booked is real money the watchdog is blind to. Waiting for a slot is not
+#: bypassing the limit: the call still only goes when a slot is free. Bounded and short,
+#: and never inside a caller's transaction (sleeping there would hold its write lock).
+RECONCILE_SLOT_WAIT_S = 2.0
+_SLOT_POLL_S = 0.1
+_WAITABLE_REFUSALS = frozenset({"max inflight", "minimum interval"})
+_sleep = time.sleep
+_monotonic = time.monotonic
+
+
+@contextmanager
+def _guarded_patiently(
+    provider: str, endpoint: str, priority: Priority, conn: sqlite3.Connection | None,
+    wait_s: float,
+) -> Iterator[None]:
+    """:func:`guarded`, retrying only a LOCAL max-inflight / min-interval refusal, for at
+    most ``wait_s``. A provider cooldown, a family ban, a 429 or anything raised inside the
+    body is never retried here."""
+    deadline = _monotonic() + max(0.0, wait_s)
+    with ExitStack() as stack:
+        while True:
+            try:
+                stack.enter_context(guarded(provider, endpoint, priority, conn=conn))
+                break
+            except RateLimited as exc:
+                if (
+                    exc.reason not in _WAITABLE_REFUSALS
+                    or getattr(conn, "in_transaction", False)
+                    or _monotonic() + _SLOT_POLL_S > deadline
+                ):
+                    raise
+                _sleep(_SLOT_POLL_S)
+        yield
+
+
 def query_gmgn_order(order: Order, conn: sqlite3.Connection | None = None) -> dict[str, Any]:
     """Ask the provider what happened. The only legitimate way out of UNKNOWN."""
     if not order.provider_order_id:
         raise ExecutionRefused("no provider order id; cannot query")
-    with guarded("gmgn", "trade.query_order", Priority.UNRESOLVED, conn=conn):
+    with _guarded_patiently("gmgn", "trade.query_order", Priority.UNRESOLVED, conn,
+                            RECONCILE_SLOT_WAIT_S):
         return _run_gmgn(
             ["order", "get", "--chain", order.chain.value, "--order-id", order.provider_order_id]
         )
@@ -709,6 +838,7 @@ def submit_direct(order: Order, conn: sqlite3.Connection | None = None) -> Submi
     """
     c = conn or get_conn()
     _check_mode(order)
+    _assert_sell_is_ours(order, c, None)
     try:
         from kaiba.execution.signer import sign_and_send
     except ImportError as exc:

@@ -1,0 +1,4 @@
+interface:
+  display_name: "TwitterAPI Research"
+  short_description: "Research X evidence within Kaiba's data budget"
+  default_prompt: "Use $twitterapi-research to collect timestamped contract-address narrative evidence within the existing data budget."

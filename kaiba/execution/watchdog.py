@@ -1002,6 +1002,41 @@ def configured_max_blind_halt_entries(default: bool = MAX_BLIND_HALT_ENTRIES_DEF
 _MISSING = object()
 
 
+#: kv key prefix for "this token's curve last moved at <ms>", written by the tweet launcher
+#: for tokens it created (they never appear in ``swaps``). Read by :meth:`Watchdog._last_trade_ms`.
+TOKEN_ACTIVITY_PREFIX = "token_activity:"
+
+
+_LANE_BLOCKS: tuple[float, dict[str, Any]] = (0.0, {})
+_LANE_BLOCKS_TTL_S = 5.0
+
+
+def _lane_blocks() -> dict[str, Any]:
+    """``protection.lanes`` from risk.yaml, re-read at most every 5 s.
+
+    ``get_risk()`` parses the YAML on every call and this is consulted up to three times per
+    position per tick; protection tick time is the budget that halts entries when it overruns.
+    """
+    global _LANE_BLOCKS
+    at, blocks = _LANE_BLOCKS
+    if time.monotonic() - at > _LANE_BLOCKS_TTL_S:
+        blocks = dict((get_risk().protection or {}).get("lanes") or {})
+        _LANE_BLOCKS = (time.monotonic(), blocks)
+    return blocks
+
+
+def _lane_cfg(cfg: ProtectionConfig, lane: str) -> ProtectionConfig:
+    """``cfg`` with ``protection.lanes.<lane>`` from risk.yaml applied, or ``cfg`` unchanged."""
+    try:
+        block = _lane_blocks().get(lane)
+        if not block:
+            return cfg
+        return ProtectionConfig.model_validate({**cfg.model_dump(), **dict(block)})
+    except Exception as exc:  # noqa: BLE001 - a bad override must never blind the ladder
+        log.warning("protection.lanes.%s ignored: %s", lane, exc)
+        return cfg
+
+
 class WatchdogState(BaseModel):
     """One position's memory, persisted in ``watchdog_state``.
 
@@ -1933,13 +1968,22 @@ class Watchdog:
             return self._halt_entries_on_blind_timeout
         return configured_max_blind_halt_entries()
 
-    def _position_cfg(self, cfg: ProtectionConfig, state: WatchdogState) -> ProtectionConfig:
-        """Fold ``kaiba_set_protection`` overrides into this position's config.
+    def _position_cfg(
+        self, cfg: ProtectionConfig, state: WatchdogState, position: Position | None = None
+    ) -> ProtectionConfig:
+        """Fold the lane's ladder and ``kaiba_set_protection`` overrides into this position's config.
+
+        Lane overrides (2026-10-06, owner, for ``tweet-launch``: "sell in increments, then sell
+        all if there's no volume after 1 minute") live in ``risk.yaml`` under
+        ``protection.lanes.<lane>`` and replace any ``ProtectionConfig`` field for that lane's
+        positions only. An unreadable or invalid block leaves the global ladder in place.
 
         ``trail_bps`` is a single number and the config holds a tiered table, so the
         override is applied as "use this distance at every tier". That reading is a guess:
         the MCP tool's payload has no documented semantics beyond the field name.
         """
+        if position is not None:
+            cfg = _lane_cfg(cfg, position.lane.value)
         if state.stop_loss_bps is None and state.trail_bps is None:
             return cfg
         update: dict[str, Any] = {}
@@ -2298,9 +2342,23 @@ class Watchdog:
                 "SELECT MAX(ts_ms) AS ts FROM swaps WHERE chain=? AND token=?",
                 (position.chain.value, position.token),
             )
+            # A token we launched ourselves is on nobody's tape: the swaps table only holds
+            # what tracked wallets traded, so for our own fresh curve MAX(ts_ms) is NULL and
+            # the silence rule could never fire. The tweet launcher watches its curves and
+            # writes the last time each one moved here (kaiba/execution/tweet_launch.py).
+            act = fetch_one(
+                self.conn, "SELECT value FROM kv WHERE key = ?",
+                (f"{TOKEN_ACTIVITY_PREFIX}{position.chain.value}:{position.token}",),
+            )
         except sqlite3.Error:
             return None
-        return int(row["ts"]) if row and row["ts"] else None
+        seen = [int(row["ts"])] if row and row["ts"] else []
+        try:
+            if act and act["value"]:
+                seen.append(int(act["value"]))
+        except (TypeError, ValueError):
+            pass
+        return max(seen) if seen else None
 
     def _open_positions(self) -> list[Position]:
         return open_positions(self.conn)
@@ -2496,7 +2554,7 @@ class Watchdog:
         try:
             probe = evaluate(state.to_protection(), price_usd=foreign.price_usd,
                              executable_quote_usd=foreign.executable_quote_usd,
-                             cfg=self._position_cfg(cfg, state))
+                             cfg=self._position_cfg(cfg, state, position))
             ts = now_ms()
             would = probe.reason if probe.sells else None
             last, last_would = self._set_aside_noted.get(position.position_id, (None, None))
@@ -2627,7 +2685,7 @@ class Watchdog:
         depth_ok = self._credible_depth(position, quote, previous)
         probe = evaluate(state.to_protection(), price_usd=quote.price_usd,
                          executable_quote_usd=quote.executable_quote_usd,
-                         cfg=self._position_cfg(cfg, state))
+                         cfg=self._position_cfg(cfg, state, position))
         suspect_stop = (not established and probe.kind is ProtectionKind.EXIT_ALL
                         and (identity is not None or last_price is not None))
         if depth_ok and (not suspect_stop or self._comparable(quote, previous)):
@@ -2796,7 +2854,7 @@ class Watchdog:
             # A token-wide migration waiver cannot hide a SAME established-pool drain.
             migrated_ms=None if comparable else self._migrated_ms(position),
             last_trade_ms=self._last_trade_ms(position),
-            cfg=self._position_cfg(cfg, state),
+            cfg=self._position_cfg(cfg, state, position),
         )
         decided_ms = now_ms()
         state.absorb(protection)

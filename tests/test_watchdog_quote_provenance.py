@@ -439,17 +439,28 @@ def gmgn_cache(*, price=HEALTHY, age=0):
     return stamp
 
 
-@pytest.mark.parametrize("age,usable,basis", [
-    (1000, True, EvidenceBasis.CACHED),
-    (20_000, False, EvidenceBasis.STALE),
-    (-60_000, False, EvidenceBasis.CACHED),
+@pytest.mark.parametrize("age,usable,basis,asks_network", [
+    (1000, True, EvidenceBasis.CACHED, False),
+    # Since 2026-10-01 the adapter reads with a 4 s TTL and NO stale grace
+    # (GmgnPriceSource.EXIT_TTL_S): a 20 s copy is never served, stale-labelled or not; the
+    # network is asked. Stubbed here as "gmgn-cli not installed" so the outcome is
+    # deterministic (unstubbed, a workstation with gmgn-cli got a live price back).
+    (20_000, False, EvidenceBasis.UNAVAILABLE, True),
+    (-60_000, False, EvidenceBasis.CACHED, False),
 ])
-def test_gmgn_adapter_preserves_receipt_age_and_basis(tmp_db, age, usable, basis):
+def test_gmgn_adapter_preserves_receipt_age_and_basis(tmp_db, monkeypatch, age, usable, basis,
+                                                       asks_network):
+    from kaiba.providers import gmgn_cli
+
+    asked = []
+    monkeypatch.setattr(gmgn_cli, "cli_argv", lambda *a, **k: asked.append(1))  # -> None
     stamp = gmgn_cache(age=age)
     quote = wd.GmgnPriceSource().quote(Chain.ROBINHOOD, TOKEN)
+    assert bool(asked) is asks_network
     assert quote.usable is usable
-    assert quote.observed_ms == stamp
     assert quote.basis is basis
+    if not asks_network:
+        assert quote.observed_ms == stamp
 
 
 @pytest.mark.parametrize("age", [60_000, -60_000])

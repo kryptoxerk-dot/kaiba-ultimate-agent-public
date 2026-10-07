@@ -163,7 +163,7 @@ def test_a_timeout_after_the_banner_stays_ambiguous(tmp_db, monkeypatch):
 
 def test_a_4xx_is_still_ambiguous_when_an_order_id_is_present(tmp_db, monkeypatch):
     """Hard evidence of a send outranks the status line. Never retry something live."""
-    _run(monkeypatch, stderr=BANNER + PROCEEDED + "order_id=od10bsc0000001a0c8adcaa\n" + REJECTED)
+    _run(monkeypatch, stderr=BANNER + PROCEEDED + "order_id=od10bsc57184193193fdc5c\n" + REJECTED)
     with pytest.raises(ExecutionAmbiguous):
         executor._run_gmgn(["swap", "--chain", "bsc"], mutating=True)
 

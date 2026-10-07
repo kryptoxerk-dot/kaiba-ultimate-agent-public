@@ -63,21 +63,21 @@ def _rows(conn, order_id):
     return conn.execute("SELECT * FROM orders WHERE order_id=?", (order_id,)).fetchall()
 
 
-def test_a_manual_sell_from_an_owned_wallet_is_sent_from_that_wallet(tmp_db, rh_live):
+def test_a_sell_from_another_wallet_is_refused_because_kaiba_never_bought_there(tmp_db, rh_live):
+    """OWNER RULE 2026-10-05: never sell anything Kaiba did not buy. Before that date this test
+    asserted the opposite (copy_manager sold the owner's copy trades on his wallet)."""
     _, sent = rh_live
     o = order()
-    res = executor.submit(o, tmp_db, from_wallet=OWNER)
-    assert res.state is OrderState.SUBMITTED
-    assert _from(sent[-1]) == OWNER, "--from is the owner's wallet, not Kaiba's"
-    detail = tmp_db.execute("SELECT detail FROM order_events WHERE order_id=? AND state='reserved'",
-                            (o.order_id,)).fetchone()["detail"]
-    assert f"{executor.FROM_WALLET_MARK}{OWNER}" in detail, "the override is on the order's own history"
+    with pytest.raises(executor.ExecutionRefused, match=executor.NEVER_SELL_UNBOUGHT):
+        executor.submit(o, tmp_db, from_wallet=OWNER)
+    assert sent == [] and _rows(tmp_db, o.order_id) == [], "refused before an order row exists"
 
 
-def test_without_the_override_every_order_keeps_the_chain_wallet(tmp_db, rh_live):
-    """Positive control for the test above: the same sell, no override, goes from Kaiba's."""
+def test_without_the_override_every_order_keeps_the_chain_wallet(tmp_db, rh_live, kaiba_bought):
+    """Positive control: a sell of what Kaiba bought goes from Kaiba's own wallet."""
     _, sent = rh_live
     o = order(amount=2000)
+    kaiba_bought(tmp_db, RH, TOKEN, qty=10_000)
     executor.submit(o, tmp_db)
     assert _from(sent[-1]) == KAIBA
     assert "from_wallet" not in str(tmp_db.execute(
@@ -118,15 +118,16 @@ def test_the_direct_lane_cannot_take_the_override(tmp_db, rh_live):
         executor.submit(o, tmp_db, from_wallet=OWNER)
 
 
-def test_a_fill_from_the_other_wallet_never_moves_kaibas_ledger(tmp_db, rh_live, monkeypatch):
-    """Two filled sells of the same token: the owner's is not applied, Kaiba's is."""
+def test_only_kaibas_own_sell_is_sent_and_applied(tmp_db, rh_live, monkeypatch, kaiba_bought):
+    """The owner's sell is refused outright; Kaiba's sell of its own buy fills and is applied."""
     from kaiba.execution import accounting
 
     applied: list[str] = []
     monkeypatch.setattr(accounting, "apply_fill", lambda o, c=None, **kw: applied.append(o.order_id))
+    kaiba_bought(tmp_db, RH, TOKEN, qty=10_000)
     theirs, ours = order(amount=3000), order(amount=4000)
-    executor.submit(theirs, tmp_db, from_wallet=OWNER)
+    with pytest.raises(executor.ExecutionRefused, match=executor.NEVER_SELL_UNBOUGHT):
+        executor.submit(theirs, tmp_db, from_wallet=OWNER)
     executor.submit(ours, tmp_db)
-    assert executor.reconcile(theirs.order_id, tmp_db) is OrderState.FILLED
     assert executor.reconcile(ours.order_id, tmp_db) is OrderState.FILLED
     assert applied == [ours.order_id]

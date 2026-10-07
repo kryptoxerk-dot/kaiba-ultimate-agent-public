@@ -13,6 +13,7 @@ future edit is most likely to quietly break:
 from __future__ import annotations
 
 import sqlite3
+from pathlib import Path
 from decimal import Decimal
 
 import pytest
@@ -690,12 +691,29 @@ def test_projection_degenerates_safely():
     assert tracker.max_free_tier_wallets(0) == 0
 
 
-def test_config_reads_the_lane_thresholds_from_risk_yaml():
+def test_config_reads_the_lane_thresholds_from_risk_yaml(tmp_path, monkeypatch):
+    # The thresholds are the operator's (confluence-5 went 120 s / 5 entities / $50 ->
+    # 1800 s / 2 / $20 on purpose), so this pins the READ, not a value: the shipped file
+    # with its lane params replaced by values no default shares must come back verbatim.
+    import yaml
+
+    from kaiba.core.config import DEFAULT_RISK_PATH
+
+    raw = yaml.safe_load(Path(DEFAULT_RISK_PATH).read_text(encoding="utf-8"))
+    raw["lanes"]["confluence-5"]["params"].update(window_s=777, min_entities=7, min_buy_usd=33)
+    raw["lanes"]["trusted-copy"]["params"]["max_copy_delay_s"] = 13
+    path = tmp_path / "risk.yaml"
+    path.write_text(yaml.safe_dump(raw, sort_keys=False), encoding="utf-8")
+    monkeypatch.setenv("KAIBA_RISK_PATH", str(path))
+
     config = tracker.config_from_risk()
-    assert config.confluence_window_s == 120
-    assert config.confluence_min_entities == 5
-    assert config.confluence_min_buy_usd == Decimal("50")
-    assert config.copy_delay_budget_s == 20
+    default = tracker.DEFAULT_CONFIG
+    assert (default.confluence_window_s, default.confluence_min_entities,
+            default.confluence_min_buy_usd, default.copy_delay_budget_s) != (777, 7, Decimal("33"), 13)
+    assert config.confluence_window_s == 777
+    assert config.confluence_min_entities == 7
+    assert config.confluence_min_buy_usd == Decimal("33")
+    assert config.copy_delay_budget_s == 13
 
 
 def test_webhook_readiness_names_the_blocker():

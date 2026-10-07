@@ -134,6 +134,11 @@ _ALLOWED: frozenset[tuple[str, str]] = frozenset(
         ("track", "kol"),
         ("track", "follow-wallet"),
         ("order", "quote"),
+        # Read-only, recorded in SHADOW by kaiba/ingest/alpha_feeds.py (2026-10-04): the
+        # search-heat ranking (covers robinhood) and a dev wallet's launch record. Both
+        # verified against `gmgn-cli <group> <command> --help` on the box, gmgn-cli 1.6.1.
+        ("market", "hot-searches"),
+        ("portfolio", "created-tokens"),
     }
 )
 
@@ -164,6 +169,9 @@ _TTL: dict[str, tuple[float, float]] = {
     "track.kol": (10.0, 0.0),
     "track.follow_wallet": (10.0, 0.0),
     "quote": (0.0, 0.0),
+    # No grace: a stale ranking re-recorded under a fresh timestamp would fake a sighting.
+    "market.hot_searches": (60.0, 0.0),
+    "portfolio.created_tokens": (300.0, 1800.0),
 }
 
 #: endpoint -> key holding the payload once the optional ``{"code":..,"data":..}`` envelope
@@ -197,6 +205,11 @@ _PAYLOAD_KEY: dict[str, str | None] = {
     "track.kol": "list",
     "track.follow_wallet": "list",
     "quote": None,
+    # MEASURED 2026-10-04: a top-level list of {interval, chain, version, tokens} blocks.
+    "market.hot_searches": None,
+    # MEASURED 2026-10-04: {last_create_timestamp, inner_count, open_count, open_ratio,
+    # creator_ath_info, tokens} -- the summary counts are the point, so keep the whole body.
+    "portfolio.created_tokens": None,
 }
 
 
@@ -1093,6 +1106,37 @@ def portfolio_holdings(
         *_flag("--direction", direction),
     ]
     return _read("portfolio.holdings", args, chain, priority, kw)
+
+
+def portfolio_created_tokens(
+    wallet: str,
+    chain: Chain | str = Chain.SOL,
+    *,
+    order_by: str | None = None,
+    direction: str | None = None,
+    migrate_state: str | None = None,
+    priority: Priority = Priority.DISCOVERY,
+    **kw: Any,
+) -> GmgnResult:
+    """Tokens a developer wallet created, with ATH market cap and graduation status.
+
+    ``order_by`` is ``market_cap``/``token_ath_mc``; ``migrate_state`` is
+    ``migrated``/``non_migrated``. API-key auth. The whole object is returned. MEASURED
+    2026-10-04 (gmgn-cli 1.6.1, sol): ``{last_create_timestamp, inner_count, open_count,
+    open_ratio, creator_ath_info, tokens}``, where ``inner_count``/``open_count`` are the
+    dev's still-on-curve / graduated totals and ``tokens`` is capped at 100 rows however
+    many the dev made (1,566 in the sample).
+    """
+    args = [
+        "portfolio",
+        "created-tokens",
+        "--wallet",
+        wallet,
+        *_flag("--order-by", order_by),
+        *_flag("--direction", direction),
+        *_flag("--migrate-state", migrate_state),
+    ]
+    return _read("portfolio.created_tokens", args, chain, priority, kw)
 
 
 # ------------------------------------------------------------------------------ token
@@ -2144,6 +2188,48 @@ def market_search(
     return _read("market.search", args, chain, priority, kw)
 
 
+def market_hot_searches(
+    chains: Chain | str | Sequence[Chain | str] = Chain.SOL,
+    *,
+    interval: str = "5m",
+    limit: int = 100,
+    filters: Sequence[str] | None = None,
+    priority: Priority = Priority.DISCOVERY,
+    **kw: Any,
+) -> GmgnResult:
+    """Most-searched tokens, ranked by search heat (``visiting_count``). API-key auth.
+
+    One call covers several chains (``--chain`` repeated), so asking for sol and robinhood
+    together costs one request, not two. ``interval`` is ``1m``/``5m``/``1h``/``6h``/``24h``;
+    ``limit`` is per chain (max 500). With no ``filters`` the CLI applies its own defaults
+    (sol: renounced/frozen; EVM: not_honeypot/verified/renounced).
+
+    MEASURED 2026-10-04 (gmgn-cli 1.6.1): the payload is a top-level LIST of
+    ``{interval, chain, version, tokens}`` blocks; each token carries a 1-based ``rank``
+    and the long-form fields of ``market trending``, timestamps in SECONDS.
+    """
+    wanted = [chains] if isinstance(chains, str) else list(chains)
+    values = [_chain_value(c) for c in wanted]
+    if not values or any(v is None for v in values):
+        return _unavailable(
+            "market.hot_searches",
+            Failure.REFUSED_LOCALLY,
+            f"unknown chain in {wanted!r}; gmgn supports {', '.join(c.value for c in Chain)}",
+            conn=kw.get("conn"),
+        )
+    args = [
+        "market",
+        "hot-searches",
+        *_repeated("--chain", values),
+        "--interval",
+        interval,
+        "--limit",
+        str(limit),
+        *_repeated("--filter", filters),
+    ]
+    return run_read("market.hot_searches", args, priority=priority, **kw)
+
+
 # ------------------------------------------------------------------------------ quote
 
 
@@ -2206,6 +2292,7 @@ __all__ = [
     "credential_source",
     "feed_rug_ratio",
     "flatten_payload",
+    "market_hot_searches",
     "market_search",
     "market_signal",
     "market_trending",
@@ -2213,6 +2300,7 @@ __all__ = [
     "normalize_security",
     "order_quote",
     "portfolio_activity",
+    "portfolio_created_tokens",
     "portfolio_holdings",
     "portfolio_profits",
     "portfolio_stats",

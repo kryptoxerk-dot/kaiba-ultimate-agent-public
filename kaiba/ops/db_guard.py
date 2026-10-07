@@ -27,6 +27,15 @@ and does three things each pass:
   stays bad, and say so when it recovers.
 
 It deletes nothing. What to delete is an operator's decision.
+
+2026-10-04: it also STOPS AD-HOC READERS that pin the log. An analysis script run over ssh
+held one read transaction for 87 minutes, 355,415 frames behind, and the WAL reached 4.4 GB
+before anyone noticed. Warning was not enough. When the WAL is over ``evict_wal_bytes`` and
+the checkpoint is refused, a reader at least ``evict_frames_behind`` frames behind is sent
+SIGTERM, then SIGKILL after ``evict_grace_s`` if it is still alive (a process inside a long
+sqlite call ignores SIGTERM). Only processes OUTSIDE a ``kaiba-*.service`` systemd unit are
+eligible; trading, protection, ingest, the sniper, the backup and the dashboard are never
+touched, and a process whose unit cannot be read is treated as protected.
 """
 
 from __future__ import annotations
@@ -34,8 +43,10 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import re
 import shutil
+import signal
 import socket
 import sqlite3
 import struct
@@ -61,6 +72,28 @@ DISK_CRIT_FREE_BYTES = 3 * GIB
 #: service's own busy_timeout is 10 s, so writers wait through this rather than failing.
 BUSY_MS = 3000
 REPEAT_S = 3600
+#: Stop an ad-hoc reader only while the WAL is over this AND the checkpoint was refused.
+EVICT_WAL_BYTES = int(1.5 * GIB)
+#: ...and only a reader at least this many frames behind the log head. One frame is a
+#: 4 KiB page plus a 24-byte header, so 100k frames is ~400 MB of log one reader holds back.
+#: Live services measured 0-1,016 frames behind on 2026-10-04; the evicted script 355,415.
+EVICT_FRAMES_BEHIND = 100_000
+EVICT_GRACE_S = 10.0
+#: A systemd unit this agent runs. A reader inside one is never stopped.
+_PROTECTED_UNIT = re.compile(r"^kaiba-[\w.@-]+\.service$")
+#: Second valve (2026-10-04): when the WAL is past this and the checkpoint is refused with no
+#: ad-hoc pinner to stop, restart the most-behind RESTARTABLE kaiba service. MEASURED that
+#: day: with only service readers left, kaiba-scan (43,341 frames behind) and kaiba-ops
+#: (an `entry_study` read) kept the log from ever resetting; WAL 4.8 GB and growing. A
+#: restart of those two dropped it to 512 MB within seconds.
+RESTART_WAL_BYTES = 3 * GIB
+RESTART_FRAMES_BEHIND = 10_000
+RESTART_COOLDOWN_S = 1800
+#: The only units the guard may restart: neither holds money. Protection, engine, snipe and
+#: ingest are never restarted by the guard -- a pinned log there pages a human instead.
+RESTARTABLE_UNITS = frozenset({"kaiba-scan.service", "kaiba-ops.service"})
+#: The guard runs on Linux; the fallback only lets the tests import it on Windows.
+_SIGKILL = getattr(signal, "SIGKILL", 9)
 
 OK, WARN, CRIT = "ok", "warn", "crit"
 _RANK = {OK: 0, WARN: 1, CRIT: 2}
@@ -96,6 +129,8 @@ class Report:
     checkpoint_error: str | None = None
     wal_header: dict[str, Any] | None = None
     readers: list[dict[str, Any]] = field(default_factory=list)
+    evicted: list[dict[str, Any]] = field(default_factory=list)
+    restarted: dict[str, Any] | None = None
     alert: str | None = None
     delivered: bool = False
 
@@ -198,6 +233,148 @@ def wal_readers(db_path: Path, header: dict[str, Any] | None) -> list[dict[str, 
     return readers
 
 
+def _cgroup(pid: int) -> str | None:
+    """The process's cgroup v2 path (``0::/...``), or None if it cannot be read."""
+    try:
+        for line in Path(f"/proc/{pid}/cgroup").read_text().splitlines():
+            if line.startswith("0::"):
+                return line[3:]
+        return None
+    except OSError:
+        return None
+
+
+def is_protected(cgroup: str | None) -> bool:
+    """True for a reader inside a ``kaiba-*.service`` unit, or one we cannot classify."""
+    if not cgroup:
+        return True
+    return any(_PROTECTED_UNIT.match(part) for part in cgroup.split("/"))
+
+
+def select_evictions(
+    readers: list[dict[str, Any]],
+    *,
+    frames_behind: int,
+    own_pid: int,
+    cgroup_of: Callable[[int], str | None] = _cgroup,
+) -> list[dict[str, Any]]:
+    """The readers to stop: far behind, not this process, not pid 1, not a kaiba service."""
+    chosen = []
+    for r in readers:
+        pid = int(r.get("pid") or 0)
+        if pid <= 1 or pid == own_pid or int(r.get("frames_behind") or 0) < frames_behind:
+            continue
+        cg = cgroup_of(pid)
+        if is_protected(cg):
+            continue
+        chosen.append({**r, "cgroup": cg})
+    return chosen
+
+
+def _alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def evict(
+    targets: list[dict[str, Any]],
+    *,
+    grace_s: float = EVICT_GRACE_S,
+    kill: Callable[[int, int], None] = os.kill,
+    alive: Callable[[int], bool] = _alive,
+    cmdline: Callable[[int], str] = _cmdline,
+    sleep: Callable[[float], None] = time.sleep,
+) -> list[dict[str, Any]]:
+    """SIGTERM each target, then SIGKILL whatever is still alive (and still the same
+    process: same command line) after ``grace_s``. Returns what was done, per target."""
+    done: list[dict[str, Any]] = []
+    for t in targets:
+        rec = {"pid": t["pid"], "cmd": t.get("cmd", "?"), "frames_behind": t.get("frames_behind"),
+               "signals": []}
+        try:
+            kill(int(t["pid"]), signal.SIGTERM)
+            rec["signals"].append("TERM")
+        except ProcessLookupError:
+            rec["signals"].append("gone")
+        except OSError as exc:
+            rec["error"] = f"{type(exc).__name__}: {exc}"
+        done.append(rec)
+    if any("TERM" in r["signals"] for r in done):
+        sleep(grace_s)
+    for rec in done:
+        if "TERM" not in rec["signals"]:
+            continue
+        pid = int(rec["pid"])
+        if alive(pid) and cmdline(pid) == rec["cmd"]:
+            try:
+                kill(pid, _SIGKILL)
+                rec["signals"].append("KILL")
+            except ProcessLookupError:
+                pass
+            except OSError as exc:
+                rec["error"] = f"{type(exc).__name__}: {exc}"
+        log.warning("db_guard: stopped ad-hoc reader pid %s (%s), %s frames behind: %s",
+                    pid, rec["cmd"], rec["frames_behind"], "+".join(rec["signals"]))
+    return done
+
+
+def unit_of(cgroup: str | None) -> str | None:
+    """The systemd unit name in a cgroup path (its last ``*.service`` component), or None."""
+    if not cgroup:
+        return None
+    units = [p for p in cgroup.split("/") if p.endswith(".service")]
+    return units[-1] if units else None
+
+
+def select_restart(
+    readers: list[dict[str, Any]],
+    *,
+    frames_behind: int,
+    cgroup_of: Callable[[int], str | None],
+    last_restart_ms: dict[str, int],
+    now_ms: int,
+    cooldown_s: int,
+) -> dict[str, Any] | None:
+    """The most-behind reader in a RESTARTABLE unit that is far enough behind and off cooldown."""
+    best = None
+    for r in readers:
+        unit = unit_of(cgroup_of(int(r.get("pid") or 0)))
+        if unit not in RESTARTABLE_UNITS or int(r.get("frames_behind") or 0) < frames_behind:
+            continue
+        if now_ms - int(last_restart_ms.get(unit, 0)) < cooldown_s * 1000:
+            continue
+        if best is None or int(r["frames_behind"]) > int(best["frames_behind"]):
+            best = {**r, "unit": unit}
+    return best
+
+
+def _orders_in_flight(db_path: Path) -> int | None:
+    """Orders reserved/submitted/unknown; None if the database cannot be read (fail closed)."""
+    try:
+        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=5)
+        try:
+            row = conn.execute(
+                "SELECT COUNT(*) FROM orders WHERE state IN ('reserved','submitted','unknown')"
+            ).fetchone()
+            return int(row[0])
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        return None
+
+
+def _restart_unit(unit: str) -> bool:
+    import subprocess
+
+    done = subprocess.run(["systemctl", "--user", "restart", unit], capture_output=True, timeout=60)
+    return done.returncode == 0
+
+
 def assess(
     reading: Reading, *, wal_alert_bytes: int, disk_warn_free: int, disk_crit_free: int
 ) -> tuple[str, list[str]]:
@@ -279,6 +456,17 @@ def render(report: Report, why: str, host: str) -> str:
         )
     elif report.checkpoint_error:
         lines.append(f"checkpoint error: {report.checkpoint_error}")
+    if report.restarted:
+        r = report.restarted
+        lines.append(
+            f"RESTARTED {r['unit']} (pid {r['pid']}, {int(r.get('frames_behind') or 0):,} frames behind): "
+            f"{'ok' if r.get('ok') else 'FAILED'}"
+        )
+    for e in report.evicted[:4]:
+        lines.append(
+            f"STOPPED ad-hoc reader pid {e['pid']} ({e.get('cmd', '?')}), "
+            f"{int(e.get('frames_behind') or 0):,} frames behind: {'+'.join(e.get('signals', []))}"
+        )
     pinners = [r for r in report.readers if r.get("frames_behind", 0) > 0]
     for r in pinners[:4]:
         lines.append(
@@ -318,6 +506,21 @@ def run(
     now_ms: int | None = None,
     do_checkpoint: bool = True,
     do_alert: bool = True,
+    do_evict: bool = True,
+    evict_wal_bytes: int = EVICT_WAL_BYTES,
+    evict_frames_behind: int = EVICT_FRAMES_BEHIND,
+    evict_grace_s: float = EVICT_GRACE_S,
+    cgroup_of: Callable[[int], str | None] = _cgroup,
+    kill: Callable[[int, int], None] = os.kill,
+    alive: Callable[[int], bool] = _alive,
+    sleep: Callable[[float], None] = time.sleep,
+    readers_of: Callable[[Path, dict[str, Any] | None], list[dict[str, Any]]] | None = None,
+    do_restart: bool = True,
+    restart_wal_bytes: int = RESTART_WAL_BYTES,
+    restart_frames_behind: int = RESTART_FRAMES_BEHIND,
+    restart_cooldown_s: int = RESTART_COOLDOWN_S,
+    restart_unit: Callable[[str], bool] = _restart_unit,
+    orders_in_flight: Callable[[Path], int | None] = _orders_in_flight,
 ) -> Report:
     now_ms = int(time.time() * 1000) if now_ms is None else now_ms
     before = measure(db_path, disk_usage)
@@ -335,7 +538,54 @@ def run(
         disk_warn_free=disk_warn_free,
         disk_crit_free=disk_crit_free,
     )
+    readers_of = readers_of or wal_readers
     header = read_wal_header(db_path)
+    readers = readers_of(db_path, header) if (ckpt and ckpt[0]) or level != OK else []
+    evicted: list[dict[str, Any]] = []
+    if do_evict and ckpt and ckpt[0] and before.wal_bytes > evict_wal_bytes:
+        targets = select_evictions(readers, frames_behind=evict_frames_behind,
+                                   own_pid=os.getpid(), cgroup_of=cgroup_of)
+        if targets:
+            evicted = evict(targets, grace_s=evict_grace_s, kill=kill, alive=alive, sleep=sleep)
+            try:
+                ckpt = checkpoint(db_path, busy_ms)
+                ckpt_error = None
+            except sqlite3.Error as exc:
+                ckpt_error = f"{type(exc).__name__}: {exc}"
+            after = measure(db_path, disk_usage)
+            level, reasons = assess(after, wal_alert_bytes=wal_alert_bytes,
+                                    disk_warn_free=disk_warn_free, disk_crit_free=disk_crit_free)
+            header = read_wal_header(db_path)
+            readers = readers_of(db_path, header) if (ckpt and ckpt[0]) or level != OK else []
+    restarted: dict[str, Any] | None = None
+    state_path = state_path or default_state_path(db_path)
+    restarts_state = dict(_load_state(state_path).get("restarts") or {})
+    if do_restart and ckpt and ckpt[0] and after.wal_bytes > restart_wal_bytes:
+        pick = select_restart(readers, frames_behind=restart_frames_behind, cgroup_of=cgroup_of,
+                              last_restart_ms=restarts_state, now_ms=now_ms,
+                              cooldown_s=restart_cooldown_s)
+        if pick is not None:
+            inflight = orders_in_flight(db_path)
+            if inflight == 0:
+                ok = bool(restart_unit(pick["unit"]))
+                restarted = {"unit": pick["unit"], "pid": pick["pid"],
+                             "frames_behind": pick.get("frames_behind"), "ok": ok}
+                restarts_state[pick["unit"]] = now_ms
+                log.warning("db_guard: restarted %s (pid %s, %s frames behind): %s",
+                            pick["unit"], pick["pid"], pick.get("frames_behind"), ok)
+                sleep(5.0)
+                try:
+                    ckpt = checkpoint(db_path, busy_ms)
+                    ckpt_error = None
+                except sqlite3.Error as exc:
+                    ckpt_error = f"{type(exc).__name__}: {exc}"
+                after = measure(db_path, disk_usage)
+                level, reasons = assess(after, wal_alert_bytes=wal_alert_bytes,
+                                        disk_warn_free=disk_warn_free, disk_crit_free=disk_crit_free)
+                header = read_wal_header(db_path)
+                readers = readers_of(db_path, header) if (ckpt and ckpt[0]) or level != OK else []
+            else:
+                reasons.append(f"would restart {pick['unit']} but orders in flight: {inflight}")
     report = Report(
         before=before,
         after=after,
@@ -344,18 +594,24 @@ def run(
         checkpoint=ckpt,
         checkpoint_error=ckpt_error,
         wal_header=header,
-        readers=wal_readers(db_path, header) if (ckpt and ckpt[0]) or level != OK else [],
+        readers=readers,
+        evicted=evicted,
+        restarted=restarted,
     )
     if not do_alert:
+        if restarted:
+            _save_state(state_path, {**_load_state(state_path), "restarts": restarts_state})
         return report
 
-    state_path = state_path or default_state_path(db_path)
     state = _load_state(state_path)
     why = due_alert(state, level, now_ms, repeat_s)
+    if (evicted or restarted) and not why:
+        why = "evicted"  # stopping or restarting a process is always announced
     if why:
         report.alert = render(report, why, socket.gethostname())
         report.delivered = bool((notify or _default_notify)(report.alert))
-    new_state = {"level": level, "last_alert_ms": state.get("last_alert_ms", 0)}
+    new_state = {"level": level, "last_alert_ms": state.get("last_alert_ms", 0),
+                 "restarts": restarts_state}
     if why and report.delivered:
         new_state["last_alert_ms"] = now_ms
     elif why and not report.delivered:
@@ -373,6 +629,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--wal-alert-gb", type=float, default=WAL_ALERT_BYTES / GIB)
     parser.add_argument("--disk-warn-gb", type=float, default=DISK_WARN_FREE_BYTES / GIB)
     parser.add_argument("--disk-crit-gb", type=float, default=DISK_CRIT_FREE_BYTES / GIB)
+    parser.add_argument("--no-evict", action="store_true", help="never stop ad-hoc readers")
+    parser.add_argument("--evict-wal-gb", type=float, default=EVICT_WAL_BYTES / GIB)
+    parser.add_argument("--evict-frames", type=int, default=EVICT_FRAMES_BEHIND)
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 
@@ -389,6 +648,10 @@ def main(argv: list[str] | None = None) -> int:
         disk_crit_free=int(args.disk_crit_gb * GIB),
         do_checkpoint=not args.dry_run,
         do_alert=not args.dry_run,
+        do_evict=not (args.dry_run or args.no_evict),
+        do_restart=not (args.dry_run or args.no_evict),
+        evict_wal_bytes=int(args.evict_wal_gb * GIB),
+        evict_frames_behind=args.evict_frames,
     )
     out = asdict(report)
     sys.stdout.write(json.dumps(out, default=str) + "\n")

@@ -20,6 +20,9 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 
+from kaiba.learning.fabricated import RULE as FABRICATED_RULE
+from kaiba.learning.fabricated import is_fabricated_outcome
+
 VERSION = 'loss-review-v1'
 
 
@@ -59,8 +62,14 @@ def build_reviews(conn: sqlite3.Connection, *, cutoff_ms: int, mode: str | None 
     """One record per losing closed position. Caller owns the read snapshot."""
     positions = _rows(conn, 'SELECT * FROM positions WHERE closed_ms IS NOT NULL AND closed_ms<? ORDER BY closed_ms,position_id', (cutoff_ms,))
     losses, invalid = [], []
+    fabricated: Counter = Counter()
     for p in positions:
         if mode is not None and p['mode'] != mode:
+            continue
+        if is_fabricated_outcome(p['exit_reason'], p['mode']):
+            # A paper write-off with no sell modelled: its -100% was booked, not observed,
+            # so it is not a loss to review. Counted, never dropped silently.
+            fabricated[p['mode']] += 1
             continue
         try:
             pnl = int(p['realized_native'])
@@ -143,7 +152,7 @@ def build_reviews(conn: sqlite3.Connection, *, cutoff_ms: int, mode: str | None 
         review = {'version': VERSION, 'position_id': pid, 'chain': p['chain'], 'mode': p['mode'], 'lane': p['lane'], 'token': p['token'], 'opened_ms': p['opened_ms'], 'closed_ms': p['closed_ms'], 'pnl_native': p['realized_native'], 'recorded_return_pct': pct, 'exit_reason_data': p['exit_reason'], 'canonical_trade_ids': [x['trade_id'] for x in ts], 'decision_id': d['decision_id'] if d else None, 'entry_confidence': d['confidence'] if d else None, 'confidence_semantics': 'not assumed to be a calibrated win probability', 'entry_dossier_grade': d['dossier_grade'] if d else None, 'entry_thesis_data': str(d['thesis'])[:500] if d else None, 'linked_order_ids': [o['order_id'] for o in os_], 'entry_legs': len(buys), 'source_signals': source_signals, 'incident_evidence': ie, 'mark_coverage': marks.get(pid), 'observed_flags': sorted(set(flags)), 'evidence_gaps': sorted(set(gaps)), 'causal_verdict': 'UNPROVEN', 'counterfactual_exit_quality': 'UNAVAILABLE: no executable continuation comparison performed', 'learning_actions': actions}
         review['evidence_fingerprint'] = hashlib.sha256(json.dumps(review, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
         reviews.append(review)
-    return {'version': VERSION, 'cutoff_ms': cutoff_ms, 'population_rule': 'closed positions with negative recorded realized_native; live/shadow kept separate', 'counts': dict(Counter(r['mode'] for r in reviews)), 'evidence_gap_counts': dict(Counter(g for r in reviews for g in r['evidence_gaps'])), 'observed_flag_counts': dict(Counter(g for r in reviews for g in r['observed_flags'])), 'unreviewable_positions': invalid, 'reviews': reviews}
+    return {'version': VERSION, 'cutoff_ms': cutoff_ms, 'population_rule': 'closed positions with negative recorded realized_native; live/shadow kept separate; ' + FABRICATED_RULE, 'counts': dict(Counter(r['mode'] for r in reviews)), 'fabricated_outcomes_excluded': dict(fabricated), 'evidence_gap_counts': dict(Counter(g for r in reviews for g in r['evidence_gaps'])), 'observed_flag_counts': dict(Counter(g for r in reviews for g in r['observed_flags'])), 'unreviewable_positions': invalid, 'reviews': reviews}
 
 
 def _atomic_text(path: Path, text: str) -> None:
@@ -174,7 +183,7 @@ def write_reviews(report: dict[str, Any], output: Path) -> dict[str, int]:
     for r in report['reviews']:
         writer.writerow({k: '; '.join(r[k]) if isinstance(r[k], list) else r[k] for k in fields})
     _atomic_text(output / 'reviews.csv', handle.getvalue())
-    manifest = {'version': VERSION, 'cutoff_ms': report['cutoff_ms'], 'counts': report['counts'], 'fingerprints': fingerprints, 'unreviewable_positions': report['unreviewable_positions']}
+    manifest = {'version': VERSION, 'cutoff_ms': report['cutoff_ms'], 'counts': report['counts'], 'fabricated_outcomes_excluded': report.get('fabricated_outcomes_excluded', {}), 'fingerprints': fingerprints, 'unreviewable_positions': report['unreviewable_positions']}
     _atomic_text(manifest_path, json.dumps(manifest, indent=2))
     return {'new': new, 'updated': changed, 'total': len(fingerprints)}
 
@@ -193,7 +202,7 @@ def main() -> int:
         conn.rollback(); conn.close()
     delta = write_reviews(report, args.output)
     if delta['new'] or delta['updated']:
-        print(json.dumps({'review_coverage': report['counts'], 'changes': delta, 'evidence_gaps': report['evidence_gap_counts'], 'flags': report['observed_flag_counts'], 'causal_findings': 'UNPROVEN unless separately validated; no live parameter changes'}, sort_keys=True))
+        print(json.dumps({'review_coverage': report['counts'], 'fabricated_outcomes_excluded': report['fabricated_outcomes_excluded'], 'changes': delta, 'evidence_gaps': report['evidence_gap_counts'], 'flags': report['observed_flag_counts'], 'causal_findings': 'UNPROVEN unless separately validated; no live parameter changes'}, sort_keys=True))
     return 0
 
 

@@ -24,20 +24,28 @@ Manual deploys by smart wallets present early, which is what sets that bar:
 On sol the bar earns its keep: a manual deploy with smart money matches the launchpad
 baseline (8.4% vs 8.0%) while one with none collapses to 1.8%.
 
-**The volume half is NOT implemented.** ``volume_24h_usd`` is UNKNOWN on 100% of the
-tokens we hold dossiers for -- the field is never populated -- and a threshold against a
-field nobody fills is a gate that either never fires or always does, depending which way
-the ``None`` falls. Gating on wallets alone is stated here rather than half-built.
+The volume half was implemented 2026-10-05, once ``dyor`` began populating
+``volume_24h_usd``: a manual deploy also needs a KNOWN, fresh 24h volume at or above
+``manual_min_volume_24h_usd`` (0 -- no threshold has been measured). Unknown volume refuses;
+``tests/test_audit_volume_policy.py`` is the reproduction that found it missing.
 """
 
 from __future__ import annotations
 
+from decimal import Decimal
+
 import pytest
 
-from kaiba.core.schemas import Chain, Lane, Token
+from kaiba.core.schemas import (
+    EvidenceBasis,
+    Lane,
+    Measure,
+    Receipt,
+    Token,
+)
 from kaiba.execution import lanes
-from tests.test_bsc_lane_inputs import BSC, _ctx, _three_smart_buyers, _tok
 from kaiba.intelligence import tracker
+from tests.test_bsc_lane_inputs import BSC, _ctx, _three_smart_buyers, _tok
 
 
 def ctx_with(conn, *, launchpad: str | None, token_n: int, smart: int = 3, **params):
@@ -83,10 +91,34 @@ def test_a_manual_deploy_is_refused_on_the_normal_bar(tmp_db):
     assert lanes.sm_trenches(ctx_with(tmp_db, launchpad=None, token_n=61)) is None
 
 
+def with_volume(ctx, usd: str | None):
+    """The same context with a known (or, for None, unknown) fresh 24h volume."""
+    if usd is None:
+        measure = Measure.unknown()
+    else:
+        measure = Measure(
+            value=Decimal(usd), basis=EvidenceBasis.PROVIDER_REPORTED,
+            receipt=Receipt(provider="fixture", endpoint="dossier", observed_at_ms=ctx.now_ms),
+            freshness_budget_s=86_400,
+        )
+    return ctx.model_copy(update={"dossier": ctx.dossier.model_copy(update={"volume_24h_usd": measure})})
+
+
 def test_a_manual_deploy_passes_when_the_bar_is_met(tmp_db):
-    """The owner's escape hatch: really good wallets get a manual deploy in."""
+    """The owner's escape hatch: really good wallets AND known volume get a manual deploy in."""
     ctx = ctx_with(tmp_db, launchpad=None, token_n=62, manual_min_smart_degen=3)
-    assert lanes.sm_trenches(ctx) is not None, "the escape hatch does not open"
+    assert lanes.sm_trenches(with_volume(ctx, "25000")) is not None, "the escape hatch does not open"
+    assert lanes.sm_trenches(with_volume(ctx, None)) is None, "wallets alone opened it"
+
+
+def test_the_manual_volume_floor_is_a_parameter(tmp_db):
+    """A measured floor, when one exists, is configuration -- and it binds only manual deploys."""
+    ctx = ctx_with(tmp_db, launchpad=None, token_n=66, manual_min_smart_degen=3,
+                   manual_min_volume_24h_usd=10_000)
+    assert lanes.sm_trenches(with_volume(ctx, "9999")) is None
+    assert lanes.sm_trenches(with_volume(ctx, "10000")) is not None
+    launchpad = ctx_with(tmp_db, launchpad="pump.fun", token_n=67, manual_min_volume_24h_usd=10_000)
+    assert lanes.sm_trenches(with_volume(launchpad, None)) is not None, "the floor leaked onto launchpads"
 
 
 @pytest.mark.parametrize("blank", ["", "   ", None])

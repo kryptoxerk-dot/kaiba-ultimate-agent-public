@@ -45,9 +45,20 @@ def aged_position(conn, *, mode: LaneMode, age_s: float, token: str = TOKEN,
 
 
 UNPRICEABLE = wd.PriceQuote.unavailable("no source could price this")
-PRICEABLE = wd.PriceQuote(price_usd=__import__("decimal").Decimal("0.5"),
+
+
+def priceable() -> wd.PriceQuote:
+    """A usable quote observed NOW.
+
+    Built per test, not at import: ``observed_ms`` defaults to the construction time, so a
+    module-level quote went stale ~15 s into a full-suite run, stopped being ``usable``,
+    and the "left alone" test then (correctly) saw an abandon.
+    """
+    quote = wd.PriceQuote(price_usd=__import__("decimal").Decimal("0.5"),
                           basis=__import__("kaiba.core.schemas", fromlist=["EvidenceBasis"])
                           .EvidenceBasis.PROVIDER_REPORTED)
+    assert quote.usable  # positive control: the guard under test sees a priceable position
+    return quote
 
 
 # ------------------------------------------------------------------ the exclusion
@@ -87,7 +98,7 @@ def test_a_shadow_we_can_still_price_is_left_alone(tmp_db):
     """Age alone is not a reason: a position we can follow is doing its job."""
     position = aged_position(tmp_db, mode=LaneMode.SHADOW, age_s=40 * 3600)
     dog = wd.Watchdog(tmp_db, price_source=wd.NullPriceSource())
-    assert dog._abandon_unpriceable_shadow(position, PRICEABLE) is False
+    assert dog._abandon_unpriceable_shadow(position, priceable()) is False
     assert wd.open_positions(tmp_db)
 
 

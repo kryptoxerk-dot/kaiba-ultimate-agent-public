@@ -571,13 +571,25 @@ def test_a_deleted_block_keeps_the_policy(sized, tmp_db):
     )
 
 
-def test_the_shipped_file_agrees_with_the_code_default():
-    """The operator may retune it, but what ships must parse and must not widen anything."""
-    raw = yaml.safe_load(
-        (Path(__file__).resolve().parents[1] / "config" / "risk.yaml").read_text(encoding="utf-8")
-    )
+def test_the_shipped_file_agrees_with_the_code_default(monkeypatch):
+    """The operator may retune it, but what ships must parse and must not widen anything.
+
+    The block is an OVERRIDE, not the policy: ``_concentration_policy`` documents that the
+    code default is the authority because ``save_risk`` drops undeclared keys -- and that
+    is what happened (a production-mirror rewrite on 2026-09-24 removed it). So a shipped
+    file WITHOUT the block must resolve to exactly the code default; one WITH it must
+    parse and only ever shrink.
+    """
+    shipped = Path(__file__).resolve().parents[1] / "config" / "risk.yaml"
+    raw = yaml.safe_load(shipped.read_text(encoding="utf-8"))
     block = raw.get("concentration")
-    assert isinstance(block, dict), "the shipped risk file must carry the policy explicitly"
+    if block is None:
+        monkeypatch.setenv("KAIBA_RISK_PATH", str(shipped))
+        assert _concentration_policy() == (
+            CONCENTRATION_LADDER, CONCENTRATION_ABOVE_LADDER, CONCENTRATION_UNKNOWN,
+        )
+        return
+    assert isinstance(block, dict), "a shipped concentration block must be a mapping"
     # <= 1: this mechanism only ever shrinks. It is 1.0 since 2026-09-22 -- see
     # CONCENTRATION_UNKNOWN for the two measurements that moved it off 0.9.
     assert Decimal(str(block["unknown_multiplier"])) <= Decimal(1)
@@ -598,5 +610,8 @@ def test_the_numbers_are_labelled_invented():
     config_text = (
         Path(__file__).resolve().parents[1] / "config" / "risk.yaml"
     ).read_text(encoding="utf-8")
-    block = config_text[config_text.index("Launch-wave concentration") : config_text.index("chains:")]
-    assert "INVENTED" in block
+    # The file's copy is optional (see test_the_shipped_file_agrees_with_the_code_default);
+    # when it ships, its numbers carry the same label.
+    if "\nconcentration:" in config_text:
+        block = config_text[config_text.index("Launch-wave concentration") : config_text.index("chains:")]
+        assert "INVENTED" in block

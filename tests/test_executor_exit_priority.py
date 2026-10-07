@@ -48,8 +48,10 @@ def _order(side: Side):
     )
 
 
-def test_a_sell_reserves_the_swap_bucket_at_exit_priority(captured_priority, tmp_db):
-    executor.submit_gmgn(_order(Side.SELL), tmp_db)
+def test_a_sell_reserves_the_swap_bucket_at_exit_priority(captured_priority, tmp_db, kaiba_bought):
+    o = _order(Side.SELL)
+    kaiba_bought(tmp_db, o.chain, o.token)
+    executor.submit_gmgn(o, tmp_db)
     swaps = [p for prov, ep, p in captured_priority if ep == "trade.swap"]
     assert swaps == [Priority.EXIT], f"a SELL must reserve at EXIT, got {swaps}"
 

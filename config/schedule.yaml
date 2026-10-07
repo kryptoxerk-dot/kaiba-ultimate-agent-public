@@ -173,6 +173,57 @@ jobs:
     interval_s: 21600
     timeout_s: 900
 
+  signal_audit:
+    # The daily self-audit (kaiba/learning/signal_audit.py): replay EVERY sm-trenches and
+    # launch-snipe signal of the last `days` with the live exit ladder, a 30 s entry latency,
+    # 12 s exit fills and 3.25%/leg cost, then score each signal property in bands on the
+    # older and newer halves. Records only; the operator agent reads it (kaiba_signal_audit).
+    # MEASURED 2026-10-05 (first run, by hand): replay -13.1%/trade on sol vs live -14.6%,
+    # so the replay is calibrated; 982 signals took about 10 minutes.
+    # interval 86400: one scorecard a day; the halves move slowly and a faster cadence only
+    # re-reads the same tape. timeout 1500: under lock_stale_s (1800); the run stops itself
+    # 90 s before its deadline and records a labelled partial.
+    enabled: true
+    interval_s: 86400
+    timeout_s: 1500
+    lanes: "sm-trenches,launch-snipe"
+    chains: "sol,robinhood,bsc"
+    days: 12
+    max_signals: 2000
+  x_narrative:
+    # Read-only X search for each token our live lanes signal on, by contract address, at signal
+    # time (kaiba/ingest/x_narrative.py). Feeds x_posts_pre / x_followers_pre in signal_audit.
+    # Backend: TWITTERAPI_IO_KEY (configured; MEASURED 2026-10-05: HTTP 402 until topped up) or
+    # X_BEARER_TOKEN. A 401/402 parks it for an hour. daily_query_cap 400 ~ 8,000 posts ~ $1.2/day
+    # on twitterapi.io. interval 120: signals live ~3 min; a 10 min window plus a 6 h per-token
+    # cooldown means each token is searched once, near its signal.
+    enabled: true
+    interval_s: 120
+    timeout_s: 110
+    lanes: "sm-trenches,launch-snipe"
+    chains: "sol,robinhood,bsc"
+    max_tokens: 8
+    daily_query_cap: 400
+  fill_costs:
+    # Decode what every live fill actually paid (kaiba/execution/fill_costs.py): venue fees,
+    # price impact vs pre-trade reserves, network fee, GMGN's router take, decision-to-fill move.
+    # MEASURED 2026-10-05 dry run, 16 real fills: robinhood uniswap_v4 2.2-5.7%/leg, sol
+    # pump_swap 2.3-3.3%/leg, GMGN router 1.0% of every leg. interval 600 / limit 30: ~60
+    # live fills a day, one RPC read per fill at RESEARCH priority, paced 1 s.
+    enabled: true
+    interval_s: 600
+    timeout_s: 120
+    chains: "sol,robinhood"
+    since_days: 3
+    limit: 30
+    pace_s: 1.0
+  grade_snapshot:
+    # Freeze A/B/C grades once a day (wallet_scores is overwritten in place). Without it the
+    # Robinhood "2+ A/B wallets -> +13%" finding of 2026-10-05 cannot be told from lookahead.
+    enabled: true
+    interval_s: 86400
+    timeout_s: 300
+    keep_days: 90
   copytrade:
     # Rank copyable wallets AND test persistence, never the ranking alone.
     #
@@ -384,7 +435,7 @@ jobs:
     # full-history grader would replace one with a verdict over the same thin tape.
     enabled: true
     interval_s: 21600
-    timeout_s: 300
+    timeout_s: 900   # 2026-10-06: runs take 385-780 s for 200 wallets; 300 marked every run a timeout
     wallets_per_run: 200
     max_age_days: 7
 
@@ -487,7 +538,7 @@ jobs:
     # Existing rows are always updated. mode: full restores the old pass (never on the box).
     enabled: true
     interval_s: 900
-    timeout_s: 300
+    timeout_s: 600
     budget_s: 200
     max_wallets: 6000
     chunk_wallets: 300
@@ -710,6 +761,8 @@ jobs:
     # 40%/15 min -$32). Each firing is recorded once per cycle (system event,
     # action=copy_manager_rule) for the forward measurement.
     # Caps: 3 sells per pass, 30 per UTC day.
+    # DISABLED 2026-10-04: owner stopped GMGN copy trading and moved all funds to 0x46df;
+    # 0x41a0 holds 0.0002 ETH and 5 unsellable tokens (honeypot / thin pools / dust).
     enabled: false
     interval_s: 30
     timeout_s: 90
@@ -969,10 +1022,30 @@ jobs:
     enabled: true   # OWNER DIRECTIVE 2026-09-22: owner chose live trading
                     # after being shown the -19.3% expectancy measurement.
                     # This is the only route from a decision to a venue.
-    interval_s: 5   # was 30: MEASURED 2026-09-21 29 s decision->submit on a 180 s lane, and a fill waits here in SUBMITTED until GMGN's report lands
+    #
+    # 2026-10-05 LATENCY FIX. MEASURED on the box (12 days, 227 live buys): interval_s 5
+    # really ran every 10 or 15 s -- the scheduler reaps a run on one tick_s (5 s) tick and
+    # re-checks due on the next, so nothing recurs faster than two ticks. Decision -> first
+    # reservation median 7.8 s / p90 14.9 s (3 days); every limiter deferral cost another
+    # cycle; sol fills waited a cycle to be BOOKED (median 10.3 s, max 166 s) -- unprotected.
+    # So the run now stays up for drain_window_s, re-reading planned every poll_s and
+    # re-reconciling in-flight orders every reconcile_every_s. interval_s 1 = re-dispatch on
+    # the first tick after the run is reaped (gap ~5-10 s between ~60 s windows, ~89% of
+    # the clock covered). The window is also capped at timeout_s - submit_headroom_s.
+    # max_plan_age_s 30 (was 300, INVENTED): decision -> last reservation over the last 3
+    # days was p90 20.9 s, max 39.1 s (4 of 122 buys past 30 s); with the drain window a
+    # plan is normally sent within ~2 s, so 30 s is reached only by a stall (limiter
+    # starvation, restart, engine lag). By then the dossier price the floor was computed
+    # from is ~40 s old (price age at decision: median 8.5 s, p90 14.7 s). Refuse, don't
+    # chase. max_submits_per_run is per RUN (~60 s now): peak measured 4 buys in any 60 s.
+    interval_s: 1
     timeout_s: 120
-    max_plan_age_s: 300
-    max_submits_per_run: 3
+    drain_window_s: 60
+    poll_s: 1
+    reconcile_every_s: 2
+    submit_headroom_s: 50
+    max_plan_age_s: 30
+    max_submits_per_run: 6
 
 
   nft_mint_study:

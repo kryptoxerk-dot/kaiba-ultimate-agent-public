@@ -146,7 +146,7 @@ def test_an_order_with_a_provider_id_is_not_resolved_this_way(tmp_db, monkeypatc
         return {"data": {"status": "pending"}}
 
     monkeypatch.setattr(executor, "query_gmgn_order", fake_query)
-    put_order(tmp_db, provider_order_id="od10bsc0000001a0c8adcaa")
+    put_order(tmp_db, provider_order_id="od10bsc57184193193fdc5c")
     reconcile("ord:stuck", tmp_db)
     assert asked == ["ord:stuck"], "an order with an id must still be queried"
 

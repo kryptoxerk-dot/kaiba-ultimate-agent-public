@@ -245,8 +245,15 @@ def flap(monkeypatch):
             "",
         )
 
+    def transport(calls):
+        # The only call that reaches the transport past the faked portal read is the Buy
+        # Quota read (viability._flap_buy_quota_refusal, 2026-10-05): answer "no quota",
+        # (0, 0), which is what every fresh launch MEASURED read. Anything else: a revert.
+        no_quota = "0x" + "0" * 128
+        return [no_quota if str(data).startswith(evm_price.SEL_MAX_BUY_PER_ORIGIN) else None for _to, data in calls]
+
     monkeypatch.setattr(evm_price, "read_flap", fake)
-    monkeypatch.setattr(evm_price, "json_rpc_batch", lambda *a, **kw: (lambda calls: []))
+    monkeypatch.setattr(evm_price, "json_rpc_batch", lambda *a, **kw: transport)
     return state
 
 

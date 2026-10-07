@@ -1800,7 +1800,11 @@ def test_the_naming_job_is_wired_and_on_because_the_tag_leak_is_closed(tmp_db, m
     jc = config.jobs["wallet_naming"]
     # 2026-10-02: incremental, every 15 min, and the run's own budget ends it well inside
     # the timeout (see test_the_naming_job_runs_incrementally_inside_its_budget).
-    assert jc.enabled is True and jc.interval_s == 900 and jc.timeout_s == 300
+    # 2026-10-04 (6e99c80): timeout 300 -> 600 s after 8 false timeouts in 24 h. The value
+    # is an operator choice; the invariant is that a run is reaped before the next one is
+    # due and before its lock is considered stale.
+    assert jc.enabled is True and jc.interval_s == 900
+    assert jc.timeout_s <= jc.interval_s and jc.timeout_s < config.lock_stale_s
     assert float(jc.params["budget_s"]) + 30 < jc.timeout_s
     # The leak, on the real namer: the three vendor labels that used to become lane words.
     facts = NM.WalletFacts(chain=Chain.SOL, address="LEAK", gmgn_tags={

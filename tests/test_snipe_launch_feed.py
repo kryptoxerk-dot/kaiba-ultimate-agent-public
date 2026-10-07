@@ -158,3 +158,34 @@ def test_sol_tail_reads_pumpportal_rows_in_order_without_skipping_a_shared_milli
 @pytest.mark.parametrize("pool,venue", [("pump", "pump.fun"), ("bonk", "launchlab")])
 def test_sol_pool_maps_to_its_venue(pool, venue):
     assert lf.sol_launch_from_row({"address": "M", "meta_json": jdump({"pool": pool})}, received_ms=1).venue == venue
+
+
+#: Live pump.fun creates, 2026-10-04: (mint, PumpPortal's bondingCurveKey, the curve account).
+#: The last two are mayhem-mode creates whose frame named an empty system account.
+PUMP_CREATES = [
+    ("GpNKQHyzF5A81TPmaDmFz6Fc949G4SBfPo4C42ynpump", "7vqRFPR67qqPPtNmKsw4sjB4LWpLp77gvkDpxFFGMsDM",
+     "7vqRFPR67qqPPtNmKsw4sjB4LWpLp77gvkDpxFFGMsDM"),
+    ("3fWpRpuqV5kwsrytF4PQ2Sy42cTmw1SrvjsXMHRwpump", "E6hdByPVNKuJXtGF4iDAgSjcPWKQnEtaFrLPBFVEYS4G",
+     "E6hdByPVNKuJXtGF4iDAgSjcPWKQnEtaFrLPBFVEYS4G"),
+    ("58hi4YJpuuD7HRmEMPUWyhYa514VqWyWsCThbK3D5LiH", "5BGmDrfPb8QDdcytWSxg7Cm5WMExZspZL7t81QucUQFu",
+     "5BGmDrfPb8QDdcytWSxg7Cm5WMExZspZL7t81QucUQFu"),
+    ("J8qxPSHY3B5B1bGxPMqG2HaWQ3uzJcHSDgy9EfVXpump", "BwWK17cbHxwWBKZkUYvzxLcNQ1YVyaFezduWbtm2de6s",
+     "7vk2QivZqv2HLoUP7qDPGpVbrp5xwYMT5WpxEYFEG3Ra"),
+    ("6kgG1ZBeyQYEVYbuLKzQ3WnDvi3gZhCnnJiL6ueDpump", "BwWK17cbHxwWBKZkUYvzxLcNQ1YVyaFezduWbtm2de6s",
+     "JnZtRqmbWcK2HVWBMzUgGbN86y4rGYo63Ddq8VETxB1"),
+]
+
+
+@pytest.mark.parametrize("mint,frame_key,curve", PUMP_CREATES)
+def test_the_pump_curve_is_derived_from_the_mint_not_taken_from_the_frame(mint, frame_key, curve):
+    assert lf.pump_curve_address(mint) == curve
+    launch = lf.sol_launch_from_row({"address": mint, "meta_json": jdump({"pool": "pump", "bonding_curve": frame_key})},
+                                    received_ms=1)
+    assert launch.meta["bonding_curve"] == curve and launch.meta["bonding_curve_frame"] == frame_key
+
+
+def test_a_launchlab_pool_keeps_its_own_key_and_a_bad_mint_derives_nothing():
+    launch = lf.sol_launch_from_row({"address": "Mint1111", "meta_json": jdump({"pool": "bonk", "bonding_curve": "PoolKey"})},
+                                    received_ms=1)
+    assert launch.meta["bonding_curve"] == "PoolKey"
+    assert lf.pump_curve_address("not-base58-0OIl") is None and lf.pump_curve_address("1111") is None

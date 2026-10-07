@@ -51,10 +51,9 @@ bar for using it on `trusted_copy` is high.
 7. **Keep the books separate.** Our cost basis, inventory and PnL are ours. A source's
    average entry is not our average entry, and a source's transfer out of a token is not
    a sell.
-8. **Follow exits, with judgement.** `follow_exits` is true. A partial sale by the source
-   maps to a proportional scale-out via `kaiba_request_exit(position_id, pct, reason)`.
-   Our own protection ladder still runs underneath and can exit first
-   (`position-protection`).
+8. **Report source exits; do not sell on them yourself.** A sale by the source is news for
+   the operator, not a sell order for you (owner rule 2026-10-06: never sell through MCP on your
+   own). Our protection ladder runs underneath and does the exits (`position-protection`).
 9. **Journal the copy and the source.** `kaiba_journal_append` with the source address,
    the delay achieved, the drift at fill, and the outcome. Per-source expectancy is what
    later justifies keeping or dropping them.

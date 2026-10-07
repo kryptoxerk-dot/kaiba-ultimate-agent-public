@@ -355,6 +355,31 @@ def _valid_mint(value: Any) -> str | None:
     return mint if looks_solana(mint) else None
 
 
+def _pump_curve(mint: str) -> str | None:
+    """The pump.fun bonding curve of ``mint``, derived from the mint, or ``None``.
+
+    The frame's ``bondingCurveKey`` is not trusted for pump.fun creates. MEASURED
+    2026-10-04 on the box, 24 h: 5,419 of 45,568 pump creates (11.9%) carried a key that
+    is not the program address ``["bonding-curve", mint]``; 5,412 of them named
+    ``BwWK17cb...``, a data-less system account that is itself a TRADER (616k swap rows
+    across 14k mints; the mayhem-mode agent wallet, by every sign), not a curve. The
+    derivation lives in ``launch_feed.pump_curve_address`` and is imported, not copied: it
+    is pinned there against real mint -> curve pairs. The stored key therefore always
+    describes the stored mint, even when PumpPortal's ``mint`` is itself wrong.
+
+    Imported lazily because ``launch_feed`` imports this module at its top. A failure
+    returns ``None`` so the caller falls back to the frame's key: a token row with a
+    doubtful curve key is worth more than a dropped creation.
+    """
+    try:
+        from kaiba.ingest.launch_feed import pump_curve_address
+
+        return pump_curve_address(mint)
+    except Exception as exc:  # noqa: BLE001 - never let a derivation cost the ingest row
+        log.warning("pumpportal: curve derivation failed for %s (%s: %s)", mint[:12], type(exc).__name__, exc)
+        return None
+
+
 def parse_new_token(msg: Any) -> Token | None:
     """A ``subscribeNewToken`` frame -> :class:`Token`, or ``None`` if it is not one."""
     if not isinstance(msg, dict):
@@ -369,17 +394,24 @@ def parse_new_token(msg: Any) -> Token | None:
         return None  # not enough to call this a creation
     created = source_timestamp_ms(msg) or now_ms()
     creator = _first(msg, "traderPublicKey", "creator", "trader_public_key", "user")
+    pool = _first(msg, "pool") or "pump"
+    frame_curve = _first(msg, "bondingCurveKey", "bonding_curve")
+    # pump.fun: the curve is derived from the mint (see _pump_curve). Any other pool
+    # (``bonk`` = Raydium LaunchLab) has no such derivation here, so its key is the frame's.
+    derived = _pump_curve(mint) if str(pool).lower() == "pump" else None
     meta = {
         "uri": _first(msg, "uri", "metadataUri"),
         "signature": _first(msg, "signature", "tx"),
         "slot": _first(msg, "slot"),
-        "bonding_curve": _first(msg, "bondingCurveKey", "bonding_curve"),
+        "bonding_curve": derived or frame_curve,
+        # What PumpPortal said, kept verbatim so a disagreement stays measurable.
+        "bonding_curve_frame": frame_curve,
         "initial_buy_tokens": _as_text(_first(msg, "initialBuy", "initial_buy")),
         "initial_buy_lamports": _as_lamports(_first(msg, "solAmount", "sol_amount")),
         "v_tokens_in_curve": _as_text(_first(msg, "vTokensInBondingCurve")),
         "v_sol_in_curve": _as_text(_first(msg, "vSolInBondingCurve")),
         "market_cap_sol": _as_text(_first(msg, "marketCapSol", "market_cap_sol")),
-        "pool": _first(msg, "pool") or "pump",
+        "pool": pool,
         "source": SOURCE,
         "source_ms": source_timestamp_ms(msg),
     }

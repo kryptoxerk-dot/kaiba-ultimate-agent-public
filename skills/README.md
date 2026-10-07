@@ -24,7 +24,7 @@ skills/
 One directory per skill, named in kebab-case, and the directory name must equal the
 `name` in the frontmatter. `tests/test_skills.py` enforces that and more.
 
-## The eighteen
+## The nineteen
 
 **Intelligence**
 
@@ -36,6 +36,7 @@ One directory per skill, named in kebab-case, and the directory name must equal 
 | `holder-cluster-analysis` | who holds the supply and how they got it |
 | `developer-and-social-research` | whether the creator and the social identity check out |
 | `signal-normalization` | what counts as a signal, and what is a duplicate |
+| `x-scan` | what X says about a token or launch, read-only on a daily budget, recorded so the audit can test it |
 
 **Trading**
 
@@ -113,7 +114,8 @@ Read: `kaiba_status`, `kaiba_events`, `kaiba_wallet`, `kaiba_token`, `kaiba_sign
 `kaiba_positions`, `kaiba_performance`, `kaiba_journal_read`, `kaiba_playbook`.
 
 Act: `kaiba_pause`, `kaiba_resume`, `kaiba_reduce_only`, `kaiba_set_lane_mode`,
-`kaiba_set_lane_param`, `kaiba_set_cohort`, `kaiba_request_exit`.
+`kaiba_set_lane_param`, `kaiba_set_cohort`, `kaiba_request_exit` (only with `owner_request` =
+the operator's words; the agent never sells on its own, owner rule 2026-10-06).
 
 Learn: `kaiba_journal_append`, `kaiba_propose_experiment`.
 

@@ -441,6 +441,19 @@ LAUNCHPAD_NOT_LIVE = "launchpad_not_live"
 #: collide with the live decision's own id.
 SHADOW_TWIN_VERSION = PARAMS_VERSION + ":shadow_twin"
 
+#: (lane, chain) pairs that never enter with real money, WHATEVER the config says: a LIVE or
+#: CANARY entry there always takes the launchpad twin branch (a SHADOW twin, the live
+#: decision a SKIP). launch-snipe on bsc: OWNER 2026-10-05 "enable bnb snipes", paper first.
+#: The snipe producer refuses to signal unless the config already makes every one a twin
+#: (``snipe.paper_only_refusal``), but that guard sits in front of the dossier, not at the
+#: money: a signal recorded before a config edit, a producer that skips it, or a launchpad
+#: label that differs from the launch's venue would otherwise reach a LIVE ENTER here
+#: (review 2026-10-05). ``snipe.PAPER_ONLY_CHAINS`` must equal the launch-snipe entry (a test
+#: pins it). Arming one of these is a code change, not a config edit.
+PAPER_ONLY_LANE_CHAINS: dict[Lane, frozenset[Chain]] = {
+    Lane.LAUNCH_SNIPE: frozenset({Chain.BSC}),
+}
+
 
 def shadow_twin_id(signal_id: str) -> str:
     """The paper twin's decision id for ``signal_id``. Deterministic, like the live one."""
@@ -504,9 +517,15 @@ def _launchpad_refusal(
 
     LIVE and CANARY only. A SHADOW lane records exactly as before -- the rule is about
     whose money takes the trade, not about what the lane is allowed to see.
+
+    A :data:`PAPER_ONLY_LANE_CHAINS` pair refuses regardless of the allowlist: the same
+    blocker, so the same twin branch, and no configuration can open it.
     """
     if mode not in (LaneMode.LIVE, LaneMode.CANARY):
         return None
+    if signal.chain in PAPER_ONLY_LANE_CHAINS.get(signal.lane, frozenset()):
+        launchpad = _token_launchpad(signal.chain, signal.token, conn)
+        return f"{LAUNCHPAD_NOT_LIVE}:{launchpad or 'unknown'}"
     allowed = _live_launchpads(cfg, signal)
     if allowed is None:
         return None
@@ -514,6 +533,51 @@ def _launchpad_refusal(
     if launchpad is not None and launchpad in allowed:
         return None
     return f"{LAUNCHPAD_NOT_LIVE}:{launchpad or 'unknown'}"
+
+
+#: Lane param: ``{chain: seconds}``. A LIVE/CANARY entry on a token that migrated (graduated off
+#: its launch curve) less than this long ago is refused and becomes a paper twin.
+POST_MIGRATION_PARAM = "post_migration_cooldown_s"  # NOT min_<feature>: that prefix is a lane feature threshold (refuses unknown)
+POST_MIGRATION_COOLDOWN = "post_migration_cooldown"
+
+
+def _post_migration_refusal(signal: Signal, mode: LaneMode, cfg: Any) -> str | None:
+    """``post_migration_cooldown:<age>s<<min>s`` when real money would buy into a fresh migration.
+
+    MEASURED 2026-10-05 on 614 replayed sol sm-trenches signals (live exits, 3.25%/leg): signals
+    within 2 min of migration -20.8% (n=88), 2-10 min -26.8% (n=66), against -16.9% for all; on
+    live fills <2 min -20.6% (n=14). The 2026-10-05 18:28 EGTvzb buy filled 141 s after migration at
+    the spike and closed -79% 30 s later. Consistent with the migration-fade evidence (73% of
+    migrations trade below 40% of the migration price within 20 min). Unknown age is NOT refused:
+    only a measured fresh migration is. Paper twins keep measuring the skipped entries.
+    """
+    if mode not in (LaneMode.LIVE, LaneMode.CANARY):
+        return None
+    try:
+        params = cfg.lane(signal.lane).params or {}
+    except Exception:  # noqa: BLE001 - unreadable lane config: this guard adds no refusal
+        return None
+    raw = params.get(POST_MIGRATION_PARAM)
+    if isinstance(raw, dict):
+        raw = raw.get(signal.chain.value, raw.get("default"))
+    try:
+        minimum = float(raw) if raw is not None else None
+    except (TypeError, ValueError):
+        log.error("%s.%s=%r is not a number; post-migration guard off", signal.lane.value,
+                  POST_MIGRATION_PARAM, raw)
+        return None
+    if not minimum or minimum <= 0:
+        return None
+    payload = signal.payload or {}
+    if not payload.get("migrated"):
+        return None
+    try:
+        age = float(payload.get("since_migration_s"))
+    except (TypeError, ValueError):
+        return None
+    if age < minimum:
+        return f"{POST_MIGRATION_COOLDOWN}:{int(age)}s<{int(minimum)}s"
+    return None
 
 
 def _twin_refusal(signal: Signal, conn: sqlite3.Connection) -> str | None:
@@ -674,14 +738,14 @@ def decide(
     # 7. launchpad allowlist for real money. LAST on purpose: everything above has
     # already said yes, so a refusal here is exactly "the trade we would have taken",
     # and that is what the paper twin records. See `_launchpad_refusal`.
-    lp_blocker = _launchpad_refusal(signal, mode, cfg, c)
+    lp_blocker = _launchpad_refusal(signal, mode, cfg, c) or _post_migration_refusal(signal, mode, cfg)
     if lp_blocker is not None:
         twin_id = shadow_twin_id(signal.signal_id)
         no_twin = "not requested by this caller" if twins is None else _twin_refusal(signal, c)
         skipped = _skip(
             [lp_blocker],
-            f"{lp_blocker}: {signal.lane.value} enters only allowlisted launchpads live on "
-            f"{signal.chain.value}; "
+            f"{lp_blocker}: {signal.lane.value} live entry refused on {signal.chain.value} "
+            "(launchpad allowlist or post-migration cooldown); "
             + (f"paper twin {twin_id}" if no_twin is None else f"no paper twin: {no_twin}"),
             dossier=dossier,
         )

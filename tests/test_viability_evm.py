@@ -500,6 +500,10 @@ def test_a_verified_flap_curve_provides_exact_depth_for_bsc_sizing(
     """A checked native-quoted Flap read supplies exact depth to the EVM sizer."""
     priced = _flap_price_fixture()
     monkeypatch.setattr(evm_price, "read_flap", lambda token, rpc: (priced, "ok"))
+    # The Buy Quota read (viability._flap_buy_quota_refusal, 2026-10-05) is the one call that
+    # reaches the transport past the faked portal read: answer "no quota", never the network.
+    monkeypatch.setattr(evm_price, "json_rpc_batch",
+                        lambda *a, **kw: (lambda calls: ["0x" + "0" * 128 for _ in calls]))
     monkeypatch.setattr(
         viability,
         "read_dex_venue",

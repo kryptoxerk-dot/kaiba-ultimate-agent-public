@@ -845,14 +845,21 @@ def test_the_migration_enforces_one_decision_per_collection_per_day(tmp_db):
     tmp_db.execute(ins, ("0xa", "2026-10-03", 3, "mint", "v", "0", "0", "0", "0", "0"))
 
 
-def test_the_scheduler_job_is_registered_disabled_and_runs_on_the_fake_chain(tmp_db, monkeypatch):
+def test_the_scheduler_job_is_registered_and_runs_on_the_fake_chain(tmp_db, monkeypatch):
     import time as _time
 
     from kaiba.ops import scheduler as S
 
     config = S.load_config(Path(__file__).resolve().parents[1] / "config" / "schedule.yaml")
     job = config.jobs["nft_mint_study"]
-    assert job.enabled is False and job.timeout_s < config.lock_stale_s
+    # Shipped disabled 2026-10-02 pending migration 034 on the box; the lead flipped it on
+    # once applied (see the schedule.yaml comment). On or off is an operator choice; what
+    # must hold is that the tables it writes ship with the repo and a run is reaped before
+    # its lock goes stale.
+    assert job.timeout_s < config.lock_stale_s and job.timeout_s <= job.interval_s
+    if job.enabled:
+        migrations = Path(__file__).resolve().parents[1] / "kaiba" / "core" / "migrations"
+        assert list(migrations.glob("034_*.sql")), "nft_mint_study enabled without migration 034"
     assert S.JOBS["nft_mint_study"].run is S.job_nft_mint_study
     assert S.JOBS["nft_mint_study"].spends_helius is False
 

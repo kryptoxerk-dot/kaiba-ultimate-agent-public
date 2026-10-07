@@ -19,6 +19,8 @@ dependencies = [
   "python-multipart>=0.0.12",
   "base58>=2.1",
   "pyyaml>=6.0",
+  # tweet launcher's namer (kaiba/execution/tweet_creative.py); 1.x is built on httpx2.
+  "anthropic>=1.11,<2",
 ]
 
 [project.optional-dependencies]

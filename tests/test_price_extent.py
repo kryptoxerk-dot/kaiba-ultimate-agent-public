@@ -171,15 +171,19 @@ def launch(conn, token: str, prices: list[str], *, first_seen_ms: int, creator: 
         swap(conn, token, px, first_seen_ms + i * 1000)
 
 
-def test_the_shipped_peak_rules_are_the_legacy_ones():
+def test_the_shipped_peak_rules():
     """Correcting the peak moves sizing labels and grader points: the lead's call, measured.
 
     MEASURED 2026-10-02: numeric moves 177 of 1,740 sol mid/spam deployers out of a charged
     bucket and adds 197 seeds to 335. Flipping either constant must be a diff, not a drift.
+
+    2026-10-04, the lead's call: deployer records go NUMERIC on one price source (the text max
+    had made the live snipe's runner labels noise: O/E 0.94/0.96 this week, vs sol mid/runner
+    1.26 corrected). Seed grading stays legacy until it is measured on its own.
     """
     from kaiba.intelligence import seeds
 
-    assert D.PEAK_RULE == PE.PEAK_LEGACY_TEXT
+    assert D.PEAK_RULE == PE.PEAK_NUMERIC
     assert seeds.SEED_PEAK_RULE == PE.PEAK_LEGACY_TEXT
 
 

@@ -204,7 +204,7 @@ def test_request_exit_emits_for_the_protection_service(mcp_db):
         "INSERT INTO positions (position_id, chain, token, lane, mode, opened_ms, qty) "
         "VALUES ('p1','sol',?, 'confluence-5','shadow', 1, '100')", (SOL,)
     )
-    out = server.kaiba_request_exit("p1", 50, "taking profit")
+    out = server.kaiba_request_exit("p1", 50, "taking profit", owner_request="sell half of it")
     assert out["ok"] and out["pct"] == 50
     kinds = [e.kind for e in ev.recent(conn=mcp_db)]
     assert EventKind.PROTECTION_TRIGGERED.value in kinds
@@ -215,8 +215,39 @@ def test_exit_pct_is_clamped(mcp_db):
         "INSERT INTO positions (position_id, chain, token, lane, mode, opened_ms, qty) "
         "VALUES ('p2','sol',?, 'confluence-5','shadow', 1, '100')", (SOL,)
     )
-    assert server.kaiba_request_exit("p2", 900)["pct"] == 100
-    assert server.kaiba_request_exit("p2", -5)["pct"] == 1
+    assert server.kaiba_request_exit("p2", 900, owner_request="close it")["pct"] == 100
+    assert server.kaiba_request_exit("p2", -5, owner_request="close it")["pct"] == 1
+
+
+def test_the_agent_never_sells_through_mcp_on_its_own(mcp_db):
+    """OWNER RULE 2026-10-06: "never sell MCP on your own". No owner request, no sale:
+    nothing reaches the protection service, and the refusal is on the journal."""
+    mcp_db.execute(
+        "INSERT INTO positions (position_id, chain, token, lane, mode, opened_ms, qty) "
+        "VALUES ('p3','sol',?, 'sm-trenches','live', 1, '100')", (SOL,)
+    )
+    for said in ("", "   "):
+        out = server.kaiba_request_exit("p3", 100, "UNKNOWN_SAFETY, cannot verify", owner_request=said)
+        assert out["ok"] is False and out["reason"] == server.NO_AGENT_SELL
+    kinds = [e.kind for e in ev.recent(conn=mcp_db)]
+    assert EventKind.PROTECTION_TRIGGERED.value not in kinds
+    bodies = [r[0] for r in mcp_db.execute("SELECT body FROM journal")]
+    assert any(server.NO_AGENT_SELL in b for b in bodies)
+    # Positive control: the same call with the operator's words goes through.
+    assert server.kaiba_request_exit("p3", 100, owner_request="sell p3 now")["ok"] is True
+    assert EventKind.PROTECTION_TRIGGERED.value in [e.kind for e in ev.recent(conn=mcp_db)]
+
+
+def test_the_agent_cannot_sell_by_tightening_a_stop(mcp_db):
+    mcp_db.execute(
+        "INSERT INTO positions (position_id, chain, token, lane, mode, opened_ms, qty) "
+        "VALUES ('p4','sol',?, 'sm-trenches','live', 1, '100')", (SOL,)
+    )
+    out = server.kaiba_set_protection("p4", stop_loss_bps=1, trail_bps=5)
+    assert out["stop_loss_bps"] == out["trail_bps"] == server.AGENT_MIN_PROTECTION_BPS
+    assert server.kaiba_set_protection("p4", stop_loss_bps=3000)["stop_loss_bps"] == 3000
+    owner = server.kaiba_set_protection("p4", stop_loss_bps=1, owner_request="tighten it")
+    assert owner["stop_loss_bps"] == 1
 
 
 # ---------------------------------------------------------------- learn tools
@@ -260,7 +291,9 @@ def test_tool_count_is_what_the_profiles_expect():
     # 27 -> 31 on 2026-10-01: kaiba_copy_manager, kaiba_health, kaiba_wallet_grade_counts,
     # kaiba_live_ev (operator read-outs; the profiles carry no include filter).
     # 31 -> 32 on 2026-10-04: kaiba_snipe_watchlist (launch-snipe dev/name watchlists).
-    assert len(server.TOOLS) == 32
+    # 32 -> 34 on 2026-10-05: kaiba_signal_audit (daily self-audit scorecard) and kaiba_x_search
+    # (read-only X search, daily query cap).
+    assert len(server.TOOLS) == 34
 
 
 def test_module_entrypoint_runs_after_final_tool_registration():
@@ -354,7 +387,7 @@ def test_set_protection_clamps_absurd_values(mcp_db):
         "VALUES ('p9','sol',?, 'confluence-5','shadow', 1, '1')", (SOL,)
     )
     out = server.kaiba_set_protection("p9", stop_loss_bps=99999, trail_bps=-5)
-    assert out["stop_loss_bps"] == 9999 and out["trail_bps"] == 1
+    assert out["stop_loss_bps"] == 9999 and out["trail_bps"] == server.AGENT_MIN_PROTECTION_BPS
 
 
 # ------------------------------------------------- watchdog liveness on the status screen

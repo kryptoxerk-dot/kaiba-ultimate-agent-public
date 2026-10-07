@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import json
 import threading
-import time
 from decimal import Decimal, localcontext
 from pathlib import Path
 
@@ -788,18 +787,25 @@ def test_the_tick_does_not_wait_for_the_chain(tmp_db):
     _rh_position(tmp_db, "pos_live", TOKEN_T)
     release = threading.Event()
     started = threading.Event()
+    finished = threading.Event()
     logger = op.OnchainPriceLog()
 
     def slow(job):  # noqa: ANN001
         started.set()
         release.wait(5)
+        finished.set()
         return {}
 
     logger.run_job = slow  # type: ignore[method-assign]
     dog, cfg, positions = type("Dog", (), {"_quote_cache": {}})(), _cfg(), open_positions(tmp_db)
-    t0 = time.perf_counter()
+    # Structural, not wall-clock. This used to assert the call took < 50 ms, which
+    # measured Thread.start() scheduling and GC on a loaded test host rather than the
+    # property: the first tick spawns the worker, and Thread.start() blocks until the OS
+    # runs it. The property is that the tick returns while the "RPC" is still blocked
+    # -- a synchronous on_tick could only return after `slow` finished (release is never
+    # set before this line, so that means its 5 s wait timed out).
     assert logger.on_tick(dog, positions, cfg) is True
-    assert (time.perf_counter() - t0) < 0.05
+    assert not finished.is_set(), "the tick waited for the chain read to finish"
     assert started.wait(2)
     assert logger.on_tick(dog, positions, cfg) is False and logger.stats.skips["worker_busy"] == 1
     release.set()

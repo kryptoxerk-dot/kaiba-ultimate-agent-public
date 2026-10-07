@@ -86,6 +86,7 @@ from kaiba.intelligence.confluence import (
     Observations,
     WeightSet,
 )
+from kaiba.intelligence.deployer import series_source, single_source
 from kaiba.learning import gates, replay
 
 log = logging.getLogger(__name__)
@@ -928,7 +929,7 @@ def _candidates(
         out["pre_entry_largest_buy_sol"] = (
             max((_int(r.get("amount_native")) or 0) for r in buys) / LAMPORTS_PER_SOL if buys else 0.0
         )
-        priced = [(int(r["ts_ms"]), p) for r in swaps if (p := _price(r)) is not None and r.get("ts_ms")]
+        priced = _pre_entry_prices(chain, swaps)
         if priced:
             last_ts, last_px = priced[-1]
             first_px = priced[0][1]
@@ -958,18 +959,40 @@ def _candidates(
 
 
 def _priced_series(conn: sqlite3.Connection, chain: str, token: str) -> list[tuple[int, float]]:
+    """The token's priced prints from ONE swap source, oldest first.
+
+    ``swaps`` mixes feeds that disagree print by print (MEASURED 2026-10-04 on the box: 6.3%
+    of sol ``gmgn:smartmoney`` / ``pumpfun:trades`` prints of one token within 60 s differ
+    by more than 2x). An entry priced on one feed and an exit on another is a return made
+    of two scales, so the series is the one source
+    :func:`kaiba.intelligence.deployer.series_source` picks: the most priced prints.
+    """
     rows = conn.execute(
-        "SELECT ts_ms, price_usd FROM swaps WHERE chain=? AND token=? AND price_usd IS NOT NULL "
-        "ORDER BY ts_ms",
+        "SELECT ts_ms, price_usd, source FROM swaps WHERE chain=? AND token=? "
+        "AND price_usd IS NOT NULL ORDER BY ts_ms, id",
         (chain, token),
     ).fetchall()
-    series: list[tuple[int, float]] = []
-    for ts_ms, price in rows:
+    priced: list[tuple[int, float, str]] = []
+    for ts_ms, price, source in rows:
         value = _float(price)
         if ts_ms is None or value is None or value <= 0.0:
             continue
-        series.append((int(ts_ms), value))
-    return series
+        priced.append((int(ts_ms), value, str(source)))
+    return single_source(priced, chain)
+
+
+def _pre_entry_prices(chain: str, swaps: Sequence[Mapping[str, Any]]) -> list[tuple[int, float]]:
+    """Pre-entry prints from ONE source, chosen among the pre-entry rows only.
+
+    Chosen on what was observable before the entry, so a print written after it cannot move
+    which feed the pre-entry features are read from.
+    """
+    priced = [
+        (int(r["ts_ms"]), p, str(r.get("source")))
+        for r in swaps
+        if (p := _price(r)) is not None and r.get("ts_ms")
+    ]
+    return single_source(priced, chain)
 
 
 def forward_returns(
@@ -1107,13 +1130,25 @@ def collect_entries(
             )
 
     if SourceKind.TAPE in wanted:
-        for chain, token, first_ms, prints in conn.execute(
-            "SELECT chain, token, MIN(ts_ms), COUNT(*) FROM swaps WHERE price_usd IS NOT NULL "
-            "GROUP BY chain, token"
+        # Per source, so the pseudo-entry starts on the series it will be priced from
+        # (``_priced_series``): the first print of the source with the most prints.
+        per_token: dict[tuple[str, str], dict[str, tuple[int, int]]] = {}
+        for chain, token, source, first_ms, prints in conn.execute(
+            "SELECT chain, token, source, MIN(ts_ms), COUNT(*) FROM swaps "
+            "WHERE price_usd IS NOT NULL AND CAST(price_usd AS REAL) > 0 "
+            "GROUP BY chain, token, source"
         ):
             if str(chain) not in chain_set or first_ms is None:
                 continue
-            if int(prints) < min_prints_before:
+            per_token.setdefault((str(chain), str(token)), {})[str(source)] = (
+                int(first_ms), int(prints)
+            )
+        for (chain, token), by_source in per_token.items():
+            pick = series_source({s: n for s, (_f, n) in by_source.items()}, chain)
+            if pick is None:
+                continue
+            first_ms, prints = by_source[pick]
+            if prints < min_prints_before:
                 continue
             out.append(
                 Entry(

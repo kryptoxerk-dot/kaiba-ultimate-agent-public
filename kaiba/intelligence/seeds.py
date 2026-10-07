@@ -92,6 +92,18 @@ SEED_READ_CHUNK = 500
 
 #: ``kv`` key (per chain) for the last wallet a deadline-cut pass finished.
 KV_RESUME = "seeds:resume:{chain}"
+#: ``kv`` key: the highest ``swaps.id`` already folded into ``seed_wallets``.
+KV_WALLET_CURSOR = "seeds:wallet_cursor"
+#: Swap rows per read when folding new wallets into ``seed_wallets`` (a PK range: each read is
+#: a short, bounded transaction, never a scan of the whole tape).
+WALLET_SCAN_CHUNK = 100_000
+
+#: ``kv`` key (per chain): the highest ``swaps.id`` folded into ``seed_buyers``.
+KV_BUYER_CURSOR = "seeds:buyer_cursor:{chain}"
+#: Swap rows per page when backfilling one seed's history on ``idx_swaps_token``. The index
+#: carries no ``side``/``wallet``, so each row is a table read: MEASURED 2026-10-06, 220 bsc
+#: seeds took 64 s; a page this size stays a few seconds even on a cold cache.
+BACKFILL_PAGE = 5_000
 
 
 def seed_tokens(
@@ -135,7 +147,13 @@ def _stored_values(conn: sqlite3.Connection, chain: Chain, chunk: list[str]) -> 
 
 
 def seed_counts(conn: sqlite3.Connection, chain: Chain, seeds: set[str]) -> dict[str, int]:
-    """How many distinct seeds each wallet BOUGHT. Chunked so the IN list stays sane."""
+    """How many distinct seeds each wallet BOUGHT, read from ``seed_buyers``.
+
+    Never from ``swaps``: MEASURED 2026-10-06, ``GROUP BY wallet ... token IN (400 seeds)``
+    on ``swaps`` was planned onto ``idx_swaps_wallet`` and walked the whole chain, > 60 s
+    per chunk on every chain, so wallet_seeds timed out every run. Only meaningful once
+    :func:`refresh_seed_buyers` reports ``complete``.
+    """
     counts: dict[str, int] = {}
     if not seeds:
         return counts
@@ -143,13 +161,146 @@ def seed_counts(conn: sqlite3.Connection, chain: Chain, seeds: set[str]) -> dict
     for i in range(0, len(ordered), 400):
         chunk = ordered[i:i + 400]
         qs = ",".join("?" * len(chunk))
-        for row in conn.execute(
-            "SELECT wallet, COUNT(DISTINCT token) n FROM swaps WHERE chain = ? "
-            "AND side = 'buy' AND wallet IS NOT NULL AND token IN (%s) GROUP BY wallet" % qs,
+        for (wallet,) in conn.execute(
+            f"SELECT wallet FROM seed_buyers WHERE chain = ? AND token IN ({qs})",
             (chain.value, *chunk),
         ):
-            counts[str(row[0])] = counts.get(str(row[0]), 0) + int(row[1])
+            counts[str(wallet)] = counts.get(str(wallet), 0) + 1
     return counts
+
+
+def _kv_int(c: sqlite3.Connection, key: str) -> int | None:
+    row = c.execute("SELECT value FROM kv WHERE key = ?", (key,)).fetchone()
+    try:
+        return int(row[0]) if row and row[0] is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _put_kv(w: sqlite3.Connection, key: str, value: Any) -> None:
+    w.execute(
+        "INSERT INTO kv (key, value, updated_ms) VALUES (?, ?, ?) ON CONFLICT(key) "
+        "DO UPDATE SET value = excluded.value, updated_ms = excluded.updated_ms",
+        (key, str(value), now_ms()),
+    )
+
+
+def _commit_buyers(w: sqlite3.Connection, rows: list[tuple[str, str, str]], extra: Any) -> int:
+    """Insert ``rows`` and run ``extra(w)`` (cursor bookkeeping) in ONE transaction."""
+    w.execute("BEGIN")
+    try:
+        before = w.total_changes
+        if rows:
+            w.executemany(
+                "INSERT OR IGNORE INTO seed_buyers (chain, token, wallet) VALUES (?, ?, ?)",
+                sorted(set(rows)))
+        added = w.total_changes - before
+        extra(w)
+        w.execute("COMMIT")
+    except Exception:
+        w.execute("ROLLBACK")
+        raise
+    return added
+
+
+def refresh_seed_buyers(
+    c: sqlite3.Connection, w: sqlite3.Connection | None, chain: Chain, seeds: set[str], *,
+    deadline: float | None = None, clock: Any = time.time,
+) -> dict[str, Any]:
+    """Bring ``seed_buyers`` up to date for ``seeds``; ``complete`` when every seed is.
+
+    Two halves, both resumable and each a series of short reads:
+
+    1. **New rows** since :data:`KV_BUYER_CURSOR` are read by primary-key range and their
+       buys of a seed are kept. A chain with no cursor starts at today's ``MAX(id)``: every
+       older buy of a seed reaches the table through step 2.
+    2. **Each seed not yet backfilled** has its whole history paged off ``idx_swaps_token``
+       (:data:`BACKFILL_PAGE` rows a read), its position saved in ``seed_buyer_tokens``
+       after every page so a deadline-cut token resumes where it stopped.
+
+    Inserts are ``OR IGNORE`` on (chain, token, wallet), so the two halves overlapping is
+    harmless. At least one unit of work runs per call, then the deadline is checked.
+    """
+    rep: dict[str, Any] = {"seeds": len(seeds), "added": 0, "backfilled": 0,
+                           "pending": 0, "complete": False}
+    if w is None:
+        done = {str(r[0]) for r in c.execute(
+            "SELECT token FROM seed_buyer_tokens WHERE chain = ? AND done_ms IS NOT NULL",
+            (chain.value,))}
+        rep["pending"] = len(seeds - done)
+        rep["complete"] = not rep["pending"]
+        return rep
+    worked = False
+
+    def out_of_time() -> bool:
+        return worked and deadline is not None and clock() >= deadline
+
+    key = KV_BUYER_CURSOR.format(chain=chain.value)
+    max_id = int(c.execute("SELECT COALESCE(MAX(id), 0) FROM swaps").fetchone()[0] or 0)
+    cursor = _kv_int(c, key)
+    if cursor is None:
+        _commit_buyers(w, [], lambda x: _put_kv(x, key, max_id))
+        cursor = max_id
+    while cursor < max_id and not out_of_time():
+        upper = min(cursor + WALLET_SCAN_CHUNK, max_id)
+        rows = [
+            (chain.value, str(tok), str(wl))
+            for tok, wl in c.execute(
+                "SELECT token, wallet FROM swaps WHERE id > ? AND id <= ? AND chain = ? "
+                "AND side = 'buy' AND wallet IS NOT NULL",
+                (cursor, upper, chain.value),
+            )
+            if wl and tok in seeds
+        ]
+        rep["added"] += _commit_buyers(w, rows, lambda x, u=upper: _put_kv(x, key, u))
+        cursor = upper
+        worked = True
+    rep["cursor"], rep["max_id"] = cursor, max_id
+
+    state = {
+        str(r[0]): (int(r[1]), int(r[2]), r[3])
+        for r in c.execute(
+            "SELECT token, at_ts, at_id, done_ms FROM seed_buyer_tokens WHERE chain = ?",
+            (chain.value,))
+    }
+    todo = sorted(t for t in seeds if state.get(t, (0, 0, None))[2] is None)
+    for token in todo:
+        at_ts, at_id = state.get(token, (-1, -1, None))[:2]
+        finished = False
+        while not out_of_time():
+            page = c.execute(
+                "SELECT ts_ms, id, side, wallet FROM swaps INDEXED BY idx_swaps_token "
+                "WHERE chain = ? AND token = ? AND (ts_ms > ? OR (ts_ms = ? AND id > ?)) "
+                "ORDER BY ts_ms, id LIMIT ?",
+                (chain.value, token, at_ts, at_ts, at_id, BACKFILL_PAGE),
+            ).fetchall()
+            if page:
+                at_ts, at_id = int(page[-1][0]), int(page[-1][1])
+            finished = len(page) < BACKFILL_PAGE
+            stamp = now_ms() if finished else None
+
+            def mark(x: sqlite3.Connection, ts: int = at_ts, i: int = at_id,
+                     d: int | None = stamp, t: str = token) -> None:
+                x.execute(
+                    "INSERT INTO seed_buyer_tokens (chain, token, at_ts, at_id, done_ms) "
+                    "VALUES (?, ?, ?, ?, ?) ON CONFLICT(chain, token) DO UPDATE SET "
+                    "at_ts = excluded.at_ts, at_id = excluded.at_id, done_ms = excluded.done_ms",
+                    (chain.value, t, ts, i, d))
+
+            rows = [(chain.value, token, str(r[3])) for r in page if r[2] == "buy" and r[3]]
+            rep["added"] += _commit_buyers(w, rows, mark)
+            worked = True
+            if finished:
+                rep["backfilled"] += 1
+                break
+        if not finished:
+            break
+    rep["pending"] = len(todo) - rep["backfilled"]
+    # A fold that is behind only makes counts minutes stale; an unbackfilled seed makes them
+    # WRONG (an undercount written as a measured value). Only the second blocks writes.
+    rep["complete"] = rep["pending"] == 0
+    rep["fold_caught_up"] = cursor >= max_id
+    return rep
 
 
 def _write_counts(
@@ -205,6 +356,62 @@ def _set_resume(conn: sqlite3.Connection, chain: Chain, address: str | None) -> 
         )
 
 
+def refresh_wallet_index(
+    c: sqlite3.Connection, w: sqlite3.Connection | None, *, deadline: float | None = None,
+    clock: Any = time.time,
+) -> dict[str, Any]:
+    """Fold swap rows added since the last call into ``seed_wallets`` (chain, wallet).
+
+    Replaces ``SELECT DISTINCT wallet FROM swaps WHERE chain = ?``. MEASURED 2026-10-06 on the
+    box: that query walks every index entry for the chain (counting sol's alone took > 47 s)
+    in ONE read the deadline cannot interrupt, so wallet_seeds timed out 10 runs in a row
+    (last success 55 h earlier) and pinned the WAL while it ran. This reads ``swaps`` by
+    primary-key range, :data:`WALLET_SCAN_CHUNK` rows at a time, stops at ``deadline`` and
+    resumes from :data:`KV_WALLET_CURSOR`; once caught up, a call reads only the new rows.
+    ``w`` is the write connection; ``None`` (a dry run) reads without folding.
+    """
+    row = c.execute("SELECT value FROM kv WHERE key = ?", (KV_WALLET_CURSOR,)).fetchone()
+    try:
+        cursor = int(row[0]) if row and row[0] is not None else 0
+    except (TypeError, ValueError):
+        cursor = 0
+    max_id = int(c.execute("SELECT COALESCE(MAX(id), 0) FROM swaps").fetchone()[0] or 0)
+    added = 0
+    first = True
+    while w is not None and cursor < max_id:
+        # At least one chunk per call, so a tight budget still makes progress; then the
+        # deadline is checked before each further chunk.
+        if not first and deadline is not None and clock() >= deadline:
+            break
+        first = False
+        upper = min(cursor + WALLET_SCAN_CHUNK, max_id)
+        pairs = {
+            (str(ch), str(wl))
+            for ch, wl in c.execute(
+                "SELECT chain, wallet FROM swaps WHERE id > ? AND id <= ? AND wallet IS NOT NULL",
+                (cursor, upper),
+            )
+            if wl
+        }
+        w.execute("BEGIN")
+        try:
+            before = w.total_changes
+            w.executemany("INSERT OR IGNORE INTO seed_wallets (chain, wallet) VALUES (?, ?)",
+                          sorted(pairs))
+            added += w.total_changes - before
+            w.execute(
+                "INSERT INTO kv (key, value, updated_ms) VALUES (?, ?, ?) ON CONFLICT(key) "
+                "DO UPDATE SET value = excluded.value, updated_ms = excluded.updated_ms",
+                (KV_WALLET_CURSOR, str(upper), now_ms()),
+            )
+            w.execute("COMMIT")
+        except Exception:
+            w.execute("ROLLBACK")
+            raise
+        cursor = upper
+    return {"cursor": cursor, "max_id": max_id, "complete": cursor >= max_id, "added": added}
+
+
 def run(
     chain: Chain,
     conn: sqlite3.Connection | None = None,
@@ -239,13 +446,32 @@ def run(
         report.update(not_ready=True, price_extent=exc.progress,
                       elapsed_s=time.perf_counter() - started)
         return report
+    # A dedicated connection: a read may still be streaming on `c`, and a write through the
+    # connection being read loses the lock on a live box every time.
+    w = None if dry_run else connect()
+    try:
+        index = refresh_wallet_index(c, w, deadline=deadline, clock=clock)
+        buyers = refresh_seed_buyers(c, w, chain, seeds, deadline=deadline, clock=clock)
+    except Exception:
+        if w is not None:
+            w.close()
+        raise
+    report["wallet_index"] = index
+    report["seed_buyers"] = buyers
+    if not buyers["complete"]:
+        # Some seed's buyers are not all read yet: any count now would be an undercount
+        # written as a measured value. Write nothing; the next run resumes the backfill.
+        if w is not None:
+            w.close()
+        report.update(seeds=len(seeds), backfilling=True,
+                      elapsed_s=time.perf_counter() - started)
+        return report
     counts = seed_counts(c, chain, seeds)
-    considered = sorted(
+    considered = [
         str(r[0]) for r in c.execute(
-            "SELECT DISTINCT wallet FROM swaps WHERE chain = ? AND wallet IS NOT NULL",
-            (chain.value,),
+            "SELECT wallet FROM seed_wallets WHERE chain = ? ORDER BY wallet", (chain.value,),
         )
-    )
+    ]
     resumable = limit is None
     if not resumable:
         considered = considered[: max(0, int(limit))]
@@ -264,13 +490,12 @@ def run(
             order = considered[at:] + considered[:at]
             report["resumed_after"] = str(row[0])
     if not order:
+        if w is not None:
+            w.close()
         report["elapsed_s"] = time.perf_counter() - started
         return report
 
     stamp = now_ms()
-    # A dedicated connection: the scan above may still be streaming on `c`, and a write
-    # through the connection being read loses the lock on a live box every time.
-    w = None if dry_run else connect()
     last_done: str | None = None
     try:
         for i in range(0, len(order), SEED_READ_CHUNK):

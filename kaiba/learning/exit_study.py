@@ -56,7 +56,7 @@ from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 
-from kaiba.learning import gates
+from kaiba.learning import fabricated, gates
 
 # --------------------------------------------------------------------------------------
 # constants, each with its provenance
@@ -489,14 +489,18 @@ def hold_to(path: PricePath, seconds: float, *, cost_pct: float = ROUND_TRIP_COS
 
 Policy = Callable[[PricePath], PolicyResult]
 
-#: The comparison set. Deliberately includes the incumbent (``stop-30``) and the
+#: The comparison set. Includes a bare ``stop-30`` (NOT the deployed ladder) and the
 #: do-nothing control, because a study that only compares candidates to each other cannot
 #: say whether any of them beats leaving the thing alone.
 POLICIES: dict[str, Policy] = {
     "stop-10": lambda p: fixed_stop(p, -10.0),
     "stop-15": lambda p: fixed_stop(p, -15.0),
     "stop-20": lambda p: fixed_stop(p, -20.0),
-    "stop-30(incumbent)": lambda p: fixed_stop(p, -30.0),
+    # NOT the deployed policy. Renamed 2026-10-05 (Codex profit audit): the deployed protection
+    # is a TP ladder + trailing tiers + breakeven + moonbag, so calling a bare -30% stop the
+    # "incumbent" made every variant look like an uplift over production (time-60s "+33% vs
+    # +3.2%"). The deployed ladder is replayed faithfully by kaiba/learning/signal_audit.py.
+    "stop-30-only(NOT-deployed)": lambda p: fixed_stop(p, -30.0),
     "time-30s": lambda p: time_stop(p, 30),
     "time-60s": lambda p: time_stop(p, 60),
     "time-180s": lambda p: time_stop(p, 180),
@@ -1075,17 +1079,39 @@ def study(
 
     shadow_gap = None
     shadow_paths = [p for p in paths if p.mode == "shadow"]
+    shadow_paired = shadow_unpaired = shadow_fabricated = 0
     if shadow_paths:
-        tape = statistics.mean(fixed_stop(p, DECLARED_STOP_PCT).net_return_pct for p in shadow_paths)
-        rec = [
-            r[0]
+        # Both sides over the SAME positions. A paper write-off (``abandoned_unpriceable``)
+        # has no trades row, so the recorded mean never saw it while the tape mean did:
+        # MEASURED 2026-10-04, 70 of the 73 on the box replay on the tape. Its booked -100%
+        # is not a recorded outcome either (kaiba.learning.fabricated), so it is left out
+        # of both sides and counted in the caveat.
+        ids = [p.position_id for p in shadow_paths]
+        marks = ",".join("?" * len(ids))
+        fabricated_ids = {
+            str(r[0])
             for r in conn.execute(
-                "SELECT pnl_pct FROM trades WHERE mode='shadow' AND position_id IN "
-                f"({','.join('?' * len(shadow_paths))})",
-                [p.position_id for p in shadow_paths],
+                f"SELECT position_id FROM positions WHERE position_id IN ({marks}) "
+                f"AND {fabricated.sql_predicate()}",
+                ids,
             ).fetchall()
-        ]
-        if rec:
+        }
+        recorded: dict[str, list[float]] = {}
+        for pid, pnl, reason in conn.execute(
+            f"SELECT position_id, pnl_pct, exit_reason FROM trades WHERE mode='shadow' AND position_id IN ({marks})",
+            ids,
+        ).fetchall():
+            if str(pid) in fabricated_ids or fabricated.is_fabricated_outcome(reason, "shadow"):
+                fabricated_ids.add(str(pid))
+                continue
+            recorded.setdefault(str(pid), []).append(float(pnl))
+        paired = [p for p in shadow_paths if p.position_id in recorded]
+        shadow_paired = len(paired)
+        shadow_unpaired = len(shadow_paths) - shadow_paired
+        shadow_fabricated = len(fabricated_ids)
+        if paired:
+            tape = statistics.mean(fixed_stop(p, DECLARED_STOP_PCT).net_return_pct for p in paired)
+            rec = [v for p in paired for v in recorded[p.position_id]]
             shadow_gap = statistics.mean(rec) - tape
 
     caveats.append(
@@ -1108,7 +1134,14 @@ def study(
     if shadow_gap is not None:
         caveats.append(
             f"The shadow record is {shadow_gap:+.1f}pp away from the same stop replayed on the "
-            "independent tape. Shadow rows are a broker model, not evidence."
+            f"independent tape, over the {shadow_paired} shadow positions on both sides. Shadow "
+            "rows are a broker model, not evidence."
+        )
+    if shadow_unpaired:
+        caveats.append(
+            f"{shadow_unpaired} replayable shadow positions have no usable recorded outcome and are "
+            f"left out of that comparison; {shadow_fabricated} of them closed with a booked, not "
+            f"observed, result ({', '.join(sorted(fabricated.FABRICATED_EXIT_FAMILIES))})."
         )
     if verdict.n and not verdict.fill_effect_separable:
         caveats.append(

@@ -44,8 +44,8 @@ running on the venue's side.
    status, their quantity and their persistence. `kaiba_events(kinds=["protection.set"])`
    shows what the service recorded.
 3. **Treat `protected: false` as an incident.** That is the `ACQUIRED_UNPROTECTED` state.
-   The bounded response is to repair immediately, and if repair fails, to exit:
-   `kaiba_request_exit(position_id, pct=100, reason="unprotected, repair failed")`.
+   The bounded response is to repair immediately, and if repair fails, to
+   tell the operator (position, chain, token, what is wrong, the numbers) and ask whether to sell. Never sell on your own (owner rule 2026-10-06: `kaiba_request_exit` needs `owner_request`).
 4. **Check the four protections are all in place** (below). A fixed stop without a
    trailing rung leaves the upside unmanaged; a TP ladder without a stop leaves the
    downside unmanaged.
@@ -55,9 +55,11 @@ running on the venue's side.
    improvising.
 6. **Watch the rug monitor.** A single-interval liquidity drop of 40% forces an exit.
    This runs without you.
-7. **Exit through the service.** `kaiba_request_exit(position_id, pct, reason)` asks the
-   protection service to close a percentage. Exits are always permitted — they work under
-   `reduce_only`, under `entries_paused`, and after the daily stop has fired.
+7. **You never sell on your own (owner rule 2026-10-06).** The service's ladder does every
+   exit. `kaiba_request_exit(position_id, pct, reason, owner_request=...)` is ONLY for a sale
+   the operator asked for, with his words as `owner_request`; without them it refuses
+   (`no_agent_initiated_sell`). Such an exit works under `reduce_only`, under
+   `entries_paused`, and after the daily stop has fired.
 8. **Journal the exit and why.** Exit reason, rung, realised PnL and any mistake tags
    (`trade-journaling`). `no_protection` is in the fixed vocabulary.
 

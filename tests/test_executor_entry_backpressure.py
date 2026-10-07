@@ -211,9 +211,10 @@ def test_ambiguous_send_stays_unknown_and_is_never_requeued(tmp_db, live_context
     assert len(sent) == 1
 
 
-def test_sell_backpressure_keeps_existing_watchdog_retry_semantics(tmp_db, live_context, monkeypatch):
+def test_sell_backpressure_keeps_existing_watchdog_retry_semantics(tmp_db, live_context, monkeypatch, kaiba_bought):
     _, sent = live_context
     plan = order(Side.SELL)
+    kaiba_bought(tmp_db, plan.chain, plan.token)  # a live sell sells what Kaiba bought
     fixed = int(time.time()*1000)
     monkeypatch.setattr(limiter, "now_ms", lambda: fixed)
     limiter.reserve("gmgn", "token.info", limiter.Priority.RESEARCH, conn=tmp_db)

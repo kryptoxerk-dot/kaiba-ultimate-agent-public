@@ -57,7 +57,7 @@ from kaiba.core.config import EnvelopeBounds, LaneConfig, get_risk, save_risk
 from kaiba.core.db import fetch_all, fetch_one, get_conn, jdump, jload
 from kaiba.core.events import emit
 from kaiba.core.schemas import EventKind, Lane, now_ms
-from kaiba.learning import metrics
+from kaiba.learning import fabricated, metrics
 
 log = logging.getLogger(__name__)
 
@@ -406,12 +406,15 @@ def _replay_rows(conn: sqlite3.Connection, lane: str, key: str) -> list[dict[str
     """Recorded entry decisions in a lane that produced a closed trade, with their feature."""
     sql = (
         "SELECT d.decision_id, d.ts_ms, d.signals_json, d.confidence, d.expected_return_pct, "
-        "d.size_pct_bankroll, t.trade_id, t.closed_ms, t.pnl_native, t.cost_native, t.pnl_pct "
+        "d.size_pct_bankroll, t.trade_id, t.closed_ms, t.pnl_native, t.cost_native, t.pnl_pct, "
+        "t.mode, t.exit_reason "
         "FROM decisions d JOIN trades t ON t.decision_id = d.decision_id "
         f"WHERE d.lane = ? AND d.action IN ({','.join('?' * len(ENTRY_ACTIONS))}) "
         "ORDER BY d.ts_ms ASC, d.decision_id ASC"
     )
-    rows = fetch_all(conn, sql, [lane, *ENTRY_ACTIONS])
+    # A booked, not observed, result is not an outcome to replay (kaiba.learning.fabricated).
+    # replay_gate reports how many such positions the lane has.
+    rows, _ = fabricated.drop(fetch_all(conn, sql, [lane, *ENTRY_ACTIONS]))
     out: list[dict[str, Any]] = []
     for r in rows:
         ret = metrics.trade_return(r)
@@ -772,6 +775,7 @@ def replay_gate(
     # they were counted as missing; for a feature the lanes only started recording that
     # day, every older decision would otherwise read as refused by any threshold.
     rows = [r for r in all_rows if r.get("recorded", True)]
+    m["fabricated_outcomes_excluded"] = fabricated.count_positions(c, lane=lane)
     m["decisions_replayed"] = len(rows)
     m["unrecorded_feature"] = len(all_rows) - len(rows)
     missing = sum(1 for r in rows if r["feature"] is None)
@@ -997,6 +1001,7 @@ def _relative_replay_verdict(
 
 
 def _arm_trades(conn: sqlite3.Connection, experiment_id: str, arm: str) -> list[dict[str, Any]]:
+    """An arm's trades, without any whose result was booked rather than observed."""
     rows = fetch_all(
         conn,
         "SELECT t.* FROM trades t JOIN experiment_trades x ON x.trade_id = t.trade_id "
@@ -1004,15 +1009,15 @@ def _arm_trades(conn: sqlite3.Connection, experiment_id: str, arm: str) -> list[
         (experiment_id, arm),
     )
     if rows:
-        return rows
+        return fabricated.drop(rows)[0]
     if arm != "candidate":
         return []
     # Fallback: a shadow runner that tagged params_version with the experiment id.
-    return fetch_all(
+    return fabricated.drop(fetch_all(
         conn,
         "SELECT * FROM trades WHERE params_version = ? ORDER BY closed_ms ASC, trade_id ASC",
         (experiment_id,),
-    )
+    ))[0]
 
 
 def _incumbent_over_span(
@@ -1024,7 +1029,7 @@ def _incumbent_over_span(
         "ORDER BY closed_ms ASC, trade_id ASC",
         (lane, start_ms, end_ms),
     )
-    return [r for r in rows if str(r["trade_id"]) not in exclude]
+    return [r for r in fabricated.drop(rows)[0] if str(r["trade_id"]) not in exclude]
 
 
 def shadow_gate(
@@ -1065,6 +1070,12 @@ def shadow_gate(
     end_ms = max(int(t["closed_ms"]) for t in cand)
     span_days = (end_ms - start_ms) / DAY_MS
     m["span_days"] = round(span_days, 3)
+    # Paper positions of this lane, closed over the span, whose result was booked rather
+    # than observed: in neither arm, and said out loud (kaiba.learning.fabricated).
+    m["fabricated_outcomes_excluded"] = (
+        fabricated.count_positions(c, lane=lane, closed_since_ms=start_ms, closed_until_ms=end_ms)
+        if lane else None
+    )
 
     key = str(diff.get("key") or "")
     direction = _direction(key)
@@ -1151,12 +1162,7 @@ def _relative_shadow_verdict(
     """
     m["criterion"] = "relative"
     reasons: list[str] = []
-    refused = fetch_all(
-        conn,
-        "SELECT t.* FROM trades t JOIN experiment_trades x ON x.trade_id = t.trade_id "
-        "WHERE x.experiment_id = ? AND x.arm = 'incumbent' ORDER BY t.closed_ms ASC, t.trade_id ASC",
-        (exp_id,),
-    )
+    refused = _arm_trades(conn, exp_id, "incumbent")
     m["incumbent_trades"] = len(refused)
     ok = True
     if len(cand) < min_trades:

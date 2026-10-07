@@ -73,7 +73,10 @@ def test_parse_new_token_from_fixture():
     assert token.name == "Kaiba Fixture Coin"
     assert token.creator == "C9abG9fSgwkenby3GiRfuufnMFuGCW9881WRHuT3fRTN"
     assert token.launchpad == "pump.fun"
-    assert token.pool == "5uEtuXD3vNYDVkBbfTca2P7mWiTy3vqRm9MFem8HfM1o"
+    # pool is the derived bonding-curve PDA (2026-10-04): PumpPortal's frame key is wrong on
+    # ~12% of creates, so it is kept only as meta.bonding_curve_frame.
+    assert token.pool == "HaThj3NxyTjujduk6Ki7x6uLd5cKRiQ7rsZrMyRnMGh"
+    assert token.meta["bonding_curve_frame"] == "5uEtuXD3vNYDVkBbfTca2P7mWiTy3vqRm9MFem8HfM1o"
     assert token.created_ms == 1758355200000  # seconds on the wire, ms in the model
     assert token.meta["uri"].startswith("https://ipfs.io/ipfs/")
 
@@ -1214,7 +1217,8 @@ async def test_run_all_with_no_feeds_is_a_noop(tmp_db):
 def test_registry_covers_every_listener():
     # `robinhood` is the Pons V2 listener; `rhscannerr` is a public-preview,
     # observation-only alpha feed. Both are supervised listeners.
-    assert set(runner.REGISTRY) == {"pumpportal", "gmgn", "telegram", "robinhood", "rhscannerr"}
+    assert set(runner.REGISTRY) == {"pumpportal", "gmgn", "telegram", "robinhood", "rhscannerr", "rh_wallets",
+                                   "sol_wallets", "flap", "alpha_feeds", "graduation_observer", "leader_exit"}
     assert set(runner.DEFAULT_FEEDS) <= set(runner.REGISTRY)
 
 

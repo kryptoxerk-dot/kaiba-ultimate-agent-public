@@ -367,7 +367,17 @@ FLAP_CHAINS: frozenset[Chain] = frozenset({Chain.BSC})
 #: never launched there. ``flap_not_on_curve`` is a record whose ``status`` is not 1, which
 #: is what a graduated Flap token reads (4 on both graduated samples); it trades on a
 #: PancakeSwap pair after that, so a pool really is the right place to price it.
-_FLAP_NOT_ON_A_CURVE: tuple[str, ...] = ("flap_no_portal_record", "flap_not_on_curve")
+#:
+#: ``flap_not_a_flap_token`` (2026-10-05) is the portal REVERTING ``TokenNotFound(token)``,
+#: which is how the live portal actually says "never launched here" -- it does not answer
+#: an empty record. Before ``json_rpc_batch(keep_reverts=True)`` that revert arrived as
+#: ``None`` and read as ``flap_portal_read_failed``, refusing every non-Flap bsc token.
+#: Unlike the other two it does not go straight to the pool path: :func:`read_venue` asks
+#: :func:`read_non_flap_venue` first, because a token that is not on Flap may be on a
+#: four.meme curve.
+_FLAP_NOT_ON_A_CURVE: tuple[str, ...] = (
+    "flap_no_portal_record", "flap_not_on_curve", "flap_not_a_flap_token",
+)
 
 #: Prefix on every refusal from a Flap probe that did not answer, or that answered
 #: something failing its own cross-checks. :func:`resolve_depth` stops on it instead of
@@ -379,6 +389,17 @@ _FLAP_NOT_ON_A_CURVE: tuple[str, ...] = ("flap_no_portal_record", "flap_not_on_c
 #: there is a curve underneath. Falling through would price a curve token off an unrelated
 #: pool — the $25-pool mistake this module exists to have stopped making.
 FLAP_PROBE_UNAVAILABLE = "flap_probe_unavailable:"
+
+#: Prefix on every refusal for a bsc token the Flap portal disowned and whose venue could
+#: not be established: a four.meme read that failed or failed its cross-checks, a four.meme
+#: curve quoted in an ERC-20, or no four.meme record AND no PancakeSwap pool (MEASURED
+#: 2026-10-05: geniusfun and o1_rwa launches, 5 of 18 non-Flap tokens). Stops the depth
+#: ladder exactly like :data:`FLAP_PROBE_UNAVAILABLE`, for the same reason: the dossier's
+#: liquidity figure for such a token describes a curve we cannot read, not a pool.
+BSC_VENUE_UNAVAILABLE = "bsc_venue_unavailable:"
+
+#: Every prefix :func:`resolve_depth` stops the ladder on.
+_LAUNCH_PROBE_STOPS: tuple[str, ...] = (FLAP_PROBE_UNAVAILABLE, BSC_VENUE_UNAVAILABLE)
 
 #: ``creatorTaxBps()`` on a Pons curve. Verified 2026-09-21 against the curves' own logs:
 #: the view answers 150 on ``0x3eec6132…`` and 180 on ``0xc719473c…``, and their
@@ -648,7 +669,22 @@ PROVENANCE: dict[str, Provenance] = {
         "on a curve there: no launch record, or a record whose status is not 1",
         "The same distinction _GRADUATED_NOTES draws, one venue earlier. Only these fall "
         "through to the DEX reader; every other refusal means the probe did not answer, "
-        "and a token we cannot read off its own curve is not one to price off a pool.",
+        "and a token we cannot read off its own curve is not one to price off a pool. "
+        "flap_not_a_flap_token (2026-10-05) is the portal's TokenNotFound(token) revert, "
+        "MEASURED on 18 of 18 non-Flap bsc tokens; it goes to read_non_flap_venue first.",
+    ),
+    "BSC_VENUE_UNAVAILABLE": Provenance(
+        BSC_VENUE_UNAVAILABLE, "prefix of a depth source and a venue note",
+        "this module: the marker for a non-Flap bsc token whose venue is unestablished",
+        "Stops the depth ladder like FLAP_PROBE_UNAVAILABLE. MEASURED 2026-10-05: 5 of 18 "
+        "non-Flap tokens (geniusfun, o1_rwa) have no four.meme record and no PancakeSwap "
+        "pool, and the V2 router reverts on them; a dossier liquidity for one of those "
+        "describes a launchpad curve nothing here reads.",
+    ),
+    "_LAUNCH_PROBE_STOPS": Provenance(
+        _LAUNCH_PROBE_STOPS, "prefixes",
+        "FLAP_PROBE_UNAVAILABLE and BSC_VENUE_UNAVAILABLE",
+        "One tuple so resolve_depth cannot learn one stop and forget the other.",
     ),
     "FLAP_PROBE_UNAVAILABLE": Provenance(
         FLAP_PROBE_UNAVAILABLE, "prefix of a depth source and a venue note",
@@ -1016,6 +1052,47 @@ class FlapCurveDepth:
         # PonsCurveDepth and CurveDepth: the difference is our own order's displacement.
         at_spot = atoms * quote // tokens
         return self._from_curve(max(0, size - at_spot))
+
+
+@dataclass(frozen=True)
+class FourMemeCurveDepth:
+    """A four.meme (bsc) bonding curve, read on chain and cross-checked against the venue.
+
+    The :class:`Depth` adapter over ``evm_price.FourMemeCurve``, which owns the arithmetic
+    (one derivation of a venue's curve in the tree). MEASURED 2026-10-05: that arithmetic
+    reproduces the venue's own ``tryBuy`` to 2e-17 relative on 3 live curves, and the read
+    that builds it re-runs that comparison every time (``evm_price._fourmeme_curve``).
+
+    BNB-quoted curves only -- ``read_bsc_non_flap`` refuses an ERC-20 quote -- so sizes are
+    wei on both sides and there is no rate.
+
+    **The whole order goes on the curve.** four.meme charges its fee ON TOP (MEASURED:
+    0.01 BNB in -> 0.0099009901 on the curve), so the true leg is ``size / (1 + fee)``.
+    Using ``size`` asks about a slightly larger order: more impact, a lower ceiling -- the
+    direction :class:`FlapCurveDepth` errs in for the same reason. The fee itself is
+    charged once, in :class:`CostModel`'s proportional term.
+    """
+
+    curve: Any
+    source: str = "fourmeme_curve"
+    basis: EvidenceBasis = EvidenceBasis.VERIFIED_ONCHAIN
+
+    @property
+    def max_size_base_units(self) -> int | None:
+        """Quote the curve can still take. Past it the fill would graduate the token."""
+        headroom = int(self.curve.headroom_wei)
+        return headroom if headroom > 0 else None
+
+    def tokens_out(self, size_base_units: int) -> int | None:
+        return self.curve.tokens_out(int(size_base_units))
+
+    def entry_impact(self, size_base_units: int) -> int | None:
+        size = int(size_base_units)
+        atoms = self.curve.tokens_out(size)
+        if atoms is None or atoms <= 0:
+            return None
+        at_spot = atoms * int(self.curve.virtual_quote_wei) // int(self.curve.virtual_token_atoms)
+        return max(0, size - at_spot)
 
 
 @dataclass(frozen=True)
@@ -2474,25 +2551,47 @@ def read_flap_venue_depth(
 
     Never raises. Anything unreadable becomes a refusal with a note, which refuses.
     """
+    depth, refused, _not_on_curve = _probe_flap(token, conn, at_ms=at_ms)
+    return depth, refused
+
+
+def _probe_flap(
+    token: str, conn: sqlite3.Connection | None = None, *, at_ms: int | None = None
+) -> tuple[FlapCurveDepth | None, str | None, str]:
+    """:func:`read_flap_venue_depth`, plus WHY a token is not on a Flap curve.
+
+    The third element is ``read_flap``'s own reason when the answer is "not on a curve"
+    (``""`` otherwise), so :func:`read_venue` can tell a graduated Flap token, which belongs
+    on its PancakeSwap pair, from a token Flap never launched, which may be on a four.meme
+    curve and must be asked about that first.
+    """
     try:
         from kaiba.core.limiter import Priority
         from kaiba.execution import evm_price
     except Exception as exc:  # noqa: BLE001 - a missing reader is not a curve
-        return None, f"{FLAP_PROBE_UNAVAILABLE}reader_unavailable:{type(exc).__name__}"
+        return None, f"{FLAP_PROBE_UNAVAILABLE}reader_unavailable:{type(exc).__name__}", ""
     try:
-        priced, why = evm_price.read_flap(
-            token,
-            evm_price.json_rpc_batch(
-                Chain.BSC, conn=conn, priority=Priority.ENTRY,
-                endpoint="rpc.viability_flap",
-            ),
+        # keep_reverts: the portal says "not a Flap token" by REVERTING TokenNotFound, and
+        # without this the revert is indistinguishable from a dead endpoint.
+        rpc = evm_price.json_rpc_batch(
+            Chain.BSC, conn=conn, priority=Priority.ENTRY,
+            endpoint="rpc.viability_flap", keep_reverts=True,
         )
+        priced, why = evm_price.read_flap(token, rpc)
     except Exception as exc:  # noqa: BLE001 - a dead endpoint is blindness, not a crash
-        return None, f"{FLAP_PROBE_UNAVAILABLE}raised:{type(exc).__name__}"
+        return None, f"{FLAP_PROBE_UNAVAILABLE}raised:{type(exc).__name__}", ""
     if priced is None:
         if any(str(why).startswith(marker) for marker in _FLAP_NOT_ON_A_CURVE):
-            return None, None
-        return None, f"{FLAP_PROBE_UNAVAILABLE}{why}"
+            return None, None, str(why)
+        return None, f"{FLAP_PROBE_UNAVAILABLE}{why}", ""
+    depth, refused = _flap_depth_from_price(token, priced, rpc, conn, at_ms=at_ms)
+    return depth, refused, ""
+
+
+def _flap_depth_from_price(
+    token: str, priced: Any, rpc: Any, conn: sqlite3.Connection | None, *, at_ms: int | None
+) -> tuple[FlapCurveDepth | None, str | None]:
+    """The checked :class:`FlapCurveDepth` for a curve ``read_flap`` priced, or a refusal."""
     rate: QuoteAssetRate | None = None
     if priced.quote_token is not None:
         # The curve takes some other ERC-20 and our size is in wei. Get the rate that
@@ -2505,6 +2604,9 @@ def read_flap_venue_depth(
     refusal = priced.curve.refusal
     if refusal is not None:
         return None, f"{FLAP_PROBE_UNAVAILABLE}{refusal}"
+    quota_refusal = _flap_buy_quota_refusal(token, priced.curve, rpc, native=rate is None)
+    if quota_refusal is not None:
+        return None, f"{FLAP_PROBE_UNAVAILABLE}{quota_refusal}"
     note = priced.note if rate is None else f"{priced.note}:{rate.source}"
     return FlapCurveDepth(
         curve=priced.curve,
@@ -2514,6 +2616,135 @@ def read_flap_venue_depth(
         basis=EvidenceBasis.VERIFIED_ONCHAIN if rate is None else EvidenceBasis.DERIVED,
         rate=rate,
     ), None
+
+
+def _flap_buy_quota_refusal(token: str, curve: Any, rpc: Any, *, native: bool) -> str | None:
+    """Why a buy on this Flap curve could be silently capped, or ``None``.
+
+    THE HAZARD (``evm_price.FlapBuyQuota``): a buy over the token's per-origin Buy Quota
+    does not revert -- the portal fills up to the quota and REFUNDS the rest, while our
+    executor assumes fill-or-revert and books cost from ``report.input_amount``. A capped
+    fill would therefore book a size and an entry price it never had, on any bsc lane that
+    sizes through here (``sm-trenches`` included), not only the snipe lane.
+
+    Refuses when the quota cannot be read (unread is not "no quota"), and when an ACTIVE
+    quota is below the tokens the chain's LARGEST position (``max_position_base_units``,
+    every size is clamped under it) would buy on this curve -- or cannot be compared with
+    it (a curve quoted in an ERC-20, no buy tax, no config). MEASURED 2026-10-05: quotas are
+    rare (non-zero on 0 of 371 fresh launches; 12 tokens in 72 h, all 2% of supply), so the
+    common answer is one extra ``eth_call`` and no refusal.
+    """
+    from kaiba.execution import evm_price
+
+    try:
+        got = rpc([(evm_price.FLAP_PORTAL,
+                    evm_price.SEL_MAX_BUY_PER_ORIGIN + token.strip().lower()[2:].rjust(64, "0"))])
+    except Exception as exc:  # noqa: BLE001 - an unread quota refuses
+        return f"buy_quota_unread:{type(exc).__name__}"
+    quota = evm_price.parse_buy_quota(got[0] if got else None)
+    if quota is None:
+        return "buy_quota_unread"
+    if not quota.active:
+        return None
+    if not native or getattr(curve, "buy_tax_bps", None) is None:
+        return f"buy_quota_active_uncomparable:{quota.max_buy_atoms}"
+    try:
+        top = int(get_risk().chain_budget(Chain.BSC).max_position_base_units or 0)
+        need = curve.tokens_out(evm_price.flap_buy_net_quote(top, int(curve.buy_tax_bps))) if top > 0 else None
+    except Exception as exc:  # noqa: BLE001 - what cannot be compared refuses
+        return f"buy_quota_active_uncomparable:{type(exc).__name__}"
+    if need is None or quota.max_buy_atoms < need:
+        return f"buy_quota_below_size:{quota.max_buy_atoms}<{need}"
+    return None
+
+
+def _flap_onchain_rates(dex: VenueRead, curve: FlapCurveDepth) -> VenueRead:
+    """The Flap curve's own fee, and the token's tax: the WORSE of chain and dossier.
+
+    WHY (2026-10-05, BSC launch sniping). ``read_dex_venue`` takes the tax from the token's
+    DOSSIER. The ``launch-snipe`` lane asks ``sizing_band`` BEFORE a dossier is spent
+    (``snipe.band_precheck``), so on every fresh Flap launch the tax read ``no_dossier``,
+    the cost model was ``UNAVAILABLE:token_tax`` and the band refused the launch -- a
+    silent veto of the whole venue. The portal record the depth was just read from carries
+    the token's buy and sell tax (``FlapRecord`` words 12 and 13; MEASURED on samples to
+    equal the launch's own ``FlapTokenAsymmetricTaxSet``).
+
+    The on-chain tax REPLACES nothing (review 2026-10-05). With a dossier, the charge is
+    ``max(dossier, on-chain)``: a dossier that reads higher than the record keeps refusing
+    what it refused before, so this changes no verdict a dossier already decided except to
+    make it stricter. Without a dossier, the on-chain worst leg alone is charged (the
+    pre-dossier case above). The worse LEG is charged in both, as
+    :func:`_dossier_tax_bps_per_leg` does: (0, 100), the commonest graduate, costs 100.
+    The fee is Flap's 1% protocol fee per side (``evm_price.FLAP_PROTOCOL_FEE_BPS``,
+    MEASURED on our own fills), which is also what :data:`DEX_FEE_BPS_UPPER` charges bsc,
+    so the fee term does not move.
+
+    A record without the tax words (shorter than 18) leaves the dossier's answer exactly as
+    it was. Gas still comes from the dex reader; ``None`` there still refuses.
+    """
+    buy, sell = curve.curve.buy_tax_bps, curve.curve.sell_tax_bps
+    if buy is None or sell is None:
+        return dex
+    from kaiba.execution.evm_price import FLAP_PROTOCOL_FEE_BPS
+
+    onchain = Decimal(max(int(buy), int(sell)))
+    dossier = dex.tax_bps_per_leg
+    worst = onchain if dossier is None else max(Decimal(dossier), onchain)
+    gas = dex.gas_price_wei
+    note = (f"flap:fee{FLAP_PROTOCOL_FEE_BPS}bps:tax{worst}bps_onchain({buy}/{sell})"
+            + (f"_dossier({dossier})" if dossier is not None else "_no_dossier") + ":"
+            + (f"gas{gas}wei" if gas else f"gas_unavailable({dex.note})"))
+    return replace(dex, fee_bps_per_leg=Decimal(FLAP_PROTOCOL_FEE_BPS), tax_bps_per_leg=worst, note=note)
+
+
+def read_non_flap_venue(
+    token: str, conn: sqlite3.Connection | None = None
+) -> tuple[FourMemeCurveDepth | None, str | None, str]:
+    """A bsc token the Flap portal disowned: ``(curve_depth, refusal, note)``.
+
+    * a four.meme curve, BNB-quoted and cross-checked -> ``(FourMemeCurveDepth, None, note)``;
+    * a graduated four.meme token, or a token with a PancakeSwap pool -> ``(None, None,
+      note)``, and the caller prices it as the pool it is, exactly as a graduated Flap token;
+    * everything else -> ``(None, BSC_VENUE_UNAVAILABLE + why, "")``: a failed read, a
+      four.meme record that fails its checks or is quoted in an ERC-20, or no four.meme
+      record and no PancakeSwap pool at all (geniusfun / o1_rwa launches, MEASURED).
+
+    One batched ``eth_call`` at ``Priority.ENTRY``. ``evm_price.read_bsc_non_flap`` is
+    looked up at call time for the same reason ``read_flap`` is: it is the test seam.
+    Never raises.
+    """
+    try:
+        from kaiba.core.limiter import Priority
+        from kaiba.execution import evm_price
+    except Exception as exc:  # noqa: BLE001 - a missing reader is not a venue
+        return None, f"{BSC_VENUE_UNAVAILABLE}reader_unavailable:{type(exc).__name__}", ""
+    try:
+        rpc = evm_price.json_rpc_batch(
+            Chain.BSC, conn=conn, priority=Priority.ENTRY, endpoint="rpc.viability_bsc_venue",
+        )
+        found, why = evm_price.read_bsc_non_flap(token, rpc)
+    except Exception as exc:  # noqa: BLE001 - a dead endpoint is blindness, not a crash
+        return None, f"{BSC_VENUE_UNAVAILABLE}raised:{type(exc).__name__}", ""
+    if found is None:
+        return None, f"{BSC_VENUE_UNAVAILABLE}{why}", ""
+    if found.kind == "fourmeme_curve" and found.curve is not None:
+        return FourMemeCurveDepth(curve=found.curve, source=f"fourmeme_curve:{found.note}"), None, found.note
+    if found.kind in ("fourmeme_graduated", "pancake_pool"):
+        return None, None, found.note
+    return None, f"{BSC_VENUE_UNAVAILABLE}{found.note}", ""
+
+
+def _fourmeme_onchain_rates(dex: VenueRead, curve: FourMemeCurveDepth) -> VenueRead:
+    """four.meme's own fee, read off the venue, or the pool bound if that is higher.
+
+    ``tradingFeeRate`` read 100 bps on 7 of 7 four.meme tokens, equal to
+    :data:`DEX_FEE_BPS_UPPER` for bsc, so this changes no number today; it exists so a
+    curve that charges more is charged more. The tax stays the dossier's (``read_dex_venue``),
+    and a missing one still refuses.
+    """
+    venue_fee = Decimal(int(curve.curve.fee_bps))
+    fee = venue_fee if dex.fee_bps_per_leg is None else max(venue_fee, Decimal(dex.fee_bps_per_leg))
+    return replace(dex, fee_bps_per_leg=fee, note=f"fourmeme:fee{fee}bps:{dex.note}")
 
 
 def _memo(key: tuple[str, str], when_ms: int, read: VenueRead) -> VenueRead:
@@ -2532,10 +2763,11 @@ def read_venue(
 ) -> VenueRead:
     """The venue behind ``token`` on an EVM chain, or a refusal saying which part is missing.
 
-    Two curves have readers in this tree and each one supplies exact depth: Pons on
-    Robinhood Chain (``ingest/robinhood.py``, verified against 40 of 40 live fills) and
-    Flap on bsc (``evm_price.read_flap``, cross-checked against the curve's own price and
-    reserve words). Everything else is a pool, and for a pool this reader supplies only
+    Three curves have readers in this tree and each one supplies exact depth: Pons on
+    Robinhood Chain (``ingest/robinhood.py``, verified against 40 of 40 live fills), Flap
+    on bsc (``evm_price.read_flap``, cross-checked against the curve's own price and
+    reserve words) and, for a bsc token the Flap portal disowns, four.meme
+    (``evm_price.read_bsc_non_flap``, cross-checked against the venue's own ``tryBuy``). Everything else is a pool, and for a pool this reader supplies only
     the *rates* — :func:`read_dex_venue` — while :func:`resolve_depth` finds the depth.
 
     A chain with neither returns unpriced — **not** priced-at-zero, which was the shape of
@@ -2557,20 +2789,37 @@ def read_venue(
         # No chain-wide curve reader here. Two per-token reads still answer: the token's
         # own launch curve, which is exact depth, and its rates off the dossier.
         curve: FlapCurveDepth | None = None
+        four: FourMemeCurveDepth | None = None
         probe_note = ""
         if chain in FLAP_CHAINS:
             if allow_network:
-                curve, refused = read_flap_venue_depth(token, conn, at_ms=when)
+                curve, refused, not_on_curve = _probe_flap(token, conn, at_ms=when)
+                if refused is None and curve is None and not_on_curve.startswith(
+                    "flap_not_a_flap_token"
+                ):
+                    # Flap never launched it. It may be on a four.meme curve (exact depth),
+                    # on a PancakeSwap pool (the pool path below), or on a launchpad curve
+                    # nothing here reads -- which refuses rather than pricing a curve as a
+                    # pool off the dossier's liquidity.
+                    four, refused, other_note = read_non_flap_venue(token, conn)
+                    if refused is None:
+                        probe_note = f"+not_flap+{four.source if four is not None else other_note}"
                 if refused is not None:
                     return _memo(key, when, VenueRead(
                         NoDepth(source=refused), None, None, None, refused))
-                probe_note = f"+{curve.source}" if curve is not None else ""
+                if curve is not None:
+                    probe_note = f"+{curve.source}"
             else:
                 # Not asked, so not answered. Said out loud because a decision record that
                 # showed pool depth with no note would read as "the curve said no".
                 probe_note = "+flap_probe_disabled"
         got = read_dex_venue(chain, token, conn)
-        if curve is not None or probe_note:
+        if curve is not None:
+            got = _flap_onchain_rates(got, curve)
+        if four is not None:
+            got = _fourmeme_onchain_rates(got, four)
+        launch: Depth | None = curve if curve is not None else four
+        if launch is not None or probe_note:
             # A curve quoted in something other than the chain's native asset costs a pool
             # crossing each way to reach, on this venue for the same structural reason as
             # on Pons: the order is denominated in BNB and the curve cannot take BNB.
@@ -2582,7 +2831,7 @@ def read_venue(
                 )
             got = replace(
                 got,
-                depth=curve if curve is not None else got.depth,
+                depth=launch if launch is not None else got.depth,
                 note=f"{got.note}{probe_note}{f':hop{hop}bps' if hop else ''}",
                 routing_bps_per_leg=hop,
             )
@@ -2668,7 +2917,7 @@ def resolve_depth(
         venue = read_venue(chain, token, c, at_ms=when, allow_network=allow_network)
         if not isinstance(venue.depth, NoDepth):
             return venue.depth
-        if venue.depth.source.startswith(FLAP_PROBE_UNAVAILABLE):
+        if venue.depth.source.startswith(_LAUNCH_PROBE_STOPS):
             # The one place the ladder must not be a ladder. Everything below this line
             # prices a POOL, and a probe that failed is exactly the state in which we
             # cannot say whether this token's fill would happen on a pool or on a curve
@@ -3287,6 +3536,8 @@ __all__ = [
     "CurveDepth",
     "Depth",
     "FlapCurveDepth",
+    "FourMemeCurveDepth",
+    "BSC_VENUE_UNAVAILABLE",
     "NoDepth",
     "PROVENANCE",
     "PonsCurveDepth",
@@ -3311,6 +3562,7 @@ __all__ = [
     "quote_asset_rate",
     "read_dex_venue",
     "read_flap_venue_depth",
+    "read_non_flap_venue",
     "read_pons_venue",
     "read_venue",
     "reset_quote_asset_cache",

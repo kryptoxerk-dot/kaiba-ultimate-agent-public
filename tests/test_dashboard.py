@@ -522,13 +522,32 @@ def test_risk_dial_rejects_a_daily_loss_above_the_envelope(signed_in):
     assert "max_daily_loss_pct" in response.json()["detail"]
 
 
+def _inside_the_envelope(client) -> float:
+    """A confluence-5 ``size_pct_max`` the dial must accept, derived from the copied file.
+
+    These tests used literals (1.0-1.5) that were legal while the lane's band sat at
+    1.0-5.0. The operator moved it to 26-29% (envelope 30%) on 2026-10-03, so a literal
+    1.5 became an INVERTED range and was (correctly) refused. Use a value strictly between
+    the lane's own minimum and the envelope, and different from what is stored, so an
+    accepted change is visible.
+    """
+    cfg = load_risk(client.risk_path)
+    lane = cfg.lanes["confluence-5"]
+    lo, hi = float(lane.size_pct_min), float(cfg.bounds.max_size_pct_bankroll)
+    assert lo < hi, "fixture has no room inside the envelope"
+    value = round(lo + (hi - lo) / 4, 2)
+    assert lo <= value <= hi and value != float(lane.size_pct_max)
+    return value
+
+
 def test_risk_dial_accepts_a_value_inside_the_envelope(signed_in):
+    value = _inside_the_envelope(signed_in)
     response = signed_in.post(
         "/control/risk-dial",
-        data={auth.CSRF_FIELD: csrf_of(signed_in), "lane": "confluence-5", "size_pct_max": 1.5},
+        data={auth.CSRF_FIELD: csrf_of(signed_in), "lane": "confluence-5", "size_pct_max": value},
     )
     assert response.status_code == 200
-    assert load_risk(signed_in.risk_path).lanes["confluence-5"].size_pct_max == 1.5
+    assert load_risk(signed_in.risk_path).lanes["confluence-5"].size_pct_max == value
 
 
 def test_risk_dial_rejects_an_unknown_lane_and_an_inverted_range(signed_in):
@@ -551,20 +570,24 @@ def test_risk_dial_rejects_an_unknown_lane_and_an_inverted_range(signed_in):
 
 def test_risk_dial_cannot_widen_the_operator_envelope(signed_in):
     before = load_risk(signed_in.risk_path).bounds.max_size_pct_bankroll
-    signed_in.post(
+    response = signed_in.post(
         "/control/risk-dial",
-        data={auth.CSRF_FIELD: csrf_of(signed_in), "lane": "confluence-5", "size_pct_max": 1.0},
+        data={auth.CSRF_FIELD: csrf_of(signed_in), "lane": "confluence-5",
+              "size_pct_max": _inside_the_envelope(signed_in)},
     )
+    # The write must actually happen, or "bounds unchanged" proves nothing about a save.
+    assert response.status_code == 200
     assert load_risk(signed_in.risk_path).bounds.max_size_pct_bankroll == before
 
 
 def test_risk_dial_emits_a_param_change_event(signed_in):
+    value = _inside_the_envelope(signed_in)
     signed_in.post(
         "/control/risk-dial",
-        data={auth.CSRF_FIELD: csrf_of(signed_in), "lane": "confluence-5", "size_pct_max": 1.25},
+        data={auth.CSRF_FIELD: csrf_of(signed_in), "lane": "confluence-5", "size_pct_max": value},
     )
     changes = events.recent(limit=20, kinds=["param.change"], conn=db.get_conn())
-    assert changes and changes[0].payload["size_pct_max"] == 1.25
+    assert changes and changes[0].payload["size_pct_max"] == value
 
 
 # ---------------------------------------------------------------- the structural guarantee

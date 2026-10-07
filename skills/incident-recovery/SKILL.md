@@ -61,8 +61,8 @@ cancelled}` — plus `unknown`, which is not a stage but an admission.
    means we own the position, whatever our record said. An approval or protection error
    after a filled buy cannot erase ownership or suppress position tracking.
 5. **Protect first, reason later.** If reconciliation shows we own something,
-   `kaiba_positions()` should show it; if `protected` is false, repair immediately or
-   `kaiba_request_exit(position_id, 100, "unreconciled, unprotected")`.
+   `kaiba_positions()` should show it; if `protected` is false, repair immediately; if repair
+   fails, tell the operator (position, chain, token, what is wrong, the numbers) and ask whether to sell. Never sell on your own (owner rule 2026-10-06: `kaiba_request_exit` needs `owner_request`).
 6. **Only then decide about the original intent.** If the send definitively failed and
    the thesis still holds and the data is fresh, it is a *new* decision with a new
    record — not a retry.
@@ -92,7 +92,7 @@ cancelled}` — plus `unknown`, which is not a stage but an admission.
 1. `kaiba_positions()` → `protected: false` is `ACQUIRED_UNPROTECTED`.
 2. Attempt the bounded repair: re-attach venue condition orders, or hand the position to
    the watchdog with its ladder.
-3. If repair fails, exit: `kaiba_request_exit(position_id, 100, reason)`. An unprotected
+3. If repair fails, tell the operator (position, chain, token, what is wrong, the numbers) and ask whether to sell. Never sell on your own (owner rule 2026-10-06: `kaiba_request_exit` needs `owner_request`). Say it is urgent: an unprotected
    memecoin position is an unbounded loss against a 92.2% dump base rate.
 4. Journal with the `no_protection` mistake tag.
 

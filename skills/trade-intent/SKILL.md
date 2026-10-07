@@ -109,8 +109,8 @@ Fixed fraction, not Kelly: at sub-5% win rates Kelly is dominated by estimation 
 
 `kaiba_status`, `kaiba_token`, `kaiba_wallet`, `kaiba_signals`, `kaiba_positions`,
 `kaiba_performance` to decide; `kaiba_set_lane_mode`, `kaiba_set_lane_param`,
-`kaiba_pause`, `kaiba_resume`, `kaiba_reduce_only`, `kaiba_request_exit`,
-`kaiba_set_cohort` to act; `kaiba_journal_append`, `kaiba_propose_experiment` to learn.
+`kaiba_pause`, `kaiba_resume`, `kaiba_reduce_only`, `kaiba_set_cohort` to act
+(`kaiba_request_exit` only with the operator's words as `owner_request`; never sell on your own); `kaiba_journal_append`, `kaiba_propose_experiment` to learn.
 
 There is no order-submission tool on this surface today. Entries are produced by the
 deterministic planner from lane signals and the risk envelope; your levers over an entry

@@ -1,0 +1,199 @@
+# TEMPLATE. Ships in paper mode: mode shadow, armed_by empty, every chain live: false, vamps
+# shadow. Every post is decided and RECORDED (tweet_launches) and nothing is sent. Read the
+# README section 'Tweet auto-launch' before arming anything.
+# Tweet launcher — kaiba/execution/tweet_launch.py
+# Codex integration 2026-10-07: select the funded custom-rule socket; this does not
+# activate provider rules. Every entry brake applies before a create EXCEPT the flat
+# per-trade size cap (the owner's 5% dev buy is above it): tweet_launch._admission.
+#
+# When a watched X account posts, decide whether the post is launchable, derive a name and
+# ticker from it, and launch the token through GMGN `cooking create` from the agent wallet
+# (the wallet bound to GMGN_API_KEY, i.e. the chain wallet in config/risk.yaml), with a dev
+# buy in the creation transaction.
+#
+# mode: shadow  -> decide and RECORD only (tweet_launches table). Nothing is sent.
+# mode: live    -> also send. Requires ALL of: this file's mode = live, `armed_by` filled in,
+#                  the `tweet-launch` Lane wired in kaiba/core/schemas.py, and the chain's
+#                  launchpad entry having live: true. The owner arms it, in writing.
+mode: shadow
+armed_by: ""   # who armed it, in writing, and when. Empty = cannot go live.
+
+feed:
+  backend: twitterapi_rule  # j7 and twitterapi_monitor are also supported
+  region: dfw              # applies only to the authenticated J7 source
+
+# Dev buy target, as a share of total supply bought inside the creation transaction.
+# Owner ask 2026-10-06: 5%. Modelled cost incl. fee: pump ~1.485 SOL, Flap (BNB curve,
+# measured on chain) ~0.2933 BNB, Pons V2 ~0.0893 ETH (see dev_buy_native). Only launchpads with a curve model can be sized by supply share; the rest
+# need an explicit buy_amt_native below and record supply_pct = NULL.
+dev_buy_supply_pct: 5.0
+
+# Per chain: which launchpad, the cap on any single dev buy, and whether live may send.
+chains:
+  sol:
+    dex: pump
+    max_buy_native: 1.5
+    holder_fees: cashback   # creator fee -> traders. UNVERIFIED since pump.fun's 2026-09-12 switch to Holder Rewards
+    live: false
+  bsc:
+    dex: flap
+    max_buy_native: 0.5
+    holder_fees: { dividend_tax_bps: 100 }   # 1% buy/sell tax, 100% of it paid to holders as dividends
+    live: false
+  robinhood:
+    dex: pons
+    max_buy_native: 0.1
+    # The 99% second-0 snipe tax does NOT apply to the deployer's own buy inside the launch tx
+    # (MEASURED: currentSnipeTaxBps(deployer) = 0; 1,106 of 1,120 second-0 buys paid 0 --
+    # docs/research/line4-antisniper-tax-pons.md:116-146; owner confirmed 2026-10-07). The
+    # post-launch receipt check switches robinhood off if a dev buy is ever taxed anyway.
+    # No holder-fee mechanism on Pons via GMGN (no creator-tax flag): fees stay protocol-only.
+    live: false
+
+# Spend and rate bounds (live only; shadow records everything).
+daily_launch_cap: 10        # the SOL/BNB/ETH daily caps bind first (~4 sol, ~3 bsc, ~3 rh)
+daily_native_cap: { sol: 6.0, bsc: 1.0, robinhood: 0.3 }
+per_author_cooldown_s: 900       # at most one launch per account per 15 minutes
+max_tweet_age_s: 20              # a post older than this when it reaches us is too late to be first
+slippage_pct: 30
+
+# Post selection. A post must score >= min_score to launch.
+min_score: 1.5                  # a fresh post with an image qualifies on its own (owner: see launches)
+post_kinds: [post, quote]        # replies and reposts are skipped unless an account overrides it
+require_image: true              # a launch needs a logo: the post's image, else a generated one
+link_tweet_as_twitter: true      # --twitter <the post URL>: credit the source, never claim affiliation
+
+# Market observation on the same post (shadow AND live): count other launches whose
+# symbol/name matches our ticker at these horizons after the post.
+observe_horizons_s: [120, 600, 1800]
+
+# Watched accounts. twitterapi.io Stream Starter = 6 accounts ($29/mo), Growth = 20 ($79/mo).
+# `chains`: which chain(s) a post from this account launches on.
+# Sources: docs/research/tweet-launch-tracked-accounts-20261006.md
+accounts:
+  # Owner 2026-10-07 ("tweets are hot" / "find others" / "Ansem and any other KOLs that bring
+  # volume from their tweets or replies" / "Coby the bitcoin og and any other a tier kols and
+  # CTs"). Every handle verified on X via twitterapi.io user/info 2026-10-07 (followers noted).
+  # Hot everywhere: one post can launch on all three chains (each chain is its own launch).
+  - { handle: elonmusk,        chains: [sol, bsc, robinhood] }   # 241.7M
+  - { handle: realDonaldTrump, chains: [sol, bsc, robinhood] }   # 111.9M
+  # Robinhood (Pons V2)
+  - { handle: MEADGod,         chains: [robinhood] }   # 73k, Ozzy
+  - { handle: vladtenev,       chains: [robinhood] }   # 1.09M
+  - { handle: BaijuBhatt,      chains: [robinhood] }   # 19k
+  - { handle: RobinhoodApp,    chains: [robinhood] }   # 1.39M
+  - { handle: RobinhoodCrypto, chains: [robinhood] }   # 648k
+  # BNB (Flap)
+  - { handle: cz_binance,      chains: [bsc] }         # 13.0M
+  - { handle: heyibinance,     chains: [bsc] }         # 642k
+  - { handle: binance,         chains: [bsc] }         # 16.2M
+  # Solana (pump.fun)
+  - { handle: toly,            chains: [sol] }         # 2.77M
+  - { handle: solana,          chains: [sol] }         # 4.23M
+  - { handle: a1lon9,          chains: [sol] }         # 425k, pump.fun
+  - { handle: rajgokal,        chains: [sol] }         # 2.41M
+  - { handle: mert,            chains: [sol] }         # 2.37M
+  - { handle: VitalikButerin,  chains: [sol] }         # 7.98M
+  # J7-list authors the market actually launched from (10-05 census; tweet_sources keeps measuring)
+  - { handle: cb_doge,         chains: [sol] }
+  - { handle: zachxbt,         chains: [sol] }
+  - { handle: stevewilldoit,   chains: [sol] }
+  - { handle: coinmarketcap,   chains: [sol] }
+  - { handle: polymarket,      chains: [sol] }
+  - { handle: pubity,          chains: [sol] }
+  - { handle: dexerto,         chains: [sol] }
+  - { handle: cointelegraph,   chains: [sol] }
+  - { handle: MarioNawfal,     chains: [sol] }
+  # A-tier KOLs / CT. Replies count too, but only a reply that NAMES a token ($TICKER or a quoted
+  # name) -- that is when a KOL reply moves volume (tweet_launch.score_post).
+  - { handle: blknoiz06,       chains: [sol], post_kinds: [post, quote, reply] }   # 1.44M Ansem
+  - { handle: cobie,           chains: [sol], post_kinds: [post, quote, reply] }   # 1.25M Cobie
+  - { handle: MustStopMurad,   chains: [sol], post_kinds: [post, quote, reply] }   # 727k
+  - { handle: Cupseyy,         chains: [sol], post_kinds: [post, quote, reply] }   # 230k
+  - { handle: notthreadguy,    chains: [sol], post_kinds: [post, quote, reply] }   # 416k
+  - { handle: KookCapitalLLC,  chains: [sol], post_kinds: [post, quote, reply] }   # 186k
+  - { handle: frankdegods,     chains: [sol], post_kinds: [post, quote, reply] }   # 536k
+  - { handle: CrashiusClay69,  chains: [sol], post_kinds: [post, quote, reply] }   # 303k
+  - { handle: theunipcs,       chains: [sol, bsc], post_kinds: [post, quote, reply] }   # 335k Bonk guy
+  - { handle: gainzy222,       chains: [sol], post_kinds: [post, quote, reply] }   # 334k
+  - { handle: CryptoKaleo,     chains: [sol], post_kinds: [post, quote, reply] }   # 732k
+  - { handle: HsakaTrades,     chains: [sol], post_kinds: [post, quote, reply] }   # 600k
+  - { handle: inversebrah,     chains: [sol], post_kinds: [post, quote, reply] }   # 708k smolting
+  - { handle: Ga__ke,          chains: [sol], post_kinds: [post, quote, reply] }   # 188k
+  - { handle: SolJakey,        chains: [sol], post_kinds: [post, quote, reply] }   # 219k
+  - { handle: Pentosh1,        chains: [sol], post_kinds: [post, quote, reply] }   # 948k
+  - { handle: GCRClassic,      chains: [sol], post_kinds: [post, quote, reply] }   # 393k
+  - { handle: loomdart,        chains: [sol], post_kinds: [post, quote, reply] }   # 322k
+  - { handle: DegenSpartan,    chains: [sol], post_kinds: [post, quote, reply] }   # 271k
+  - { handle: Rewkang,         chains: [sol], post_kinds: [post, quote, reply] }   # 423k Andrew Kang
+  - { handle: ZssBecker,       chains: [sol], post_kinds: [post, quote, reply] }   # 1.33M Alex Becker
+  - { handle: dingalingts,     chains: [sol], post_kinds: [post, quote, reply] }   # 252k
+  - { handle: SolanaLegend,    chains: [sol], post_kinds: [post, quote, reply] }   # 212k
+  - { handle: aixbt_agent,     chains: [sol], post_kinds: [post, quote, reply] }   # 466k (AI agent account)
+
+# The model reads each post and picks whether to launch, the name and the ticker
+# (kaiba/execution/tweet_creative.py). On any failure / timeout the deterministic word
+# picker is used.
+namer:
+  enabled: true
+  # Tried in order; first answer wins, then the deterministic picker.
+  # hermes: one-shot through the Hermes profile's own login, with NO tools (--safe-mode,
+  #   -t context_engine) because the post is untrusted text. Needs that profile logged in.
+  # anthropic: direct API with ANTHROPIC_API_KEY.
+  backends: [hermes, anthropic]
+  hermes_profile: kaiba-operator
+  model: claude-opus-5-5
+  timeout_s: 8
+
+# Logo when the post has no image: OpenAI Images if OPENAI_API_KEY is set, else Pollinations
+# (free, rate-limited). Never the author's profile picture.
+logo:
+  generate: true
+  timeout_s: 15
+
+# How often the curves of our open launches are read for the "no volume" exit.
+# The exit rules themselves (sell in increments; sell all after 60 s with no trade) are the
+# ladder's: config/risk.yaml protection.lanes.tweet-launch.
+activity_poll_s: 3
+
+# Early alpha (owner 2026-10-07: "get early alpha from there"): posts from these accounts that
+# name a token (contract address or $TICKER) are recorded with the token's price at our first
+# look and at each horizon after it (kaiba/execution/tweet_refs.py, table tweet_refs).
+# RECORD ONLY (mode: shadow) until the forward returns say buying on these posts pays.
+# Sources: docs/research/codex-j7tracker-watchlist-20261006.csv (callers + launchpad accounts).
+alpha:
+  mode: shadow
+  horizons_s: [60, 300, 900, 3600]
+  max_refs_per_post: 3
+  accounts:
+    - { handle: blknoiz06,       chains: [sol] }
+    - { handle: frankdegods,     chains: [sol] }
+    - { handle: crashiusclay69,  chains: [sol] }
+    - { handle: MustStopMurad,   chains: [sol] }
+    - { handle: pumpfun,         chains: [sol] }
+    - { handle: bagsapp,         chains: [sol] }
+    - { handle: theunipcs,       chains: [bsc] }
+    - { handle: flapdotsh,       chains: [bsc, robinhood] }
+    - { handle: four_meme_fora,  chains: [bsc] }
+    - { handle: ponsdotfamily,   chains: [robinhood] }
+    - { handle: lookonchain,     chains: [sol, bsc] }
+    - { handle: cz_binance,      chains: [bsc] }
+    - { handle: elonmusk,        chains: [sol] }
+
+# Vamp (owner 2026-10-07: "the agent can vamp launches out of tweets"): clone a token a
+# watched post names (its name, ticker, logo, X link) into our own launch on another chain.
+# PLANNED AND RECORDED ONLY (tweet_refs.vamp_json holds the exact gmgn argv). Measured prior:
+# copycats graduate 0.86% vs 9.20% for originals (arXiv 2609.10246); every later-than-first
+# launch on a tweet was negative in our census. Same-chain vamps are off for that reason.
+vamp:
+  # Owner 2026-10-07: "Vamp launches with volume / Just use same everything".
+  # tweet_launches: when OTHERS launch from a watched launch-account post and the token shows
+  # provider-reported 5-minute volume, clone its name/ticker/logo into our own launch through the
+  # normal send path (same 5% buy, holder fees, ladder, daily caps, one launch per post+chain).
+  tweet_launches: shadow
+  window_s: 60
+  min_volume_usd: 0
+  # tweet_refs (alpha-account token mentions): clone plans are RECORDED only.
+  mode: shadow
+  targets: [bsc, robinhood, sol]
+  same_chain: true

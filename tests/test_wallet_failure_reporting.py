@@ -12,8 +12,10 @@ from kaiba.ops import scheduler
 def ctx():
     with sqlite3.connect(':memory:') as conn:
         conn.execute('CREATE TABLE kv(key TEXT PRIMARY KEY,value TEXT,updated_ms INTEGER)')
+        # deadline_ms/clock: the jobs now split the run's time budget across chains
+        # (scheduler._share_deadline); a far deadline keeps every chain inside it.
         yield SimpleNamespace(conn=conn, param={'chains': ['sol', 'bsc'], 'store': True}.get,
-                              now=lambda: 123)
+                              now=lambda: 123, deadline_ms=10**15, clock=lambda: 0.0)
 
 
 def test_tape_partial_store_is_failed_with_exact_totals(ctx, monkeypatch):

@@ -338,3 +338,85 @@ def test_a_paper_position_is_not_live_exposure(tmp_db):
     _position(tmp_db, "pos_paper", "shadow", 1_000_000)
     assert gate.open_exposure(RH, tmp_db) == 30_000
     assert gate.open_exposure(RH, tmp_db, token=TOKEN) == 30_000
+
+
+# ------------------------------------------------------------- post-migration cooldown (2026-10-05)
+
+
+def _mig_signal(conn, since_s, *, migrated=True, token=TOKEN, chain=Chain.SOL):
+    ts = engine.now_ms() - 2_000
+    payload = {"smart_wallets": 4, "entity_count": 3, "migrated": 1 if migrated else 0}
+    if since_s is not None:
+        payload["since_migration_s"] = since_s
+    sig = Signal(
+        signal_id=lanes.signal_id_for(Lane.SM_TRENCHES, chain, token, ts, 1800),
+        lane=Lane.SM_TRENCHES, chain=chain, token=token, strength=0.7,
+        reasons=["4 smart wallets in the trenches preset (min 3)"], window_s=1800,
+        created_ms=ts, payload=payload,
+    )
+    lanes.record(sig, conn)
+    return sig
+
+
+def _arm_cooldown(arm, mode=LaneMode.LIVE, value=None):
+    cfg = arm(mode, allow=None)
+    lane_cfg = cfg.lane(Lane.SM_TRENCHES)
+    params = dict(lane_cfg.params or {})
+    params[engine.POST_MIGRATION_PARAM] = value if value is not None else {"sol": 600}
+    cfg.lanes[Lane.SM_TRENCHES] = lane_cfg.model_copy(update={"params": params})
+    return cfg
+
+
+@pytest.mark.parametrize("since_s,refused", [(43, True), (599, True), (600, False), (7200, False)])
+def test_a_fresh_migration_is_refused_live_and_an_old_one_is_not(tmp_db, arm, since_s, refused):
+    _arm_cooldown(arm)
+    _ready(tmp_db, "pump.fun", chain=Chain.SOL)
+    d = engine.decide(_mig_signal(tmp_db, since_s), tmp_db)
+    if refused:
+        assert d.action is Action.SKIP and d.blockers == [f"post_migration_cooldown:{since_s}s<600s"], d.blockers
+    else:
+        assert d.action is Action.ENTER and d.mode is LaneMode.LIVE, (d.blockers, d.thesis)
+
+
+@pytest.mark.parametrize("kw", [{"since_s": None}, {"since_s": 10, "migrated": False}])
+def test_unknown_age_and_curve_tokens_are_not_refused(tmp_db, arm, kw):
+    _arm_cooldown(arm)
+    _ready(tmp_db, "pump.fun", chain=Chain.SOL)
+    d = engine.decide(_mig_signal(tmp_db, kw["since_s"], migrated=kw.get("migrated", True)), tmp_db)
+    assert d.action is Action.ENTER and d.mode is LaneMode.LIVE, (d.blockers, d.thesis)
+
+
+def test_the_cooldown_is_per_chain_and_paper_is_untouched(tmp_db, arm):
+    _arm_cooldown(arm)
+    _ready(tmp_db, "pons", chain=RH)
+    d = engine.decide(_mig_signal(tmp_db, 30, chain=RH), tmp_db)
+    assert d.action is Action.ENTER, "robinhood has no cooldown configured"
+    _arm_cooldown(arm, mode=LaneMode.SHADOW)
+    tok = "So1Shadow1111111111111111111111111111111111"
+    _ready(tmp_db, "pump.fun", token=tok, chain=Chain.SOL)
+    d2 = engine.decide(_mig_signal(tmp_db, 30, token=tok), tmp_db)
+    assert not any(b.startswith("post_migration_cooldown") for b in d2.blockers)
+
+
+def test_a_cooled_down_entry_becomes_a_paper_twin(tmp_db, arm, protectable):
+    _arm_cooldown(arm)
+    _ready(tmp_db, "pump.fun", chain=Chain.SOL)
+    sig = _mig_signal(tmp_db, 43)
+    [live] = engine.run_once(tmp_db)
+    assert live.action is Action.SKIP and live.blockers == ["post_migration_cooldown:43s<600s"]
+    twin = engine.load_decision(engine.shadow_twin_id(sig.signal_id), tmp_db)
+    assert twin is not None and twin.mode is LaneMode.SHADOW and twin.action is Action.ENTER
+    assert tmp_db.execute("SELECT COUNT(*) FROM orders WHERE mode != 'shadow'").fetchone()[0] == 0
+
+
+def test_the_cooldown_key_is_not_a_lane_feature_threshold():
+    """2026-10-05 regression: the key was first named min_since_migration_s, which the lane reads
+    as a learnable min_<feature> threshold that REFUSES an unknown feature -- every sol signal on
+    a token still on its launch curve was dropped inside the lane, live and paper alike."""
+    from kaiba.execution.lanes import FEATURE_THRESHOLD_KEYS, feature_threshold_refusal
+
+    assert engine.POST_MIGRATION_PARAM not in FEATURE_THRESHOLD_KEYS.get(Lane.SM_TRENCHES, ())
+    params = {engine.POST_MIGRATION_PARAM: {"sol": 600}}
+    assert feature_threshold_refusal(Lane.SM_TRENCHES, Chain.SOL, params, {"on_curve": 1}) is None
+    assert feature_threshold_refusal(Lane.SM_TRENCHES, Chain.SOL, params,
+                                     {"migrated": 1, "since_migration_s": 30}) is None

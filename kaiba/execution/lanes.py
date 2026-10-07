@@ -59,7 +59,7 @@ from kaiba.core.schemas import (
 # the tape; a lane that refuses to copy inventory inflow must refuse the same words, so it
 # imports them rather than keeping a second list to drift. ``pnl`` imports only
 # ``core.schemas``, so this is not a cycle.
-from kaiba.intelligence.pnl import TRANSFER_IN_SIDES
+from kaiba.intelligence.pnl import TRANSFER_IN_SIDES, TRANSFER_OUT_SIDES
 
 log = logging.getLogger(__name__)
 
@@ -298,12 +298,16 @@ DEFAULT_PARAMS: dict[Lane, dict[str, Any]] = {
         # non-monotonic, which is noise rather than a signal. 5 is the owner's "really
         # good wallets" expressed as the only thing we can measure honestly.
         #
-        # NOT IMPLEMENTED: the volume half of the instruction. `volume_24h_usd` is
-        # UNKNOWN on 100% of the tokens we have dossiers for -- we do not collect it --
-        # and a threshold against a field nobody populates is a gate that never fires or
-        # always does, depending on which way the `None` falls. Gating on wallets alone
-        # is stated here rather than quietly half-implemented.
         "manual_min_smart_degen": 5,
+        # The volume half of the same instruction ("IF really good wallets are in AND
+        # volume is good"), implemented 2026-10-05 now that `dyor` populates
+        # `volume_24h_usd` (tests/test_audit_volume_flow.py). A manual deploy needs a
+        # KNOWN, fresh 24h volume at or above this floor; an unknown or stale one refuses,
+        # because "we could not read it" is not "volume is good" and the old code let a
+        # manual deploy through on wallets alone (tests/test_audit_volume_policy.py).
+        # The floor is 0 on purpose: no volume threshold has been MEASURED, and an
+        # unmeasured number is not shipped. Launchpad tokens are untouched.
+        "manual_min_volume_24h_usd": 0,
         # RESTORED 2026-09-24. These five keys lived in a SECOND `Lane.SM_TRENCHES`
         # entry earlier in this same dict literal, so Python kept only the later one
         # and silently discarded them: DEFAULT_PARAMS[Lane.SM_TRENCHES] held just
@@ -836,6 +840,213 @@ def _net_buyers(
     }
 
 
+# --------------------------------------------------------------------------------------
+# still holding: a smart buyer who has already sold is not confluence
+#
+# ADDED 2026-10-05. ``_net_buyers`` nets USD, so a wallet that bought $100 and dumped the
+# whole bag at a loss for $60 stayed a "net buyer" of $40 and counted toward sm-trenches'
+# ``min_smart_degen``. A buyer who has exited is not confluence; it is exit liquidity
+# signalling. sm-trenches therefore also asks, per smart wallet, how much of the TOKENS it
+# bought it has sold, on the tape the lane holds, at or before the decision.
+#
+# Units are the trap. ``swaps.amount_token`` is UI units (a decimal string) on every gmgn
+# feed and integer atoms on every other source (pumpfun:trades, helius, alchemy:ws, the
+# robinhood decoder). MEASURED on the box over 7 days of signal tape: all 2,138 trades
+# recorded by two sources carried two different amounts, 1e6 apart on sol and 1e18 apart
+# on robinhood, i.e. one row in each unit. Mixing them would read a full exit as a
+# millionth of one, so amounts are normalised to UI units with the token's decimals, and
+# the same trade seen by two sources is counted once.
+# --------------------------------------------------------------------------------------
+
+#: A smart wallet counts toward sm-trenches only while it has sold LESS than this fraction
+#: of the tokens it bought.
+#:
+#: WHY 0.5, MEASURED 2026-10-05 on the box (7 days of sm-trenches signals, 5,577 signal
+#: wallets, the lane's own 1800 s tape at or before each signal). Among wallets that had
+#: sold anything, the sold fraction is bimodal: the largest mode is a FULL exit (99-101%:
+#: sol 433/795, robinhood 763/1032, bsc 306/569), the rest spread over 10-75%. 0.5 is
+#: "has sold the majority of its position", and the count is insensitive to the choice
+#: anywhere in 0.5-0.9: signals that stop firing move 94->76 sol (of 379), 144->128
+#: robinhood (of 280), 89->67 bsc (of 168). It was NOT picked on outcomes: 0.25 replays
+#: better on bsc and was rejected for exactly that reason. A module constant, not a lane
+#: param, so the experiment loop cannot retune a correctness rule into a filter.
+SMART_SOLD_FRAC_MAX = Decimal("0.5")
+
+#: Sides that take tokens out of a wallet. ``sell`` plus the transfer-out vocabulary the
+#: position rebuilder already recognises.
+_TOKEN_OUT_SIDES: frozenset[str] = frozenset({"sell"}) | TRANSFER_OUT_SIDES
+
+
+def _token_amount(row: dict[str, Any], decimals: int | None) -> tuple[Decimal, str] | None:
+    """``(amount, unit)`` for this row's ``amount_token``, or ``None`` when unreadable.
+
+    ``unit`` is ``"ui"`` (whole tokens) or ``"atoms"``. A gmgn-sourced row is UI units
+    whatever it looks like (``"1000000"`` from gmgn is a million tokens, not a millionth of
+    one); any other value with a decimal point or exponent is UI too, because atoms are
+    integers by definition. Everything else is atoms, converted to UI when the token's
+    decimals are known.
+    """
+    raw = row.get("amount_token")
+    if raw is None:
+        return None
+    text = str(raw).strip()
+    if not text:
+        return None
+    try:
+        value = Decimal(text)
+    except InvalidOperation:
+        return None
+    if not value.is_finite() or value < 0:
+        return None
+    source = str(row.get("source") or "").strip().lower()
+    if source.startswith("gmgn") or not text.isdigit():
+        return value, "ui"
+    if decimals is not None and 0 <= int(decimals) <= 36:
+        return value.scaleb(-int(decimals)), "ui"
+    return value, "atoms"
+
+
+def _row_ts(row: dict[str, Any]) -> int:
+    """``ts_ms`` as an int; an unreadable one sorts after every decision (never used)."""
+    try:
+        return int(row.get("ts_ms"))
+    except (TypeError, ValueError):
+        return 2**62
+
+
+def _decimals_from_tape(rows: list[dict[str, Any]]) -> int | None:
+    """The token's decimals, read off one trade that two sources recorded in both units.
+
+    ``tokens.decimals`` is empty for most tokens we trade (MEASURED 2026-10-05: known for
+    83 of 379 sol sm-trenches signal tokens over 7 days), but the tape itself often holds
+    the same ``(tx, wallet, side)`` once in gmgn UI units and once in atoms. Their ratio is
+    10**decimals. Accepted only when it lands within 1% of a power of ten and every such
+    pair on the tape agrees; anything else is ``None`` (unknown), never a guess.
+    """
+    ui: dict[tuple[str, str, str], Decimal] = {}
+    atoms: dict[tuple[str, str, str], Decimal] = {}
+    for row in rows:
+        tx = str(row.get("tx") or "")
+        if not tx:
+            continue
+        amount = _token_amount(row, None)
+        if amount is None or amount[0] <= 0:
+            continue
+        key = (tx, str(row.get("wallet") or ""), str(row.get("side") or "").strip().lower())
+        (ui if amount[1] == "ui" else atoms)[key] = amount[0]
+    found: set[int] = set()
+    for key, a in atoms.items():
+        u = ui.get(key)
+        if u is None:
+            continue
+        ratio = a / u
+        exp = ratio.adjusted()
+        for d in (exp, exp + 1):
+            if 0 <= d <= 36 and abs(ratio / (Decimal(10) ** d) - 1) <= Decimal("0.01"):
+                found.add(d)
+                break
+        # A pair off a power of ten (a transfer fee, a rounded feed) proves nothing either
+        # way and is skipped; two pairs that disagree make the answer unknown below.
+    return found.pop() if len(found) == 1 else None
+
+
+def _holding_status(
+    rows: list[dict[str, Any]],
+    wallets: list[str],
+    *,
+    until_ms: int,
+    decimals: int | None,
+    max_sold_frac: Decimal = SMART_SOLD_FRAC_MAX,
+) -> dict[str, dict[str, Any]]:
+    """Per wallet: has it sold what it bought, as far as the tape we hold can tell?
+
+    Returns ``{wallet: {"status", "sold_frac", "buys", "sells"}}`` where ``status`` is
+
+    * ``"holding"`` -- no sell after its first visible buy, or sold < ``max_sold_frac``;
+    * ``"sold"``    -- sold at least ``max_sold_frac`` of the tokens it bought;
+    * ``"unknown"`` -- it sold, but a size on either side is unreadable (or mixes units we
+      cannot reconcile), so the fraction cannot be computed.
+
+    Rules, each load-bearing:
+
+    * ONLY rows at or before ``until_ms``. A sell after the decision did not exist yet.
+    * Only sells AFTER the wallet's first visible buy. A sell before it disposes of
+      inventory bought before our tape starts, which says nothing about this position.
+    * One trade, counted once: rows are keyed by ``(tx, side)`` per wallet, because two
+      sources record the same trade in two units (see the block comment above).
+    * A wallet with no sell is ``holding`` even when its buy sizes are unreadable: there is
+      nothing to net against.
+    """
+    # wallet -> trade key -> (ts, order, kind, amount). A trade two sources both recorded
+    # keeps the copy whose size is readable.
+    by_wallet: dict[str, dict[Any, tuple[int, int, str, tuple[Decimal, str] | None]]] = {
+        w: {} for w in set(wallets)
+    }
+    for i, row in enumerate(rows):
+        wallet = str(row.get("wallet") or "")
+        trades = by_wallet.get(wallet)
+        if trades is None:
+            continue
+        try:
+            ts = int(row.get("ts_ms"))
+        except (TypeError, ValueError):
+            continue
+        if ts > until_ms:
+            continue
+        side = str(row.get("side") or "").strip().lower()
+        if side == "buy":
+            kind = "buy"
+        elif side in _TOKEN_OUT_SIDES:
+            kind = "out"
+        else:
+            continue  # unknown or transfer-in: neither a purchase nor a disposal
+        tx = str(row.get("tx") or "")
+        key: Any = (tx, kind) if tx else ("row", i)
+        amount = _token_amount(row, decimals)
+        held = trades.get(key)
+        if held is not None and (held[3] is not None or amount is None):
+            continue
+        trades[key] = (ts, 0 if kind == "buy" else 1, kind, amount)
+
+    out: dict[str, dict[str, Any]] = {}
+    for wallet, trades in by_wallet.items():
+        events = sorted(trades.values(), key=lambda e: (e[0], e[1]))
+        bought: dict[str, Decimal] = {}
+        sold: dict[str, Decimal] = {}
+        n_buys = n_sells = 0
+        unreadable = False
+        first_buy: int | None = None
+        for ts, _order, kind, amount in events:
+            if kind == "buy":
+                first_buy = ts if first_buy is None else first_buy
+                n_buys += 1
+                if amount is None:
+                    unreadable = True
+                else:
+                    bought[amount[1]] = bought.get(amount[1], Decimal(0)) + amount[0]
+                continue
+            if first_buy is None:
+                continue  # disposes of inventory from before our tape: not this position
+            n_sells += 1
+            if amount is None:
+                unreadable = True
+            else:
+                sold[amount[1]] = sold.get(amount[1], Decimal(0)) + amount[0]
+        sold_frac: Decimal | None
+        if n_sells == 0:
+            status, sold_frac = "holding", Decimal(0)
+        else:
+            units = set(bought) | set(sold)
+            total_bought = sum(bought.values(), Decimal(0))
+            if unreadable or len(units) != 1 or total_bought <= 0:
+                status, sold_frac = "unknown", None
+            else:
+                sold_frac = sum(sold.values(), Decimal(0)) / total_bought
+                status = "holding" if sold_frac < max_sold_frac else "sold"
+        out[wallet] = {"status": status, "sold_frac": sold_frac, "buys": n_buys, "sells": n_sells}
+    return out
+
+
 def _clamp(value: float, low: float = 0.0, high: float = 1.0) -> float:
     return round(max(low, min(high, value)), 4)
 
@@ -868,7 +1079,19 @@ def _clamp(value: float, low: float = 0.0, high: float = 1.0) -> float:
 # --------------------------------------------------------------------------------------
 
 #: Version of the recorded feature set, carried in ``payload["features_v"]``.
-ENTRY_FEATURES_VERSION = 1
+#: 2 (2026-10-04): + ``trusted_buyers``, ``trusted_first`` (see :func:`_trusted_features`).
+ENTRY_FEATURES_VERSION = 2
+
+#: The cohort the owner curates by hand (``wallets.cohort``). Read from the DATABASE only,
+#: through :func:`_cohort`; a feed row that claims it is ignored.
+TRUSTED_COPY_COHORT = "trusted_copy"
+
+#: Chains where a ``trusted_copy`` buyer counts as smart in ``sm_trenches`` (and where the
+#: ``trusted_*`` features are measured). OWNER DECISION 2026-10-04 concerned his ROBINHOOD
+#: wallets; the box also holds 14 unrelated ``trusted_copy`` rows on bsc, which must not
+#: start counting as smart money by accident. ``scanner._smart_set`` reads the same set,
+#: so the feeder and the lane cannot disagree about who counts.
+TRUSTED_COPY_CHAINS: frozenset[Chain] = frozenset({Chain.ROBINHOOD})
 
 #: Dossier measures recorded verbatim (``_measure``: known AND inside its freshness
 #: budget, else ``None``). ``rug_ratio`` is deliberately absent: sm-trenches records it
@@ -891,6 +1114,10 @@ ENTRY_FEATURES: tuple[str, ...] = DOSSIER_FEATURES + (
     "window_swaps", "window_buy_usd", "window_sell_usd", "window_buy_share",
     "window_buyers", "window_sellers", "price_change_window_pct", "from_window_high_pct",
     "smart_buy_usd", "first_smart_buy_age_s", "last_smart_buy_age_s",
+    # ADDED 2026-10-04 (owner decision: trusted wallets are confluence evidence, never a
+    # blind copy). RECORDED ONLY, so the learning loop and the replay gate can measure
+    # whether those wallets help; their min_/max_ keys ship None like every other one.
+    "trusted_buyers", "trusted_first",
 )
 
 
@@ -1078,6 +1305,39 @@ def _on_curve(ctx: LaneContext) -> bool:
     return migrated is None and reserve is not None and reserve > 0
 
 
+def _trusted_features(
+    ctx: LaneContext,
+    smart: list[str] | None,
+    buyers: dict[str, dict[str, Any]] | None,
+) -> dict[str, Any]:
+    """How many of the lane's qualifying wallets the DATABASE calls ``trusted_copy``, and
+    whether one of them was the FIRST of those wallets to buy inside the window.
+
+    * ``trusted_buyers``: count of ``smart`` wallets whose ``wallets.cohort`` (read through
+      :func:`_cohort`, never from a feed row) is ``trusted_copy`` -- whichever route made
+      them qualify, so a trusted wallet that also carries a smart tag still counts here.
+    * ``trusted_first``: 1 when the earliest ``first_buy_ms`` among ``smart`` belongs to a
+      trusted wallet (a tie at that millisecond counts as first), 0 when it belongs to
+      none, ``None`` when no qualifying wallet has a first buy to compare.
+    * Both ``None`` without a connection: an unread cohort is unknown, never 0.
+    * Both ``None`` off :data:`TRUSTED_COPY_CHAINS`: the cohort is not counted there, so a
+      number would describe wallets the lane ignores (bsc has unrelated rows).
+
+    Recorded only. Nothing in any lane reads them, and their thresholds ship ``None``.
+    """
+    if ctx.conn is None or smart is None or ctx.chain not in TRUSTED_COPY_CHAINS:
+        return {"trusted_buyers": None, "trusted_first": None}
+    trusted = [w for w in smart
+               if _cohort(ctx.chain, {"wallet": w}, ctx.conn) == TRUSTED_COPY_COHORT]
+    firsts = {w: int(buyers[w]["first_buy_ms"]) for w in smart
+              if buyers and w in buyers and buyers[w].get("first_buy_ms")}
+    first: int | None = None
+    if firsts:
+        earliest = min(firsts.values())
+        first = 1 if any(firsts.get(w) == earliest for w in trusted) else 0
+    return {"trusted_buyers": len(trusted), "trusted_first": first}
+
+
 def entry_features(
     ctx: LaneContext,
     *,
@@ -1131,6 +1391,7 @@ def entry_features(
         feats["last_smart_buy_age_s"] = round((ctx.now_ms - max(lasts)) / 1000.0, 1) if lasts else None
     else:
         feats["smart_buy_usd"] = feats["first_smart_buy_age_s"] = feats["last_smart_buy_age_s"] = None
+    feats.update(_trusted_features(ctx, smart, buyers))
     feats["features_v"] = ENTRY_FEATURES_VERSION
     return feats
 
@@ -1631,6 +1892,11 @@ def sm_trenches(ctx: LaneContext) -> Signal | None:
         launchpad = str((ctx.token_meta.launchpad if ctx.token_meta else None) or "").strip()
         if not launchpad:
             min_smart = max(min_smart, int(p.get("manual_min_smart_degen", min_smart)))
+            # Volume half of the manual-deploy policy: unknown or stale volume refuses.
+            volume = _measure(ctx.dossier, "volume_24h_usd")
+            min_volume = _dec(p.get("manual_min_volume_24h_usd", 0)) or Decimal(0)
+            if volume is None or volume < min_volume:
+                return None
 
     # Liquidity first, because it is the cheapest gate and the most predictive one we have
     # (see `DEFAULT_PARAMS[Lane.SM_TRENCHES]` for both measurements). An UNKNOWN liquidity
@@ -1701,6 +1967,7 @@ def sm_trenches(ctx: LaneContext) -> Signal | None:
             row_tags.setdefault(wallet, set()).update(_tags(ctx.chain, row, _conn(ctx)))
 
     smart: list[str] = []
+    trusted_route: list[str] = []  # smart ONLY because the database says trusted_copy
     cohort_ok = ctx.chain in SMART_COHORT_LABEL_CHAINS
     # Both spellings refuse: a bot label is disqualifying whether or not anyone screened it.
     quarantine = {t.value for t in HARD_QUARANTINE_TAGS} | {
@@ -1728,9 +1995,47 @@ def sm_trenches(ctx: LaneContext) -> Signal | None:
         if cohort_ok and (lowered & SMART_COHORT_VENDOR_TAGS) and not (lowered & quarantine):
             smart.append(wallet)
             continue
+        # OWNER DECISION 2026-10-04: a wallet the owner curated into `trusted_copy` is
+        # strong evidence -- "Copy only the tokens the agent wants to. With confluences."
+        # So it counts as ONE smart buyer and nothing more: min_smart_degen,
+        # min_independent_entities, the rug ceiling, the liquidity/holder floors and every
+        # threshold below are untouched, so a trusted wallet can add to confluence but can
+        # never fire this lane alone, and two trusted addresses of one entity count once
+        # (`_entities` below collapses them like any other buyer). The cohort is read from
+        # the DATABASE (`_cohort`); the row is never asked, because a feed that wrote
+        # `cohort: trusted_copy` must not promote anyone. `_source_allowed` above has
+        # already applied the hub / quarantine / blacklist vetoes. ROBINHOOD ONLY
+        # (`TRUSTED_COPY_CHAINS`): the owner's instruction was about his robinhood wallets.
+        if (ctx.chain in TRUSTED_COPY_CHAINS
+                and _cohort(ctx.chain, {"wallet": wallet}, _conn(ctx)) == TRUSTED_COPY_COHORT):
+            smart.append(wallet)
+            trusted_route.append(wallet)
+            continue
         score = _score(ctx.chain, wallet, _conn(ctx))
         if score is not None and str(score.archetype) in {"smart_money", "top_trader"}:
             smart.append(wallet)
+
+    # STILL HOLDING (2026-10-05). A smart wallet that has already sold at least
+    # SMART_SOLD_FRAC_MAX of the tokens it bought is not confluence, it is a seller; one
+    # whose sell size is unreadable is not shown to be holding, so it does not count
+    # either (recorded separately, never silently). Only tape rows at or before now_ms.
+    # See _holding_status for the units and de-duplication rules.
+    smart_seen = len(smart)
+    holding = _holding_status(
+        ctx.recent_buys,
+        smart,
+        until_ms=ctx.now_ms,
+        decimals=(
+            ctx.token_meta.decimals
+            if ctx.token_meta is not None and ctx.token_meta.decimals is not None
+            else _decimals_from_tape([r for r in ctx.recent_buys if _row_ts(r) <= ctx.now_ms])
+        ),
+    )
+    smart_sold = [w for w in smart if holding[w]["status"] == "sold"]
+    smart_sold_unknown = [w for w in smart if holding[w]["status"] == "unknown"]
+    smart = [w for w in smart if holding[w]["status"] == "holding"]
+    trusted_route = [w for w in trusted_route if w in set(smart)]
+    smart_trimmed = sum(1 for w in smart if holding[w]["sells"] > 0)
     if len(smart) < min_smart:
         return None
 
@@ -1799,10 +2104,23 @@ def sm_trenches(ctx: LaneContext) -> Signal | None:
         )
     else:
         rug_reason = f"rug ratio {rug_ratio} < {max_rug} (MEASURED; earns no strength)"
+    trusted_reason = (
+        [f"{len(trusted_route)} of the smart wallets counted because their DB cohort is "
+         f"trusted_copy (owner-curated; thresholds unchanged)"]
+        if trusted_route else []
+    )
     payload: dict[str, Any] = {
         # Point-in-time entry features FIRST, so the lane's own keys below win any clash.
         **entry_features(ctx, window_s=window_s, smart=smart, buyers=buyers),
         "smart_wallets": len(smart),
+        # Still-holding accounting (2026-10-05), for the daily audit to score. `smart_wallets`
+        # above counts holders only; `smart_wallets_seen` is the count before the filter.
+        "smart_wallets_seen": smart_seen,
+        "smart_wallets_still_holding": len(smart),
+        "smart_wallets_sold": len(smart_sold),
+        "smart_wallets_sold_unknown": len(smart_sold_unknown),
+        "smart_wallets_trimmed": smart_trimmed,
+        "smart_sold_frac_max": str(SMART_SOLD_FRAC_MAX),
         "entity_count": entities,
         # None when unavailable OR stale: never "0", never "None"-the-string. The
         # basis tells the two apart; the age and budget say why a stale one is stale.
@@ -1824,9 +2142,12 @@ def sm_trenches(ctx: LaneContext) -> Signal | None:
         token=ctx.token,
         strength=strength,
         reasons=[
-            f"{len(smart)} smart wallets in the trenches preset (min {min_smart})",
+            f"{len(smart)} smart wallets in the trenches preset still holding (min {min_smart}; "
+            f"{len(smart_sold)} sold >= {SMART_SOLD_FRAC_MAX:.0%} and "
+            f"{len(smart_sold_unknown)} sold an unreadable size, not counted)",
             f"{entities} independent entities (min {min_entities})",
             rug_reason,
+            *trusted_reason,
         ],
         wallets=smart,
         entities=_entity_ids(ctx.chain, smart, _conn(ctx)),

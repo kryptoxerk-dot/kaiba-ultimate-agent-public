@@ -171,7 +171,17 @@ def build_ctx(
         # every one of those fixtures would refuse at the blocklist and stop testing
         # the rug-ratio and strength behaviour it was written for. The blocklist has
         # its own tests in tests/test_holder_floor.py.
-        params={"blocked_launchpads": [], **(params or {})},
+        #
+        # confluence-5 is pinned to the lane's shipped DEFAULT_PARAMS (the grade route,
+        # 5 entities / 120 s / 30 s age) for the same reason: these fixtures test that
+        # mechanism, and the operator re-pointed the file's copy at the PROVEN cohort on
+        # 2026-10-03 (wallet_source: proven, 2 entities, 1800 s), which no fixture
+        # freezes -- every confluence test then read None. The proven route and the
+        # shipped file's own values are covered by test_confluence_proven*.py. Flat keys
+        # the caller passes still win (they are applied after this lane-keyed block).
+        params={"blocked_launchpads": [],
+                Lane.CONFLUENCE_5.value: dict(lanes.DEFAULT_PARAMS[Lane.CONFLUENCE_5]),
+                **(params or {})},
         extras=extras or {},
     )
 

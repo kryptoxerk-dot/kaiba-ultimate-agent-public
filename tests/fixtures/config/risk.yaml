@@ -18,19 +18,19 @@ chains:
   sol:
     enabled: true
     bankroll_base_units: 8000000000
-    max_position_base_units: 830000000
-    min_position_base_units: 370000000
+    max_position_base_units: 100000000
+    min_position_base_units: 50000000
     gas_reserve_base_units: 50000000
-    daily_loss_stop_base_units: 800000000
+    daily_loss_stop_base_units: 1200000000
     max_exposure_pct: 90.0
     wallet: rUHrovRbRDoCmn9ojmZ2Pi3bLPUJ15kGjmLfGm6MdTo
   robinhood:
     enabled: true
-    bankroll_base_units: 360000000000000000
+    bankroll_base_units: 990000000000000000
     max_position_base_units: 37037037037037037
     min_position_base_units: 16700000000000000
     gas_reserve_base_units: 10000000000000000
-    daily_loss_stop_base_units: 36000000000000000
+    daily_loss_stop_base_units: 99000000000000000
     max_exposure_pct: 90.0
     wallet: '0xcc4450c80735778e9f5eaa7a4ea47990e57807c2'
   bsc:
@@ -131,6 +131,10 @@ lanes:
       max_rug_ratio: 0.3
       min_holder_count: 0
       blocked_launchpads: []
+      # 2026-10-05: no live buy within 10 min of a migration (sol); 614 replayed sol signals:
+      # <2 min -20.8% (n=88), 2-10 min -26.8% (n=66) vs -16.9% overall. Skipped entries are paper twins.
+      post_migration_cooldown_s:
+        sol: 600
       live_launchpads_by_chain:
         robinhood:
         - pons
@@ -184,26 +188,84 @@ lanes:
     chains:
     - robinhood
     - sol
+    - bsc
     params:
-      chains: [robinhood, sol]
+      # bsc (Flap) added 2026-10-05, PAPER ONLY: owner "enable bnb snipes". Listing bsc here also
+      # switches on the Flap listener (ingest 'flap', ~38M Alchemy CU/month at the measured rate,
+      # +~12M for sender lookups), but ONLY with BSC_SNIPE_RPC_URL set: its own Alchemy app, never
+      # BSC_RPC_URL, whose key protection's price reads use. The listener idles itself past
+      # bsc_feed_max_cu_per_day (default 2.5M) and when bsc leaves this list.
+      chains: [robinhood, sol, bsc]
       venues:
         robinhood: [pons]
         sol: [launchlab, pump.fun]
+        bsc: [flap]
       dev_watchlist: []
       name_watchlist: []
-      fire_on_records: [low/runner, mid/runner]
+      # 2026-10-04 re-measured (numeric peak, one price source, newest week, reach-2x O/E): sol
+      # mid/runner 1.26, low/runner 1.09; robinhood low/runner 1.10, mid/runner 0.80 (below baseline).
+      # bsc: UNMEASURED (deployer_stats bsc: 1,619 rows, GMGN-fed, thin and biased); paper only.
+      fire_on_records:
+        sol: [low/runner, mid/runner]
+        robinhood: [low/runner]
+        # bsc PAPER, pre-declared 2026-10-05 before any data (thin bsc records, mostly low/no_prior).
+        bsc: [low/no_prior, low/runner, mid/runner]
+      trusted_early_chains: [robinhood, sol]
       never_records: [spam/all_dud]
+      # robinhood: the anti-sniper toll. bsc: the token's own buy AND sell tax (getTokenV8Safe).
+      # A fresh Flap curve with 1% tax bands at most ~0.059 BNB under the 7% round-trip ceiling,
+      # below the 0.129 BNB minimum, so 0 is also what the sizer would allow.
       max_entry_tax_bps: 0
       exempt_buyer_veto: true
       dev_atomic_veto_wei: 30000000000000000
       max_snipes_per_day:
         robinhood: 5
         sol: 5
+        bsc: 30
       max_dossiers_per_hour: 40
+      dossier_budget_by_chain:
+        bsc: 10
+      measure_bsc_every: 20
       live_launchpads_by_chain:
-        robinhood: [pons]
-        sol: [pump.fun]
+        # 2026-10-05 lead (owner-approved plan): sol and robinhood snipes to PAPER. Measured on every
+        # observed launch at exact curve entries: sol pump.fun -21%/-23% per trade (n=2,873), runner
+        # devs -33%/-41%; robinhood pons -11%/-12%, runner devs -12%/-22%.
+        robinhood: []
+        sol: []
+        # Empty = no Flap launch is ever entered with money; each becomes a SHADOW twin. The
+        # code refuses to signal a bsc snipe at all unless this is exactly [] (snipe.paper_only_refusal),
+        # and the engine refuses money on launch-snipe bsc whatever this says (engine.PAPER_ONLY_LANE_CHAINS).
+        bsc: []
+  tweet-launch:
+    # Our own launches on a watched account's post (kaiba/execution/tweet_launch.py, unit
+    # kaiba-tweet-launch). The dev buy is sized by config/tweet_launch.yaml (5% of supply,
+    # capped per chain), NOT by these size_pct values; this block is the lane's on/off switch
+    # for executor._check_mode. Owner, 2026-10-06: "Just make auto launcher based on tweets works".
+    mode: shadow
+    size_pct_min: 0.25
+    size_pct_max: 2.0
+    chains: [sol, bsc, robinhood]
 protection:
+  lanes:
+    # Per-lane ladder overrides (watchdog._lane_cfg). Any ProtectionConfig field; the rest
+    # stay global.
+    tweet-launch:
+      # Owner 2026-10-06: "sell in increments, then sell all if there's no volume after 1
+      # minute". The rungs sell 20% of the ORIGINAL bag each (pct is of what remains:
+      # 20, 25, 33, 50), leaving the 20% moon bag on the trailing stop. On a fresh pump
+      # curve with our 5% dev buy, 1.3x needs ~4 SOL of other buys, 2x ~13 SOL.
+      tp_ladder:
+      - - 1.3
+        - 20
+      - - 1.6
+        - 25
+      - - 2.0
+        - 33
+      - - 3.0
+        - 50
+      # Silence = no trade on our curve (tweet_launch.watch_activity writes kv
+      # token_activity:<chain>:<token> every time the curve moves; the launch seeds it).
+      stale_no_volume_exit_s: 60
   # 2026-10-03: entries reserve open positions' + the new ticket's stop exposure against the
   # remaining daily budget (SOL 10-02 closed at 206% of its stop). 0 = off.
   daily_stop_reserve_pct: 0.40
@@ -245,11 +307,20 @@ protection:
   max_blind_s: 300
   max_blind_halt_entries: true
 provider_budgets:
+  leader-exit-rpc:
+    # 2026-10-06: record-only leader-exit observer (kaiba/learning/leader_exit.py); its own bucket so
+    # it never shares protection's 'rpc'. The +5 s on-chain read needs better than the 1/s default.
+    min_interval_ms: 250
+    capacity: 10
+    refill_per_s: 2.0
+    max_inflight: 2
   robinhood-rpc:
-    min_interval_ms: 1500
-    capacity: 3
-    refill_per_s: 0.6
-    max_inflight: 1
+    # 2026-10-04 owner: measure every robinhood launch on the paid Alchemy plan. Was sized for
+    # the free public endpoint (1.5 s, cap 3, 0.6/s, 1 inflight): 22% of launches went unmeasured.
+    min_interval_ms: 150
+    capacity: 15
+    refill_per_s: 5.0
+    max_inflight: 3
   gmgn:
     min_interval_ms: 250
     capacity: 60

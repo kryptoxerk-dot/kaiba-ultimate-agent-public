@@ -130,7 +130,11 @@ EVENT_SCANNED = EventKind.SCAN_TIER1.value
 EVENT_SCAN_FAILED = EventKind.SCAN_FAILED.value
 
 PROVIDER = "pumpfun"
-CURVE_URL = "https://frontend-api-v3.pump.fun/coins/{mint}"
+#: 2026-10-04: ``/coins/{mint}`` has answered 404 for every mint since 2026-09-25 17:15Z, which
+#: silently turned off curve reads for the scanner AND protection's curve price for 9 days.
+#: ``/coins-v2/{mint}`` answers 200 (5/5 fresh mints from the box) and both
+#: ``curve_from_payload`` and ``CurveState.from_payload`` accept its payload.
+CURVE_URL = "https://frontend-api-v3.pump.fun/coins-v2/{mint}"
 CURVE_ENDPOINT = "coins.detail"
 USER_AGENT = "Mozilla/5.0 (compatible; kaiba/0.1; +https://pump.fun)"
 
@@ -1417,9 +1421,15 @@ def _db_key(conn: sqlite3.Connection) -> str:
 def _smart_set(
     conn: sqlite3.Connection, tags: Sequence[str], *, ttl_s: float
 ) -> dict[str, list[str]]:
-    """Smart wallets by chain: a smart tag on ``wallets`` or a smart ``wallet_scores`` archetype.
+    """Smart wallets by chain: a smart tag on ``wallets``, a smart ``wallet_scores``
+    archetype, or (on ``lanes.TRUSTED_COPY_CHAINS`` only) a ``trusted_copy`` cohort.
 
-    The same two routes ``lanes.sm_trenches`` uses. Cached for ``ttl_s`` per database.
+    The same routes ``lanes.sm_trenches`` counts. The third was ADDED 2026-10-04 with the
+    lane's own trusted_copy route: without it a token bought by two tagged wallets and one
+    trusted wallet reached the lane's three-buyer bar but not this feeder's, so it was
+    only ever offered if some other work source happened to scan it. The chain set is the
+    lane's constant, read here rather than respelled, and the cohort is the database's.
+    Cached for ``ttl_s`` per database.
     """
     key = _db_key(conn)
     now = time.monotonic()
@@ -1428,13 +1438,22 @@ def _smart_set(
         if hit is not None and hit[0] > now:
             return hit[1]
     tag_clause = " OR ".join("w.tags_json LIKE ?" for _ in tags)
+    trusted_chains = _trusted_copy_chains()
+    trusted_sql = ""
+    trusted_args: tuple[str, ...] = ()
+    if trusted_chains:
+        trusted_sql = (
+            " UNION SELECT t.chain, t.address FROM wallets t WHERE t.cohort = ? "
+            f"AND t.chain IN ({','.join('?' for _ in trusted_chains)})"
+        )
+        trusted_args = (lanes_mod.TRUSTED_COPY_COHORT, *trusted_chains)
     rows = fetch_all(
         conn,
         f"SELECT w.chain AS chain, w.address AS address FROM wallets w WHERE {tag_clause} "
         "UNION "
         "SELECT sc.chain, sc.address FROM wallet_scores sc "
-        "WHERE sc.archetype IN ('smart_money','top_trader')",
-        tuple(f'%"{t}"%' for t in tags),
+        "WHERE sc.archetype IN ('smart_money','top_trader')" + trusted_sql,
+        (*(f'%"{t}"%' for t in tags), *trusted_args),
     )
     by_chain: dict[str, list[str]] = {}
     for r in rows:
@@ -1442,6 +1461,12 @@ def _smart_set(
     with _SMART_SET_LOCK:
         _SMART_SET_CACHE[key] = (now + max(0.0, ttl_s), by_chain)
     return by_chain
+
+
+def _trusted_copy_chains() -> list[str]:
+    """``lanes.TRUSTED_COPY_CHAINS`` as values. Empty (no widening) if the lane lacks it."""
+    chains = getattr(lanes_mod, "TRUSTED_COPY_CHAINS", frozenset())
+    return sorted(c.value if hasattr(c, "value") else str(c) for c in chains)
 
 
 def _smart_tag_values() -> list[str]:
@@ -1513,9 +1538,10 @@ def _register_smart_flow_token(
 def _smart_flow_work(conn: sqlite3.Connection, n: int, *, config: ScanConfig) -> list[WorkItem]:
     """Tokens smart-money wallets are buying inside the window, at any token age.
 
-    The same two routes ``lanes.sm_trenches`` uses to decide a wallet is smart: a tag on
-    the ``wallets`` row (written only after the cohort screen -- see
-    ``tracker.seed_from_cohorts``), or a ``wallet_scores`` archetype. Raw buys are counted
+    The routes ``lanes.sm_trenches`` uses to decide a wallet is smart: a tag on the
+    ``wallets`` row (written only after the cohort screen -- see
+    ``tracker.seed_from_cohorts``), a ``wallet_scores`` archetype, or, on robinhood only,
+    a ``trusted_copy`` cohort (:func:`_smart_set`). Raw buys are counted
     rather than net buyers, which can overcount by a wallet that also sold: that is the
     right bias for a FEEDER, because the lane re-derives net buyers itself and a token we
     scanned and refused costs one pass, while a token we never looked at costs the trade.

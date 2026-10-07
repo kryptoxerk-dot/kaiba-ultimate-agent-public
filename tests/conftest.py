@@ -112,3 +112,24 @@ def _reset_protectability_cache():
     reset_protectable_cache()
     yield
     reset_protectable_cache()
+
+
+@pytest.fixture
+def kaiba_bought():
+    """Record a FILLED live buy by Kaiba, so a test sell sells something Kaiba bought.
+
+    Owner rule 2026-10-05 ("NEVER SELL ANYTHING THEY DON'T BUY") is enforced in
+    ``executor._assert_sell_is_ours``: a live sell needs Kaiba's own buy of the token.
+    """
+    from kaiba.core.schemas import Lane, LaneMode, Side
+    from kaiba.execution import executor
+
+    def seed(conn, chain, token, qty=10**15, lane=Lane.SM_TRENCHES):
+        o = executor.build_order(decision_id=None, chain=chain, token=token, side=Side.BUY,
+                                 lane=lane, mode=LaneMode.LIVE, amount_in=1, min_out=1,
+                                 slippage_bps=100)
+        executor._persist(o, conn)  # noqa: SLF001
+        conn.execute("UPDATE orders SET state='filled', filled_out=? WHERE order_id=?",
+                     (str(qty), o.order_id))
+        return o.order_id
+    return seed

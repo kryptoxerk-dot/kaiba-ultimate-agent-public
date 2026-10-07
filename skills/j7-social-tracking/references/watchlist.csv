@@ -1,0 +1,46 @@
+chain,role,handle,rationale,profile_url,provenance,live_copy_approved
+sol,protocol,pumpfun,launchpad announcements,https://x.com/pumpfun,j7_main_feed_ui_20261006,false
+sol,protocol,bonkfun,launchpad announcements,https://x.com/bonkfun,j7_main_feed_ui_20261006,false
+sol,protocol,bagsapp,launchpad and fee ecosystem,https://x.com/bagsapp,j7_main_feed_ui_20261006,false
+sol,protocol,raydium,pool and venue announcements,https://x.com/raydium,j7_main_feed_ui_20261006,false
+sol,protocol,meteoraag,pool and venue announcements,https://x.com/meteoraag,j7_main_feed_ui_20261006,false
+sol,protocol,jupiterexchange,routing and ecosystem announcements,https://x.com/jupiterexchange,j7_main_feed_ui_20261006,false
+sol,protocol,solana,chain announcements,https://x.com/solana,j7_main_feed_ui_20261006,false
+sol,ecosystem,toly,ecosystem narratives,https://x.com/toly,j7_main_feed_ui_20261006,false
+sol,ecosystem,rajgokal,ecosystem narratives,https://x.com/rajgokal,j7_main_feed_ui_20261006,false
+sol,caller,blknoiz06,Ansem public narrative calls,https://x.com/blknoiz06,j7_main_feed_ui_20261006,false
+sol,caller,frankdegods,public narrative calls,https://x.com/frankdegods,j7_main_feed_ui_20261006,false
+sol,caller,crashiusclay69,public narrative calls,https://x.com/crashiusclay69,j7_main_feed_ui_20261006,false
+sol,caller,muststopmurad,memecoin thesis context,https://x.com/muststopmurad,j7_main_feed_ui_20261006,false
+bsc,narrative,cz_binance,BNB narrative originator,https://x.com/cz_binance,j7_main_feed_ui_20261006,false
+bsc,narrative,heyibinance,BNB narrative originator,https://x.com/heyibinance,j7_main_feed_ui_20261006,false
+bsc,protocol,bnbchain,chain announcements,https://x.com/bnbchain,j7_main_feed_ui_20261006,false
+bsc,protocol,bnbchainzh,Chinese language chain announcements,https://x.com/bnbchainzh,j7_main_feed_ui_20261006,false
+bsc,protocol,four_meme_fora,Four.meme feed handle; identity recheck,https://x.com/four_meme_fora,j7_main_feed_ui_20261006,false
+bsc,protocol,fourdotmemezh,Chinese language launchpad announcements,https://x.com/fourdotmemezh,j7_main_feed_ui_20261006,false
+bsc,protocol,flapdotsh,launchpad announcements; also Robinhood,https://x.com/flapdotsh,j7_main_feed_ui_20261006,false
+bsc,protocol,pancakeswap,DEX announcements,https://x.com/pancakeswap,j7_main_feed_ui_20261006,false
+bsc,protocol,binancewallet,wallet and discovery announcements,https://x.com/binancewallet,j7_main_feed_ui_20261006,false
+bsc,ecosystem,yzilabs,ecosystem funding context,https://x.com/yzilabs,j7_main_feed_ui_20261006,false
+bsc,caller,theunipcs,public trader narrative calls,https://x.com/theunipcs,j7_main_feed_ui_20261006,false
+robinhood,protocol,robinhoodapp,company announcements; verify chain relevance,https://x.com/robinhoodapp,j7_main_feed_ui_20261006,false
+robinhood,protocol,robinhoodcrypto,crypto announcements,https://x.com/robinhoodcrypto,j7_main_feed_ui_20261006,false
+robinhood,ecosystem,vladtenev,ecosystem announcements,https://x.com/vladtenev,j7_main_feed_ui_20261006,false
+robinhood,ecosystem,johannkerbrat,crypto ecosystem announcements,https://x.com/johannkerbrat,j7_main_feed_ui_20261006,false
+robinhood,protocol,ponsdotfamily,Pons launches and announcements,https://x.com/ponsdotfamily,j7_main_feed_ui_20261006,false
+robinhood,ecosystem,ponsecosystem,ecosystem account; identity recheck,https://x.com/ponsecosystem,j7_main_feed_ui_20261006,false
+robinhood,protocol,flapdotsh,launchpad announcements; also BNB,https://x.com/flapdotsh,j7_main_feed_ui_20261006,false
+robinhood,protocol,longdotxyz,launchpad announcements,https://x.com/longdotxyz,j7_main_feed_ui_20261006,false
+robinhood,protocol,tradepools,venue announcements; identity recheck,https://x.com/tradepools,j7_main_feed_ui_20261006,false
+robinhood,protocol,pools_dot_fun,venue announcements; identity recheck,https://x.com/pools_dot_fun,j7_main_feed_ui_20261006,false
+robinhood,protocol,klik_evm,venue announcements,https://x.com/klik_evm,j7_main_feed_ui_20261006,false
+multi,onchain,lookonchain,onchain narrative leads; verify underlying transaction,https://x.com/lookonchain,j7_main_feed_ui_20261006,false
+multi,investigator,zachxbt,incident and manipulation evidence,https://x.com/zachxbt,j7_main_feed_ui_20261006,false
+multi,onchain,arkham,onchain narrative leads,https://x.com/arkham,j7_main_feed_ui_20261006,false
+multi,news,tier10k,fast market news,https://x.com/tier10k,j7_main_feed_ui_20261006,false
+multi,news,wublockchain,crypto news,https://x.com/wublockchain,j7_main_feed_ui_20261006,false
+multi,news,coindesk,crypto news,https://x.com/coindesk,j7_main_feed_ui_20261006,false
+multi,news,watcherguru,market narrative leads,https://x.com/watcherguru,j7_main_feed_ui_20261006,false
+multi,narrative,elonmusk,broad memecoin narrative originator,https://x.com/elonmusk,j7_main_feed_ui_20261006,false
+multi,narrative,realdonaldtrump,broad memecoin narrative originator,https://x.com/realdonaldtrump,j7_main_feed_ui_20261006,false
+multi,narrative,truth_terminal,AI memecoin narrative source,https://x.com/truth_terminal,j7_main_feed_ui_20261006,false
