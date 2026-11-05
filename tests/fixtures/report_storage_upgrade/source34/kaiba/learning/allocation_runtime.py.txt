@@ -1,0 +1,274 @@
+"""Read-only shared authority for allocated PAPER worker, observer and reports.
+
+Codex AGENT-FORWARD-CAPACITY. Neither this loader nor a normal worker initializes
+an allocation. The explicit installing owner prepares every artifact first.
+"""
+from __future__ import annotations
+
+import copy
+import hashlib
+import json
+import os
+import time
+from decimal import Decimal
+from pathlib import Path
+
+VERSION = "allocation-runtime/1"
+DIRECTORY = "research-allocation"
+POINTER = "research_allocation"
+MAX_JSON = 2 * 1024 * 1024
+
+
+def _require(condition, reason):
+    if not condition:
+        raise ValueError("allocation_runtime:" + reason)
+
+
+def _hash(value):
+    return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()).hexdigest()
+
+
+def _safe(path, root):
+    path, root = Path(path), Path(root).resolve()
+    _require(not any(p.is_symlink() for p in (path, *path.parents))
+             and path.resolve().is_relative_to(root), "owned_path_required")
+    return path.resolve()
+
+
+def _read(path, cap=MAX_JSON):
+    _require(path.is_file() and not path.is_symlink(), "missing_owned_artifact:" + path.name)
+    with path.open("rb") as handle:
+        raw = handle.read(cap + 1)
+    _require(len(raw) <= cap, "artifact_byte_cap")
+    result = json.loads(raw)
+    _require(isinstance(result, dict), "artifact_object_required")
+    return raw, result
+
+
+def source_versions():
+    from kaiba.learning import research_allocation as allocation
+    root = Path(__file__).resolve().parents[1]
+    return {**allocation.source_versions(), **{name: hashlib.sha256((root / name).read_bytes()).hexdigest()
+        for name in ("learning/allocation_runtime.py", "learning/autolearn.py",
+                     "learning/prospective_quotes.py", "learning/autolearn_review.py",
+                     "learning/cooperative_reader.py", "learning/research_service_upgrade.py",
+                     "learning/tax_quote.py", "learning/tax_quote_upgrade.py",
+                     "learning/configured_receipts_upgrade.py", "learning/lesson_timing_upgrade.py",
+                     "learning/journal_storage_upgrade.py", "learning/journal_outbox.py")}}
+
+
+def metadata_for(receipt_raw, authority_raw, new_books_raw, *, parent_state):
+    """Pure installer/test recipe. Does not create files or admit an allocation."""
+    receipt, authority, seal = (json.loads(raw) for raw in (receipt_raw, authority_raw, new_books_raw))
+    return {"version": VERSION, "source_versions": source_versions(),
+        "receipt_file_sha256": hashlib.sha256(receipt_raw).hexdigest(),
+        "authority_file_sha256": hashlib.sha256(authority_raw).hexdigest(),
+        "new_books_file_sha256": hashlib.sha256(new_books_raw).hexdigest(),
+        "receipt_sha256": receipt["receipt_sha256"], "new_books_sha256": seal["seal_sha256"],
+        "activation_ms": authority["activation_ms"], "generation": authority["generation"],
+        "envelope": receipt["envelope"], "legacy_campaign_files": list(parent_state.get("campaign_files", [])),
+        "legacy_clock_sha256": _hash(parent_state.get("clock_upgrade")), "funding_allowed": False}
+
+
+def pointer_for(metadata_raw):
+    """Pure pointer recipe; writing/activation belongs to the installing owner."""
+    metadata = json.loads(metadata_raw)
+    return {"version": VERSION, "metadata_file_sha256": hashlib.sha256(metadata_raw).hexdigest(),
+        "receipt_sha256": metadata["receipt_sha256"], "new_books_sha256": metadata["new_books_sha256"],
+        "activation_ms": metadata["activation_ms"], "generation": metadata["generation"], "funding_allowed": False}
+
+
+class Context:
+    def __init__(self, root, learning_root, parent, metadata, receipt, authority, seal, completion, *, completion_raw, now_ms, clock):
+        self.state_dir, self.learning_root = root, learning_root
+        self.parent, self.metadata, self.receipt = copy.deepcopy(parent), copy.deepcopy(metadata), copy.deepcopy(receipt)
+        self.authority, self.seal = copy.deepcopy(authority), copy.deepcopy(seal)
+        self.completion = copy.deepcopy(completion)
+        self.service_upgrade = copy.deepcopy(parent.get("paper_service_upgrade"))
+        self.tax_quote_upgrade = None
+        self.configured_receipts_upgrade = None
+        self.lesson_timing_upgrade = None
+        self.journal_storage_upgrade = None
+        self.now_ms, self.clock = now_ms, clock
+        self.snapshot_token = _hash({"pointer": parent[POINTER], "metadata": metadata,
+            "authority": authority, "completion_file_sha256": hashlib.sha256(completion_raw).hexdigest(),
+            "paper_service_upgrade": self.service_upgrade})
+
+    def _runner(self):
+        from kaiba.learning import research_allocation as allocation
+        return allocation.AllocationRunner(self.receipt, paper_dir=self.state_dir / "paper",
+            learning_root=self.learning_root, authority_path=self.state_dir / DIRECTORY / "authority.json",
+            new_books_seal_path=self.state_dir / DIRECTORY / "new-books.json",
+            expected_new_books_sha256=self.authority["new_books_sha256"],
+            expected_receipt_sha256=self.authority["receipt_sha256"], activation_ms=self.authority["activation_ms"],
+            generation=self.authority["generation"], clock=self.clock)
+
+    def runner(self):
+        return BoundRunner(self)
+
+    def manifests(self):
+        return copy.deepcopy([m["manifest"] for m in self.receipt["legacy_manifests"]] + [self.receipt["new_manifest"]])
+
+    def leased_pairs(self):
+        manifests = {m["campaign_id"]: m for m in self.manifests()}
+        records = []
+        for record in self.receipt["legacy_books"]:
+            if record["lease"] == "drain_only":
+                manifest = manifests[record["campaign_id"]]
+                arm = next(a for a in manifest["hypotheses"] if a["hypothesis_id"] == record["hypothesis_id"])
+                records.append({"manifest": manifest, "arm": arm, "lease": "drain_only",
+                    "book_path": str(self.state_dir / "paper" / record["book"]), "identity": copy.deepcopy(record["identity"])})
+        manifest = self.receipt["new_manifest"]
+        for record in self.seal["new_books"]:
+            arm = next(a for a in manifest["hypotheses"] if a["hypothesis_id"] == record["identity"]["hypothesis_id"])
+            records.append({"manifest": copy.deepcopy(manifest), "arm": copy.deepcopy(arm), "lease": "admission",
+                "book_path": str(self.state_dir / "paper" / record["book"]), "identity": copy.deepcopy(record["identity"])})
+        _require(len(records) == self.receipt["active_lease_count"] <= 12, "lease_inventory_conflict")
+        return records
+
+    def retired_history(self):
+        return [{**copy.deepcopy(record), "book_path": str(self.state_dir / "paper" / record["book"])}
+                for record in self.receipt["legacy_books"] if record["lease"] == "retired"]
+
+    def revalidate(self, *, now_ms=None):
+        current = max(self.now_ms, int(self.clock() * 1000)) if now_ms is None else now_ms
+        fresh = load_context(self.state_dir, learning_root=self.learning_root, now_ms=current, clock=self.clock)
+        _require(fresh is not None and fresh.snapshot_token == self.snapshot_token, "authority_snapshot_changed")
+        return self.snapshot_token
+
+    def assess(self, outcomes_by_campaign, *, now_ms, prior_state=None):
+        from kaiba.learning import research_allocation as allocation
+        self._revalidate_bindings(now_ms=now_ms)
+        return allocation.assess_family(self.receipt, outcomes_by_campaign, now_ms=now_ms,
+            activation_ms=self.authority["activation_ms"], paper_dir=self.state_dir / "paper",
+            learning_root=self.learning_root, authority_path=self.state_dir / DIRECTORY / "authority.json",
+            new_books_seal_path=self.state_dir / DIRECTORY / "new-books.json",
+            expected_new_books_sha256=self.authority["new_books_sha256"], generation=self.authority["generation"],
+            prior_state=prior_state)
+
+    def _revalidate_bindings(self, *, now_ms=None):
+        """Private: the immediate next runner operation must perform its full guard."""
+        current = max(self.now_ms, int(self.clock() * 1000)) if now_ms is None else now_ms
+        fresh = _load_context(self.state_dir, learning_root=self.learning_root, now_ms=current,
+                              clock=self.clock, _full_guard=False)
+        _require(fresh is not None and fresh.snapshot_token == self.snapshot_token, "authority_snapshot_changed")
+        return self.snapshot_token
+
+
+def load_context(state_dir, *, learning_root, state=None, now_ms, max_active_arms=12,
+                 max_stake_usd="30", max_open_per_arm=3, clock=time.time):
+    """Return None only when BOTH activation latches are absent. Never writes."""
+    return _load_context(state_dir, learning_root=learning_root, state=state, now_ms=now_ms,
+        max_active_arms=max_active_arms, max_stake_usd=max_stake_usd,
+        max_open_per_arm=max_open_per_arm, clock=clock, _full_guard=True)
+
+
+def _load_context(state_dir, *, learning_root, state=None, now_ms, max_active_arms=12,
+                  max_stake_usd="30", max_open_per_arm=3, clock=time.time, _full_guard):
+    from kaiba.learning import configured_receipts_upgrade as configured_upgrade
+    from kaiba.learning import journal_storage_upgrade as storage_upgrade
+    from kaiba.learning import lesson_timing_upgrade as lesson_upgrade
+    from kaiba.learning import research_allocation as allocation
+    from kaiba.learning import research_service_upgrade as upgrade
+    from kaiba.learning import tax_quote_upgrade as tax_upgrade
+    _require(type(now_ms) is int and now_ms > 0, "integer_clock_required")
+    learning = Path(learning_root).resolve()
+    root = _safe(state_dir, learning)
+    disk = _read(root / "state.json")[1] if (root / "state.json").exists() else {}
+    supplied = disk if state is None else state
+    _require(isinstance(supplied, dict), "parent_object_required")
+    present = (POINTER in supplied or POINTER in disk or os.path.lexists(root / DIRECTORY)
+               or upgrade.POINTER in supplied or upgrade.POINTER in disk
+               or tax_upgrade.POINTER in supplied or tax_upgrade.POINTER in disk
+               or configured_upgrade.POINTER in supplied or configured_upgrade.POINTER in disk
+               or lesson_upgrade.POINTER in supplied or lesson_upgrade.POINTER in disk
+               or storage_upgrade.POINTER in supplied or storage_upgrade.POINTER in disk)
+    if not present:
+        return None
+    _require(POINTER in disk and POINTER in supplied and supplied[POINTER] == disk[POINTER], "parent_pointer_missing_or_stale")
+    _require(type(max_active_arms) is int and max_active_arms == 12 and Decimal(str(max_stake_usd)) == 30
+             and type(max_open_per_arm) is int and max_open_per_arm == 3, "configured_envelope_conflict")
+    own = _safe(root / DIRECTORY, root)
+    _require(own.is_dir() and (root / "paper").is_dir() and not (root / "paper").is_symlink(), "owned_allocation_or_books_missing")
+    metadata_raw, metadata = _read(_safe(own / "metadata.json", own), 64 * 1024)
+    receipt_raw, receipt = _read(_safe(own / "receipt.json", own))
+    authority_raw, authority = _read(_safe(own / "authority.json", own), 8192)
+    seal_raw, seal = _read(_safe(own / "new-books.json", own))
+    completion_raw, completion = _read(_safe(own / "commit-receipt.json", own), 8192)
+    _require(supplied.get(upgrade.POINTER) == disk.get(upgrade.POINTER), "supplied_service_upgrade_stale")
+    _require(supplied.get(tax_upgrade.POINTER) == disk.get(tax_upgrade.POINTER), "supplied_tax_upgrade_stale")
+    _require(supplied.get(configured_upgrade.POINTER) == disk.get(configured_upgrade.POINTER), "supplied_configured_receipts_upgrade_stale")
+    _require(supplied.get(lesson_upgrade.POINTER) == disk.get(lesson_upgrade.POINTER), "supplied_lesson_timing_upgrade_stale")
+    _require(supplied.get(storage_upgrade.POINTER) == disk.get(storage_upgrade.POINTER)
+             and supplied.get(storage_upgrade.MIGRATION_POINTER) == disk.get(storage_upgrade.MIGRATION_POINTER), "supplied_journal_storage_upgrade_stale")
+    storage = storage_upgrade.validate_upgrade(root, disk, {"metadata.json": metadata_raw, "authority.json": authority_raw,
+        "commit-receipt.json": completion_raw, "receipt.json": receipt_raw, "new-books.json": seal_raw}, now_ms=now_ms)
+    lesson = storage["lesson_upgrade"] if storage is not None else lesson_upgrade.validate_upgrade(root, disk, {"metadata.json": metadata_raw, "authority.json": authority_raw,
+        "commit-receipt.json": completion_raw, "receipt.json": receipt_raw, "new-books.json": seal_raw}, now_ms=now_ms)
+    configured = lesson["configured_upgrade"] if lesson is not None else configured_upgrade.validate_upgrade(root, disk, {"metadata.json": metadata_raw, "authority.json": authority_raw,
+        "commit-receipt.json": completion_raw, "receipt.json": receipt_raw, "new-books.json": seal_raw}, now_ms=now_ms)
+    tax = configured["tax_upgrade"] if configured is not None else tax_upgrade.validate_upgrade(root, disk, {"metadata.json": metadata_raw, "authority.json": authority_raw,
+        "commit-receipt.json": completion_raw, "receipt.json": receipt_raw, "new-books.json": seal_raw}, now_ms=now_ms)
+    service = tax["service_upgrade"] if tax is not None else upgrade.validate_upgrade(root, disk, {"metadata.json": metadata_raw, "authority.json": authority_raw,
+        "commit-receipt.json": completion_raw, "receipt.json": receipt_raw, "new-books.json": seal_raw}, now_ms=now_ms)
+    expected_metadata = metadata_for(receipt_raw, authority_raw, seal_raw, parent_state=disk)
+    if service is not None:
+        expected_metadata["source_versions"] = service["original_runtime_sources"]
+    _require(metadata == expected_metadata, "metadata_source_or_parent_history_conflict")
+    _require(disk[POINTER] == pointer_for(metadata_raw), "parent_metadata_binding_conflict")
+    _require(receipt["envelope"] == {"max_active_arms": 12, "max_stake_usd": "30", "max_open_per_arm": 3}, "receipt_envelope_conflict")
+    _require(authority == {"version": allocation.VERSION, "receipt_sha256": receipt["receipt_sha256"],
+        "new_books_sha256": seal["seal_sha256"], "activation_ms": metadata["activation_ms"],
+        "generation": 1, "funding_allowed": False}, "authority_identity_conflict")
+    _require(set(completion) == {"version", "authority_sha256", "metadata_sha256", "activation_ms", "visible_ms", "completed_ms"}
+        and completion["version"] == "allocation-commit/1"
+        and completion["authority_sha256"] == hashlib.sha256(authority_raw).hexdigest()
+        and completion["metadata_sha256"] == hashlib.sha256(metadata_raw).hexdigest()
+        and completion["activation_ms"] == authority["activation_ms"]
+        and all(type(completion[name]) is int for name in ("activation_ms", "visible_ms", "completed_ms"))
+        and 0 < completion["visible_ms"] <= completion["completed_ms"] < completion["activation_ms"]
+        and completion["completed_ms"] <= now_ms, "timely_commit_proof_required")
+    _require(type(authority["activation_ms"]) is int and authority["activation_ms"] <= now_ms,
+             "allocation_not_yet_active")
+    _require(disk.get("campaign_files", []) == [m["file"] for m in receipt["legacy_manifests"]], "legacy_manifest_inventory_conflict")
+    _require(supplied.get("campaign_files", []) == disk.get("campaign_files", [])
+             and supplied.get("clock_upgrade") == disk.get("clock_upgrade"), "supplied_history_is_stale")
+    context = Context(root, learning, disk, metadata, receipt, authority, seal, completion,
+        completion_raw=completion_raw, now_ms=now_ms, clock=clock)
+    if tax is not None:
+        context.tax_quote_upgrade = copy.deepcopy(tax)
+        context.snapshot_token = _hash({"base_authority": context.snapshot_token, "tax_quote_upgrade": tax})
+    if configured is not None:
+        context.configured_receipts_upgrade = copy.deepcopy(configured)
+        context.snapshot_token = _hash({"base_authority": context.snapshot_token, "configured_receipts_upgrade": configured})
+    if lesson is not None:
+        context.lesson_timing_upgrade = copy.deepcopy(lesson)
+        context.snapshot_token = _hash({"base_authority": context.snapshot_token, "lesson_timing_upgrade": lesson})
+    if storage is not None:
+        context.journal_storage_upgrade = copy.deepcopy(storage)
+        context.snapshot_token = _hash({"base_authority": context.snapshot_token, "journal_storage_upgrade": storage})
+    if _full_guard:
+        context._runner()._guard(receipt["new_manifest"], now_ms, writes=False)
+    context.leased_pairs()
+    return context
+
+
+class BoundRunner:
+    """Revalidate the shared parent binding at every execution/expiry/watch call."""
+    def __init__(self, context):
+        self.context = context
+
+    def run_candidates(self, manifest, opportunities, quotes, *, now_ms):
+        self.context._revalidate_bindings(now_ms=now_ms)
+        return self.context._runner().run_candidates(manifest, opportunities, quotes, now_ms=now_ms)
+
+    def expire_pending(self, manifest, *, now_ms):
+        self.context._revalidate_bindings(now_ms=now_ms)
+        return self.context._runner().expire_pending(manifest, now_ms=now_ms)
+
+    def watched_tokens(self, manifest, *, limit=128, now_ms=None):
+        self.context._revalidate_bindings(now_ms=now_ms)
+        return self.context._runner().watched_tokens(manifest, limit=limit, now_ms=now_ms)
+
+
+__all__ = ["load_context", "Context", "BoundRunner", "metadata_for", "pointer_for", "source_versions", "VERSION"]

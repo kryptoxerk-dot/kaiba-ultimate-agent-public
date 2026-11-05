@@ -1,0 +1,13 @@
+{
+  "args": [
+    "token",
+    "info",
+    "--chain",
+    "nope",
+    "--address",
+    "So11111111111111111111111111111111111111112"
+  ],
+  "returncode": 1,
+  "stdout": "",
+  "stderr": "[gmgn-cli] Invalid chain: \"nope\". Must be one of: sol, bsc, base, eth, robinhood, arc, stable\n"
+}

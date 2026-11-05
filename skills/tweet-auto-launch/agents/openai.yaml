@@ -1,0 +1,4 @@
+interface:
+  display_name: "Tweet Auto Launch"
+  short_description: "Prepare tweet launches with 5% buys and holder rewards"
+  default_prompt: "Use $tweet-auto-launch to check the tweet launch feed, five-percent allocation, staged exits and holder-reward readiness on Solana, BNB and Robinhood."

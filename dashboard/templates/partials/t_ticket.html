@@ -1,0 +1,58 @@
+{# The trade ticket: buy through the gates (paper unless the MANUAL lane is armed), trade it yourself on
+   GMGN, sell what we hold. Rendered with the token panel and moved into the inspector by live.js. #}
+{% if tok %}
+{% set sym = tok.token.symbol or (tok.address|short) %}
+{% set held = tok.positions|selectattr('closed_ms', 'none')|list %}
+<div class="kx-ph">
+  <h3>Trade</h3>
+  <span class="chip {{ 'live' if manual_live else 'paper' }}" title="the MANUAL lane's effective mode: {{ manual_mode or 'unknown' }}">{{ 'LIVE' if manual_live else 'Paper' }}</span>
+</div>
+<div class="tkt">
+  <div class="who">
+    <span class="med sm c-{{ tok.chain }}">{{ sym[:1]|upper }}</span>
+    <div style="min-width:0"><b>{{ sym }}</b><small style="display:block">{{ {'sol': 'Solana', 'robinhood': 'Robinhood', 'bsc': 'BNB'}.get(tok.chain, tok.chain) }}{% if tok.token.launchpad %} · {{ tok.token.launchpad }}{% endif %}</small></div>
+    <button class="addr" type="button" data-copy="{{ tok.address }}" title="copy the contract address">{{ tok.address|short(4, 4) }} <svg class="i s"><use href="#i-copy"/></svg></button>
+  </div>
+  <form data-buy>
+    <input type="hidden" name="chain" value="{{ tok.chain }}"><input type="hidden" name="token" value="{{ tok.address }}">
+    {% if manual_live %}<input name="confirm" placeholder="type BUY LIVE to spend real money" autocomplete="off" required>{% endif %}
+    <button class="kb block {{ 'live' if manual_live else 'primary' }}" type="submit" title="through every gate an automated entry passes; the size comes from the risk ladder">
+      <svg class="i s"><use href="#i-buy"/></svg>{{ 'Buy LIVE' if manual_live else 'Paper buy' }} {{ sym }}</button>
+  </form>
+  <div class="row2">
+    {% set ext = (tok.links|selectattr('0', 'equalto', 'GMGN')|list) or (tok.links|selectattr('0', 'equalto', 'DexScreener')|list) %}
+    {% if ext %}
+    <a class="kb sm ghost" href="{{ ext[0][1] }}" target="_blank" rel="noopener noreferrer" title="trade it yourself, with your own wallet">{{ 'Trade on GMGN' if ext[0][0] == 'GMGN' else 'Open on ' ~ ext[0][0] }} <svg class="i s"><use href="#i-ext"/></svg></a>
+    {% else %}
+    <span class="kb sm ghost" aria-disabled="true" title="no outside venue link we have verified for this chain" style="opacity:.55;cursor:default">No venue link</span>
+    {% endif %}
+    <button class="kb sm ghost" type="button" data-copy="{{ tok.address }}"><svg class="i s"><use href="#i-copy"/></svg>Copy CA</button>
+  </div>
+  {% if held %}
+  <div class="held" aria-label="Open positions on {{ sym }}">
+    {% for p in held %}
+    <div class="hr">
+      <span class="chip {{ 'paper' if p.paper else 'live' }}">{{ 'paper' if p.paper else 'LIVE' }}</span>
+      <span class="muted">{{ p.lane }}</span>
+      <b class="mono {{ 'pos' if p.ret and p.ret > 0 else 'neg' if p.ret and p.ret < 0 }}">{{ p.ret|ret }}</b>
+      <div class="acts">
+        <button class="kb xs ghost" type="button" data-exit="{{ p.position_id }}" data-pct="50" data-label="{{ sym }}">Sell ½</button>
+        <button class="kb xs danger" type="button" data-exit="{{ p.position_id }}" data-pct="100" data-label="{{ sym }}">Sell all</button>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+  <button class="kb sm ghost block" type="button" data-ask="Analyze {{ sym }} on {{ tok.chain }}, address {{ tok.address }}. Use the Kaiba tools: the dossier and its provenance, the creator's record, holders and bundles, triage and lane signals, and our own history on it. Would you paper trade it now? Give a clear verdict, the evidence, and what would change your mind."><svg class="i s"><use href="#i-spark"/></svg>Ask the agent about {{ sym }}</button>
+  <p class="hint"><svg class="i s"><use href="#i-info"/></svg><span>{% if manual_live %}The manual lane is LIVE: this spends real money after every gate passes.{% else %}A paper buy passes the same gates as the agent's own entries, and the risk ladder sets the size. Live buying needs the manual lane armed on Autopilot.{% endif %}</span></p>
+</div>
+{% else %}
+<div class="kx-ph"><h3>Trade</h3></div>
+<div class="tkt">
+  <p class="hint"><svg class="i s"><use href="#i-info"/></svg><span>Pick a token in the Alpha list, or paste a contract address to open its intelligence, paper-buy it through the gates, or trade it yourself on GMGN.</span></p>
+  <form class="paste" action="/go" method="get">
+    <input name="q" placeholder="Contract address or $SYMBOL" autocomplete="off" spellcheck="false" maxlength="120" aria-label="Contract address">
+    <button class="kb sm" type="submit">Open</button>
+  </form>
+</div>
+{% endif %}

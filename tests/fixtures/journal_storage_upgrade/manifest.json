@@ -1,0 +1,10 @@
+{
+  "sources": {
+    "kaiba/intelligence/wallet_campaign.py": "f153fa72125689693572096c759f1d99bd80d580e745e3e01980d32832870925",
+    "kaiba/intelligence/wallet_candidates.py": "bcca5cab2ff73ad95caf892666ff7dca4996f9a2695b338a6595fb47c3c7f797",
+    "kaiba/learning/allocation_runtime.py": "c3c33e855e9b1ace3a530bccd80608cdf2c79a5c0a59ba98fba2056bb3a605de",
+    "kaiba/learning/autolearn.py": "f71b0a04b19bfb08798d7adde4f068556ecb30c7f0d1d62fc24627821583abce",
+    "kaiba/learning/autolearn_wallets.py": "f933eff5c388a2920594b46f82a07929c15a30b8fed6e61eee0a0aa9d1a36928"
+  },
+  "version": "source32-fixtures/1"
+}

@@ -1,0 +1,84 @@
+{
+ "_recorded": "2026-10-21 graph.codex.io, free plan, via the box; key never in the request body. PONS on robinhood, limit 3.",
+ "data": {
+  "listPairsWithMetadataForToken": {
+   "results": [
+    {
+     "volume": "6390227",
+     "liquidity": "412973",
+     "quoteToken": "token0",
+     "pair": {
+      "address": "0xf2a0be59ab76b96f957bd5e5b967f2b75e8db269",
+      "id": "0xf2a0be59ab76b96f957bd5e5b967f2b75e8db269:4663",
+      "networkId": 4663,
+      "fee": 3000,
+      "protocol": "UniswapV3",
+      "token0": "0x39dbed3a2bd333467115de45665cc57f813c4571",
+      "token1": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+      "createdAt": 1786419242
+     },
+     "exchange": {
+      "name": null,
+      "address": "0xe0c4ceb92d08ca985bb70fe0a22feb121a9854a8"
+     },
+     "backingToken": {
+      "address": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+      "symbol": "USDG"
+     }
+    },
+    {
+     "volume": "1007086",
+     "liquidity": "1410665",
+     "quoteToken": "token0",
+     "pair": {
+      "address": "0x4be9657ec9002e528f4f17a5c43edc525a07f888f7b180c2afbf75e096c4f38a",
+      "id": "0x4be9657ec9002e528f4f17a5c43edc525a07f888f7b180c2afbf75e096c4f38a:4663",
+      "networkId": 4663,
+      "fee": 3000,
+      "protocol": "UniswapV4",
+      "token0": "0x39dbed3a2bd333467115de45665cc57f813c4571",
+      "token1": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+      "createdAt": 1784338933
+     },
+     "exchange": {
+      "name": "Uniswap",
+      "address": "0x8366a39cc670b4001a1121b8f6a443a643e40951"
+     },
+     "backingToken": {
+      "address": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+      "symbol": "USDG"
+     }
+    },
+    {
+     "volume": "844634",
+     "liquidity": "1184420",
+     "quoteToken": "token0",
+     "pair": {
+      "address": "0x486435a1f76cd58193f854c6e6213cd05fd58d637865d02065ff558b387fa6ea",
+      "id": "0x486435a1f76cd58193f854c6e6213cd05fd58d637865d02065ff558b387fa6ea:4663",
+      "networkId": 4663,
+      "fee": 8388608,
+      "protocol": "UniswapV4",
+      "token0": "0x39dbed3a2bd333467115de45665cc57f813c4571",
+      "token1": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+      "createdAt": 1788874168
+     },
+     "exchange": {
+      "name": "Uniswap",
+      "address": "0x8366a39cc670b4001a1121b8f6a443a643e40951"
+     },
+     "backingToken": {
+      "address": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+      "symbol": "USDG"
+     }
+    }
+   ]
+  },
+  "usageData": {
+   "total": {
+    "computeUnits": "4014400",
+    "count": "0"
+   }
+  }
+ }
+}

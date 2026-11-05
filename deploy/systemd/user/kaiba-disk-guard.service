@@ -1,0 +1,21 @@
+[Unit]
+Description=Kaiba disk guard: delete provably dead files, prune rows and halt entries before the disk fills
+# 2026-10-13: the root disk reached 98% while db_guard paged and nobody acted. This one acts.
+# See kaiba/ops/disk_guard.py. It never touches the database file, ~/.hermes or ~/.config.
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/kaiba
+Environment=KAIBA_ENV=prod
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=%h/.config/kaiba/notify.env
+ExecStart=%h/kaiba/.venv/bin/python -B -m kaiba.ops.disk_guard
+Nice=10
+# best-effort, NOT idle: the box's scheduler is mq-deadline, which serves idle-class IO only
+# after it ages ~10 s, and /proc/pressure/io sits at 60-85%. MEASURED 2026-10-13: idle class
+# deleted 4,124 rows in 417 s; best-effort deleted 136,252 in 120 s.
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+MemoryMax=512M
+# The emergency retention pass has a 480 s budget; the cache walk is a few seconds.
+TimeoutStartSec=900

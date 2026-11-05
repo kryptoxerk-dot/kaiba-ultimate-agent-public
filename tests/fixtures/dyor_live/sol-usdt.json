@@ -1,0 +1,552 @@
+{
+ "note": "Live recording, not hand-built. goplus is the per-address entry already unwrapped from GoPlus's result map; rugcheck holds one key per route.",
+ "recorded_at_ms": 1789896989894,
+ "token": {
+  "label": "USDT",
+  "address": "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",
+  "chain": "sol",
+  "why": "Tether holds both authorities under one key. Second negative control."
+ },
+ "chain": {
+  "data": {
+   "parsed": {
+    "info": {
+     "decimals": 6,
+     "freezeAuthority": "Q6XprfkF8RQQKoQVG33xT88H7wi8Uk1B1CC7YAs69Gi",
+     "isInitialized": true,
+     "mintAuthority": "Q6XprfkF8RQQKoQVG33xT88H7wi8Uk1B1CC7YAs69Gi",
+     "supply": "3839903721534531"
+    },
+    "type": "mint"
+   },
+   "program": "spl-token",
+   "space": 82
+  },
+  "executable": false,
+  "lamports": 212920386566,
+  "owner": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+  "rentEpoch": 18446744073709551615,
+  "space": 82
+ },
+ "chain_dev_pct": "0",
+ "goplus": {
+  "balance_mutable_authority": {
+   "authority": [],
+   "status": "0"
+  },
+  "closable": {
+   "authority": [],
+   "status": "0"
+  },
+  "creators": [],
+  "default_account_state": "1",
+  "default_account_state_upgradable": {
+   "authority": [],
+   "status": "0"
+  },
+  "dex": [
+   {
+    "burn_percent": "2.73",
+    "day": {
+     "price_max": "1.0052219321148823",
+     "price_min": "0.9990909090909093",
+     "volume": "1849729.9835773439"
+    },
+    "dex_name": "raydium",
+    "fee_rate": "0.0001",
+    "id": "BZtgQEyS6eXUXicYPHecYQ7PybqodXQMvkjUbP4R8mUU",
+    "lp_amount": null,
+    "month": {
+     "price_max": "1.020408163265306",
+     "price_min": "0.99009900990099",
+     "volume": "37369098.95627688"
+    },
+    "open_time": "0",
+    "price": "1.0001977067800414",
+    "tvl": "1566863.93",
+    "type": "Concentrated",
+    "week": {
+     "price_max": "1.0052219321148823",
+     "price_min": "0.99009900990099",
+     "volume": "10919961.709214259"
+    }
+   },
+   {
+    "burn_percent": "0.06",
+    "day": {
+     "price_max": "114.33724074176274",
+     "price_min": "100.89523117055668",
+     "volume": "3782128.278510985"
+    },
+    "dex_name": "raydium",
+    "fee_rate": "0.0001",
+    "id": "3nMFwZXwY1s1M5s8vYAHqd4wGs4iSxXE4LRoUMMYqEgF",
+    "lp_amount": null,
+    "month": {
+     "price_max": "114.33724074176274",
+     "price_min": "87.57051674918064",
+     "volume": "173512553.59022877"
+    },
+    "open_time": "0",
+    "price": "111.8842811596224",
+    "tvl": "914596.36",
+    "type": "Concentrated",
+    "week": {
+     "price_max": "114.33724074176274",
+     "price_min": "95.81517194410232",
+     "volume": "26943039.564242203"
+    }
+   },
+   {
+    "burn_percent": null,
+    "day": {
+     "price_max": "-1",
+     "price_min": "-1",
+     "volume": "1081167.76134400"
+    },
+    "dex_name": "orca",
+    "fee_rate": "0.0001",
+    "id": "4fuUiYxTQ6QCrdSq9ouBYcTM7bqSwYTSyLueGZLTy4T4",
+    "lp_amount": null,
+    "month": {
+     "price_max": "-1",
+     "price_min": "-1",
+     "volume": "23321586.64775790"
+    },
+    "open_time": "0",
+    "price": "1.00020123019037686985",
+    "tvl": "739130.02",
+    "type": "Concentrated",
+    "week": {
+     "price_max": "-1",
+     "price_min": "-1",
+     "volume": "3927262.12058253"
+    }
+   },
+   {
+    "burn_percent": "0.04",
+    "day": {
+     "price_max": "123.59550561797752",
+     "price_min": "97.5609756097561",
+     "volume": "654785.7465320328"
+    },
+    "dex_name": "raydium",
+    "fee_rate": "0.0025",
+    "id": "7XawhbbxtsRcQA8KTkHT9f9nc6d69UwqCDh6U5EEbEmX",
+    "lp_amount": "1853.181433366",
+    "month": {
+     "price_max": "123.59550561797752",
+     "price_min": "82.70676691729324",
+     "volume": "13719371.819483493"
+    },
+    "open_time": "0",
+    "price": "111.98252740404611",
+    "tvl": "693181.2",
+    "type": "Standard",
+    "week": {
+     "price_max": "123.59550561797752",
+     "price_min": "90.9090909090909",
+     "volume": "3064443.5197303602"
+    }
+   },
+   {
+    "burn_percent": null,
+    "day": {
+     "price_max": "-1",
+     "price_min": "-1",
+     "volume": "328191.886894703000"
+    },
+    "dex_name": "orca",
+    "fee_rate": "0.0002",
+    "id": "FwewVm8u6tFPGewAyHmWAqad9hmF7mvqxK4mJ7iNqqGC",
+    "lp_amount": null,
+    "month": {
+     "price_max": "-1",
+     "price_min": "-1",
+     "volume": "9744735.73929160"
+    },
+    "open_time": "0",
+    "price": "111.73186847753526417000",
+    "tvl": "631708.97",
+    "type": "Concentrated",
+    "week": {
+     "price_max": "-1",
+     "price_min": "-1",
+     "volume": "1560828.49590385"
+    }
+   },
+   {
+    "burn_percent": 0,
+    "day": {
+     "price_max": "0.999956053400002",
+     "price_min": "0.9968354430379748",
+     "volume": "6797.153876923866"
+    },
+    "dex_name": "raydium",
+    "fee_rate": "0.0002",
+    "id": "2EXiumdi14E9b8Fy62QcA5Uh6WdHS2b38wtSxp72Mibj",
+    "lp_amount": "96152.480733",
+    "month": {
+     "price_max": "1.0010371804780225",
+     "price_min": "0.9285714285714286",
+     "volume": "101830.7782165652"
+    },
+    "open_time": "0",
+    "price": "1.0002446",
+    "tvl": "403970.18",
+    "type": "Standard",
+    "week": {
+     "price_max": "1.0007271950951024",
+     "price_min": "0.9523809523809524",
+     "volume": "27906.697605520825"
+    }
+   },
+   {
+    "burn_percent": "0.05",
+    "day": {
+     "price_max": "114.36603879673882",
+     "price_min": "100.90498915206416",
+     "volume": "59388.15163472684"
+    },
+    "dex_name": "raydium",
+    "fee_rate": "0.0002",
+    "id": "ExcBWu8fGPdJiaF1b1z3iEef38sjQJks8xvj6M85pPY6",
+    "lp_amount": null,
+    "month": {
+     "price_max": "114.36603879673882",
+     "price_min": "87.57618427450718",
+     "volume": "4630675.802397717"
+    },
+    "open_time": "1722876580",
+    "price": "111.8875968131513",
+    "tvl": "63366.68",
+    "type": "Concentrated",
+    "week": {
+     "price_max": "114.36603879673882",
+     "price_min": "95.82817484094096",
+     "volume": "626812.5904323766"
+    }
+   },
+   {
+    "burn_percent": 0,
+    "day": {
+     "price_max": "1.0026326658666644",
+     "price_min": "0.978166240945116",
+     "volume": "1115.7127446496302"
+    },
+    "dex_name": "raydium",
+    "fee_rate": "0.0025",
+    "id": "7TbGqz32RsuwXbXY7EyBCiAnMbJq1gm1wKmfjQjuwoyF",
+    "lp_amount": "10018.569075",
+    "month": {
+     "price_max": "1.0322192468513094",
+     "price_min": "0.9090909090909092",
+     "volume": "29005.005335758076"
+    },
+    "open_time": "0",
+    "price": "0.9978452906475923",
+    "tvl": "62311.32",
+    "type": "Standard",
+    "week": {
+     "price_max": "1.0210884684382535",
+     "price_min": "0.9473684210526316",
+     "volume": "7665.317880752923"
+    }
+   },
+   {
+    "burn_percent": "1.94",
+    "day": {
+     "price_max": "114.29541897647862",
+     "price_min": "100.89424048366892",
+     "volume": "8292.871212557133"
+    },
+    "dex_name": "raydium",
+    "fee_rate": "0.0005",
+    "id": "6kT4MhDqKrkWikaGpFCvYsk45BUKXEe2gTpNGAR1YcjS",
+    "lp_amount": null,
+    "month": {
+     "price_max": "114.29541897647862",
+     "price_min": "87.56261370927153",
+     "volume": "885492.5992474477"
+    },
+    "open_time": "0",
+    "price": "111.88715356752134",
+    "tvl": "56978.35",
+    "type": "Concentrated",
+    "week": {
+     "price_max": "114.29541897647862",
+     "price_min": "95.91809375912706",
+     "volume": "39610.07135662241"
+    }
+   },
+   {
+    "burn_percent": "0.15",
+    "day": {
+     "price_max": "1.000941872017226",
+     "price_min": "0.999975919063974",
+     "volume": "2770.8824787173758"
+    },
+    "dex_name": "raydium",
+    "fee_rate": "0.0001",
+    "id": "3NeUgARDmFgnKtkJLqUcEUNCfknFCcGsFfMJCtx6bAgx",
+    "lp_amount": null,
+    "month": {
+     "price_max": "1.009009009009009",
+     "price_min": "0.996851718777927",
+     "volume": "86247.68674188326"
+    },
+    "open_time": "0",
+    "price": "1.0002055983813587",
+    "tvl": "36710.36",
+    "type": "Concentrated",
+    "week": {
+     "price_max": "1.0012594228222216",
+     "price_min": "0.9995032576967954",
+     "volume": "25606.03601789997"
+    }
+   }
+  ],
+  "freezable": {
+   "authority": [
+    {
+     "address": "Q6XprfkF8RQQKoQVG33xT88H7wi8Uk1B1CC7YAs69Gi",
+     "malicious_address": 0
+    }
+   ],
+   "status": "1"
+  },
+  "holder_count": "3029758",
+  "holders": [
+   {
+    "account": "A3znyaRYUvi7GbQv1pp9CqqiVo7anddU9rPKFH55V28R",
+    "balance": "1651550078.810122",
+    "is_locked": 0,
+    "locked_detail": [],
+    "percent": "0.4301",
+    "tag": "",
+    "token_account": "8hnVkd24Gp7s1QYVPBQSayS4uLokKEj1Uq6NFjk6PibK"
+   },
+   {
+    "account": "6LY1JzAFVZsP2a2xKrtU6znQMQ5h4i7tocWdgrkZzkzF",
+    "balance": "128056687.785369",
+    "is_locked": 0,
+    "locked_detail": [],
+    "percent": "0.0333",
+    "tag": "",
+    "token_account": "7PudWVYJ1MRi49ES9sJ4PaAiFzkkNf4Z1ym2hRwKxYAe"
+   },
+   {
+    "account": "FPRFLszBJFHCThF2yWvkGkfvtwyFPRGX9MFHnDGP6UYp",
+    "balance": "110721007.335037",
+    "is_locked": 0,
+    "locked_detail": [],
+    "percent": "0.0288",
+    "tag": "",
+    "token_account": "8wdDhaoC4jcz7sgabbNy5Ar3ELBTiTvCMvsd93x3FiKK"
+   },
+   {
+    "account": "5tzFkiKscXHK5ZXCGbXZxdw7gTjjD1mBwuoFbhUvuAi9",
+    "balance": "101554308.341425",
+    "is_locked": 0,
+    "locked_detail": [],
+    "percent": "0.0264",
+    "tag": "",
+    "token_account": "CyBjGpte4Npi5zNkdtWumPxVW4kpMR8BuFSbA587xZES"
+   },
+   {
+    "account": "Q6XprfkF8RQQKoQVG33xT88H7wi8Uk1B1CC7YAs69Gi",
+    "balance": "73262719.192721",
+    "is_locked": 0,
+    "locked_detail": [],
+    "percent": "0.0191",
+    "tag": "",
+    "token_account": "99pfYkuFEUPvUzVSGsMc2VN47FaFSTrKBMXGnxg13tDt"
+   },
+   {
+    "account": "2qo8jvuc49pFmTjmUHLiARSV6ppPTaE7gw27ZJ6DnNZy",
+    "balance": "63301956.465826",
+    "is_locked": 0,
+    "locked_detail": [],
+    "percent": "0.0165",
+    "tag": "",
+    "token_account": "BWMAq1z6hyebS2HRTAuUGehzLPK7xo7wKgkcXSRwHMgv"
+   },
+   {
+    "account": "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM",
+    "balance": "50000000.0001",
+    "is_locked": 0,
+    "locked_detail": [],
+    "percent": "0.0130",
+    "tag": "",
+    "token_account": "TB5FCqbNsnuLQgEjUuPaT9qtVPTT4U1A8rvi7qzEj2M"
+   },
+   {
+    "account": "3Ln6KEgLoMR2xFHfqtYazP7CxFQPDtUVVtwCVsLKVfmV",
+    "balance": "40757855.492035",
+    "is_locked": 0,
+    "locked_detail": [],
+    "percent": "0.0106",
+    "tag": "",
+    "token_account": "Gp3chtgbFV9wjzC5kU87qtfN3FHHHjsCrnSVQsyBQnMf"
+   },
+   {
+    "account": "GL8T72PKygWaYrLKtSteN9UUvYYnuC8azNDunk4eaqqQ",
+    "balance": "38883918.12",
+    "is_locked": 0,
+    "locked_detail": [],
+    "percent": "0.0101",
+    "tag": "",
+    "token_account": "HG6JtjnED4EyVTKL11bRckC8nGHVYeh6sPMzrVbhA9to"
+   },
+   {
+    "account": "8ZPaybdHeNwpoxmU1ALcbLoE3eK443Jq4emk82VCscag",
+    "balance": "37384681.073565",
+    "is_locked": 0,
+    "locked_detail": [],
+    "percent": "0.0097",
+    "tag": "",
+    "token_account": "Cb4jKfeLRC7sNpuvBUWniaJ2Dssp7fzNtVcp28nosCoG"
+   }
+  ],
+  "lp_holders": [],
+  "metadata": {
+   "description": "",
+   "name": "USDT",
+   "symbol": "USDT",
+   "uri": "https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB/logo.svg"
+  },
+  "metadata_mutable": {
+   "metadata_upgrade_authority": [
+    {
+     "address": "Q6XprfkF8RQQKoQVG33xT88H7wi8Uk1B1CC7YAs69Gi",
+     "malicious_address": 0
+    }
+   ],
+   "status": "1"
+  },
+  "mintable": {
+   "authority": [
+    {
+     "address": "Q6XprfkF8RQQKoQVG33xT88H7wi8Uk1B1CC7YAs69Gi",
+     "malicious_address": 0
+    }
+   ],
+   "status": "1"
+  },
+  "non_transferable": "0",
+  "total_supply": "3839903721.534531",
+  "transfer_fee": {},
+  "transfer_fee_upgradable": {
+   "authority": [],
+   "status": "0"
+  },
+  "transfer_hook": [],
+  "transfer_hook_upgradable": {
+   "authority": [],
+   "status": "0"
+  },
+  "trusted_token": 1
+ },
+ "rugcheck": {
+  "summary": {
+   "tokenProgram": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+   "tokenType": "",
+   "risks": [],
+   "score": 1,
+   "score_normalised": 1,
+   "lpLockedPct": 0
+  },
+  "report": {
+   "mint": "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",
+   "tokenProgram": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+   "creator": "Q6XprfkF8RQQKoQVG33xT88H7wi8Uk1B1CC7YAs69Gi",
+   "creatorBalance": 0,
+   "token": {
+    "mintAuthority": "Q6XprfkF8RQQKoQVG33xT88H7wi8Uk1B1CC7YAs69Gi",
+    "supply": 3839903721534531,
+    "decimals": 6,
+    "isInitialized": true,
+    "freezeAuthority": "Q6XprfkF8RQQKoQVG33xT88H7wi8Uk1B1CC7YAs69Gi"
+   },
+   "token_extensions": null,
+   "tokenMeta": {
+    "name": "USDT",
+    "symbol": "USDT",
+    "uri": "",
+    "mutable": true,
+    "updateAuthority": "Q6XprfkF8RQQKoQVG33xT88H7wi8Uk1B1CC7YAs69Gi"
+   },
+   "topHolders": null,
+   "freezeAuthority": {
+    "lamports": 2608126885,
+    "owner": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+    "data": [
+     "AgMBS7YGegyWfbBxbp6MBfJJnKdbYzMabgb7UrR74dgBuVcOjJuYVChoSv0PZHDucrNpFucW9sbzfjYEGptxGuscnIZ9sLqXqI+h14k/NiZKGacqFw32d54mWSrShzev487yAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+     "base64"
+    ],
+    "executable": false,
+    "rentEpoch": 18446744073709551615,
+    "space": 355
+   },
+   "mintAuthority": {
+    "lamports": 2608126885,
+    "owner": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+    "data": [
+     "AgMBS7YGegyWfbBxbp6MBfJJnKdbYzMabgb7UrR74dgBuVcOjJuYVChoSv0PZHDucrNpFucW9sbzfjYEGptxGuscnIZ9sLqXqI+h14k/NiZKGacqFw32d54mWSrShzev487yAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==",
+     "base64"
+    ],
+    "executable": false,
+    "rentEpoch": 18446744073709551615,
+    "space": 355
+   },
+   "risks": [],
+   "score": 1,
+   "score_normalised": 1,
+   "fileMeta": null,
+   "lockerOwners": {},
+   "lockers": {},
+   "lockerScanStatus": "none",
+   "markets": null,
+   "totalMarketLiquidity": 0,
+   "totalStableLiquidity": 0,
+   "totalLPProviders": 0,
+   "totalHolders": 0,
+   "price": 0,
+   "rugged": false,
+   "tokenType": "",
+   "transferFee": {
+    "pct": 0,
+    "maxAmount": 0,
+    "authority": "11111111111111111111111111111111"
+   },
+   "knownAccounts": {
+    "Q6XprfkF8RQQKoQVG33xT88H7wi8Uk1B1CC7YAs69Gi": {
+     "name": "Creator",
+     "type": "CREATOR"
+    }
+   },
+   "events": [],
+   "verification": {
+    "mint": "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",
+    "payer": "",
+    "name": "USDT",
+    "symbol": "usdt",
+    "description": "",
+    "jup_verified": true,
+    "jup_strict": true,
+    "validated": false,
+    "links": []
+   },
+   "validation": {
+    "validated": false
+   },
+   "graphInsidersDetected": 0,
+   "insiderNetworks": null,
+   "detectedAt": "2026-04-15T13:22:07.629173413Z",
+   "creatorTokens": null,
+   "launchpad": null,
+   "deployPlatform": ""
+  },
+  "insiders": []
+ }
+}

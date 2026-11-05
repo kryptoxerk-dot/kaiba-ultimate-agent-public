@@ -1,0 +1,19 @@
+{% set klabel = {'confluence': 'confluence', 'entry': 'bought', 'signal': 'signal', 'launch': 'launch', 'graduation': 'graduated', 'trending': 'trending', 'listing': 'listing', 'claim': 'claim', 'governance': 'governance'} %}
+{% for i in stream %}
+<div class="wr sx"{% if i.linkable %} data-load="/terminal/token/{{ i.chain }}/{{ i.token }}" data-href="/t/{{ i.chain }}/{{ i.token }}" data-push="{{ i.chain }}:{{ i.token }}" tabindex="0" role="button"{% elif i.url %} data-href="{{ i.url }}" data-external tabindex="0"{% endif %} data-seen="{{ i.ts }}">
+  <span class="med k-{{ i.kind }}">{% if i.token %}{{ ((i.symbol or i.token)|string)[:1]|upper }}{% else %}<svg class="i"><use href="#i-bolt"/></svg>{% endif %}</span>
+  <div style="min-width:0">
+    <div class="nm">
+      {% if i.token %}<b>{{ i.symbol or (i.token|short) }}</b>{% else %}<b>{{ i.title|truncate(70, True, '…') }}</b>{% endif %}
+      {% if i.chain %}<span class="chip c-{{ i.chain }}">{{ {'sol': 'SOL', 'robinhood': 'RH', 'bsc': 'BNB'}.get(i.chain, i.chain) }}</span>{% endif %}
+    </div>
+    <div class="ln2"><span class="kd"><i class="k-{{ i.kind }}"></i></span><span>{{ klabel.get(i.kind, i.kind) }}{% if i.token %} · {{ i.title }}{% endif %}{% if i.detail %} · {{ i.detail }}{% endif %}</span></div>
+  </div>
+  <div class="num">
+    {% if i.score is not none %}<span class="mono" title="score / strength / confidence the source gave">{{ ('%.0f'|format(i.score)) if i.score > 1 else ('%.2f'|format(i.score)) }}</span>{% elif i.url %}<span class="x">source ↗</span>{% endif %}
+    <time title="{{ i.ts|hms }} UTC">{{ i.ts|ago }}</time>
+  </div>
+</div>
+{% else %}
+<p class="empty">Nothing in this stream yet.</p>
+{% endfor %}

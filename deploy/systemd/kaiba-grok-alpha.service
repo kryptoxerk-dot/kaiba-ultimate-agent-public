@@ -1,0 +1,26 @@
+[Unit]
+Description=Kaiba signed Grok research intake (no financial operations)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/kaiba
+Environment=PYTHONUNBUFFERED=1
+ExecStart=%h/kaiba/.venv/bin/python -m kaiba.hunters.grok_alpha_bridge serve --db %h/kaiba/data/grok-alpha/inbox.db
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=%h/kaiba/data/grok-alpha
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+MemoryMax=192M
+CPUQuota=15%
+Nice=19
+IOSchedulingClass=idle
+TasksMax=40
+
+[Install]
+WantedBy=default.target

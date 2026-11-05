@@ -1,0 +1,14 @@
+[
+  {"case": "not an object", "message": 42},
+  {"case": "empty object", "message": {}},
+  {"case": "create without a mint", "message": {"txType": "create", "name": "No Mint", "symbol": "NOPE"}},
+  {"case": "mint is not base58", "message": {"txType": "create", "mint": "0xdeadbeef", "name": "Wrong chain"}},
+  {"case": "mint too short", "message": {"txType": "create", "mint": "abc123", "symbol": "SHORT"}},
+  {"case": "mint contains base58-illegal chars", "message": {"txType": "create", "mint": "0OIl0OIl0OIl0OIl0OIl0OIl0OIl0OIl0OIl", "symbol": "BAD"}},
+  {"case": "null mint", "message": {"txType": "create", "mint": null, "symbol": "NULL"}},
+  {"case": "subscription acknowledgement", "message": {"message": "Successfully subscribed to token creation events."}},
+  {"case": "provider error frame", "message": {"errors": ["Invalid subscription method"]}},
+  {"case": "migration without a mint", "message": {"txType": "migrate", "pool": "pumpswap"}},
+  {"case": "unknown txType", "message": {"txType": "somethingNew", "mint": "5uiWN8tHqR4ykLDt88UR8htfcG6YK7fqcadfKBgDEPMh"}},
+  {"case": "list instead of object", "message": [1, 2, 3]}
+]

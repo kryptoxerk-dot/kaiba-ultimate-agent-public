@@ -1,0 +1,41 @@
+{
+  "_provenance": "INVENTED: this is the pre-2026-09-21 guess at the `market trenches` shape (a `data.rank` list). Every real payload is the category map in gmgn_market_trenches.json; this file exists only to pin the list path of gmgn_feeds._rows.",
+  "code": 0,
+  "msg": "success",
+  "data": {
+    "rank": [
+      {
+        "address": "5uiWN8tHqR4ykLDt88UR8htfcG6YK7fqcadfKBgDEPMh",
+        "symbol": "KFIX",
+        "name": "Kaiba Fixture Coin",
+        "chain": "sol",
+        "progress": 0.62,
+        "smart_degen_count": 5,
+        "renowned_count": 1,
+        "bot_degen_count": 2,
+        "holder_count": 418,
+        "rug_ratio": 0.05,
+        "launchpad": "Pump.fun",
+        "market_cap": "48210.44",
+        "liquidity": "18240.90",
+        "created_timestamp": 1758355200,
+        "preset": "smart-money"
+      },
+      {
+        "address": "4iUGz6BJNT7nrEYVDaq6ozDt6QN8WJRXfKQbbn43xMAX",
+        "symbol": "NEARDONE",
+        "chain": "sol",
+        "progress": 0.91,
+        "smart_degen_count": 3,
+        "renowned_count": 0,
+        "holder_count": 902,
+        "rug_ratio": 0.12,
+        "launchpad": "Pump.fun",
+        "market_cap": "71500.00",
+        "liquidity": "29800.00",
+        "created_timestamp": 1758352000,
+        "preset": "smart-money"
+      }
+    ]
+  }
+}

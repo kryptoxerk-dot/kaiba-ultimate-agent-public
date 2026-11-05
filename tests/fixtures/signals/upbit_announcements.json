@@ -1,0 +1,210 @@
+{
+ "success": true,
+ "data": {
+  "total_pages": 39,
+  "total_count": 776,
+  "notices": [
+   {
+    "listed_at": "2026-09-18T16:30:00+09:00",
+    "first_listed_at": "2026-09-18T16:30:00+09:00",
+    "id": 6591,
+    "uuid": "1354566889",
+    "title": "아이콘(ICX) 거래지원 종료 안내 (10/19 15:00)",
+    "category": "거래",
+    "need_new_badge": false,
+    "need_update_badge": false
+   },
+   {
+    "listed_at": "2026-09-18T16:00:22+09:00",
+    "first_listed_at": "2026-09-18T16:00:22+09:00",
+    "id": 6589,
+    "uuid": "442463204",
+    "title": "만트라(MANTRA) 거래 유의 종목 지정 기간 연장 안내",
+    "category": "거래",
+    "need_new_badge": false,
+    "need_update_badge": false
+   },
+   {
+    "listed_at": "2026-09-18T16:00:00+09:00",
+    "first_listed_at": "2026-09-18T16:00:00+09:00",
+    "id": 6588,
+    "uuid": "697331053",
+    "title": "질리카(ZIL) 거래 유의 종목 지정 기간 연장 안내",
+    "category": "거래",
+    "need_new_badge": false,
+    "need_update_badge": false
+   },
+   {
+    "listed_at": "2026-09-17T14:50:12+09:00",
+    "first_listed_at": "2026-09-17T09:48:01+09:00",
+    "id": 6580,
+    "uuid": "1580532257",
+    "title": "페이팔유에스디(PYUSD), 제이피와이코인(JPYC) 신규 거래지원 안내 (KRW, BTC, USDT 마켓) (JPYC 거래지원 개시 시점 추가 변경 안내)",
+    "category": "거래",
+    "need_new_badge": false,
+    "need_update_badge": false
+   },
+   {
+    "listed_at": "2026-09-10T18:30:01+09:00",
+    "first_listed_at": "2026-09-10T18:30:01+09:00",
+    "id": 6562,
+    "uuid": "960611251",
+    "title": "레이븐코인(RVN) 거래지원 종료 안내 (10/12 15:00)",
+    "category": "거래",
+    "need_new_badge": false,
+    "need_update_badge": false
+   },
+   {
+    "listed_at": "2026-09-10T17:45:01+09:00",
+    "first_listed_at": "2026-09-10T13:30:01+09:00",
+    "id": 6560,
+    "uuid": "26668186",
+    "title": "렌조(REZ) 신규 거래지원 안내 (USDT 마켓) (거래지원 개시 시점 추가 변경 안내)",
+    "category": "거래",
+    "need_new_badge": false,
+    "need_update_badge": false
+   },
+   {
+    "listed_at": "2026-09-10T13:40:00+09:00",
+    "first_listed_at": "2026-09-10T13:40:00+09:00",
+    "id": 6561,
+    "uuid": "250738258",
+    "title": "바이프로스트(BFC) KRW, USDT 마켓 디지털 자산 추가",
+    "category": "거래",
+    "need_new_badge": false,
+    "need_update_badge": false
+   },
+   {
+    "listed_at": "2026-09-08T21:12:00+09:00",
+    "first_listed_at": "2026-09-08T19:25:32+09:00",
+    "id": 6558,
+    "uuid": "155358260",
+    "title": "헤미(HEMI), 유즈리스(USELESS) 신규 거래지원 안내 (BTC, USDT 마켓) (헤미(HEMI) 거래지원 취소 안내)",
+    "category": "거래",
+    "need_new_badge": false,
+    "need_update_badge": false
+   },
+   {
+    "listed_at": "2026-09-08T12:21:44+09:00",
+    "first_listed_at": "2026-09-08T12:21:44+09:00",
+    "id": 6555,
+    "uuid": "316864820",
+    "title": "클러스터프로토콜(CP) 신규 거래지원 안내 (KRW, BTC, USDT 마켓)",
+    "category": "거래",
+    "need_new_badge": false,
+    "need_update_badge": false
+   },
+   {
+    "listed_at": "2026-09-01T17:02:57+09:00",
+    "first_listed_at": "2026-09-01T17:02:57+09:00",
+    "id": 6540,
+    "uuid": "1798975430",
+    "title": "인젝티브(INJ) 거래 유의 종목 지정 안내",
+    "category": "거래",
+    "need_new_badge": false,
+    "need_update_badge": false
+   },
+   {
+    "listed_at": "2026-08-28T16:30:00+09:00",
+    "first_listed_at": "2026-08-28T16:30:00+09:00",
+    "id": 6530,
+    "uuid": "1038207795",
+    "title": "아이콘(ICX) 거래 유의 종목 지정 안내",
+    "category": "거래",
+    "need_new_badge": false,
+    "need_update_badge": false
+   },
+   {
+    "listed_at": "2026-08-28T16:00:00+09:00",
+    "first_listed_at": "2026-08-28T16:00:00+09:00",
+    "id": 6529,
+    "uuid": "1506400376",
+    "title": "신세틱스(SNX) 거래지원 종료 안내 (9/28 15:00)",
+    "category": "거래",
+    "need_new_badge": false,
+    "need_update_badge": false
+   },
+   {
+    "listed_at": "2026-08-28T10:49:45+09:00",
+    "first_listed_at": "2026-08-28T10:49:45+09:00",
+    "id": 6526,
+    "uuid": "381740519",
+    "title": "이유알코인(EURC) 신규 거래지원 안내 (KRW, BTC, USDT 마켓)",
+    "category": "거래",
+    "need_new_badge": false,
+    "need_update_badge": false
+   },
+   {
+    "listed_at": "2026-08-27T18:19:21+09:00",
+    "first_listed_at": "2026-08-27T18:19:21+09:00",
+    "id": 6522,
+    "uuid": "1316479417",
+    "title": "ThunderCore 네트워크 종료에 따른 썬더코어(TT) 출금 중단(종료) 및 거래지원 종료 예정일 변경 안내 (09/01 09:00 ~)",
+    "category": "거래",
+    "need_new_badge": false,
+    "need_update_badge": false
+   },
+   {
+    "listed_at": "2026-08-26T19:32:15+09:00",
+    "first_listed_at": "2026-08-26T19:32:15+09:00",
+    "id": 6518,
+    "uuid": "1975727596",
+    "title": "폴리스웜(NCT) KRW 마켓 디지털 자산 추가",
+    "category": "거래",
+    "need_new_badge": false,
+    "need_update_badge": false
+   },
+   {
+    "listed_at": "2026-08-24T15:00:02+09:00",
+    "first_listed_at": "2026-08-24T15:00:02+09:00",
+    "id": 6508,
+    "uuid": "1023535559",
+    "title": "샌드박스(SAND) 거래 유의 종목 지정 안내",
+    "category": "거래",
+    "need_new_badge": false,
+    "need_update_badge": false
+   },
+   {
+    "listed_at": "2026-08-24T11:34:42+09:00",
+    "first_listed_at": "2026-08-24T11:34:42+09:00",
+    "id": 6504,
+    "uuid": "456113451",
+    "title": "라이터(LIT) KRW 마켓 디지털 자산 추가",
+    "category": "거래",
+    "need_new_badge": false,
+    "need_update_badge": false
+   },
+   {
+    "listed_at": "2026-08-23T10:14:09+09:00",
+    "first_listed_at": "2026-08-23T10:14:09+09:00",
+    "id": 6503,
+    "uuid": "541763149",
+    "title": "인터폴드(FOLD) 신규 거래지원 안내 (KRW, BTC, USDT 마켓)",
+    "category": "거래",
+    "need_new_badge": false,
+    "need_update_badge": false
+   },
+   {
+    "listed_at": "2026-08-22T11:45:01+09:00",
+    "first_listed_at": "2026-08-22T11:45:01+09:00",
+    "id": 6500,
+    "uuid": "1509247642",
+    "title": "샌드박스(SAND) 유의 촉구 안내",
+    "category": "거래",
+    "need_new_badge": false,
+    "need_update_badge": false
+   },
+   {
+    "listed_at": "2026-08-21T21:50:05+09:00",
+    "first_listed_at": "2026-08-21T19:19:25+09:00",
+    "id": 6496,
+    "uuid": "898944907",
+    "title": "넥소(NEXO) 신규 거래지원 안내 (USDT 마켓) (거래지원 개시 시점 변경 안내)",
+    "category": "거래",
+    "need_new_badge": false,
+    "need_update_badge": false
+   }
+  ],
+  "fixed_notices": []
+ }
+}

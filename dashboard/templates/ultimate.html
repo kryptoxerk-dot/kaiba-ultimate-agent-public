@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Kaiba · Market intelligence terminal</title>
+  <link rel="icon" href="/static/kaiba-mark.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/ultimate.css?v=terminal-pulse-20261103">
+  <script src="/static/ultimate.js?v=terminal-pulse-20261103" defer></script>
+</head>
+<body>
+<a href="#main" class="skip-link">Skip to content</a>
+<svg xmlns="http://www.w3.org/2000/svg" class="icon-library" aria-hidden="true"><defs>
+  <symbol id="i-overview" viewBox="0 0 24 24"><path d="m3 10 9-7 9 7M5 9v11h5v-6h4v6h5V9"/></symbol>
+  <symbol id="i-wallet" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="14" rx="3"/><path d="M4 7V5a2 2 0 0 1 2-2h11v3m1 6h3m-4 2h.01"/></symbol>
+  <symbol id="i-bank" viewBox="0 0 24 24"><path d="m3 8 9-5 9 5v2H3V8Zm2 3v8m5-8v8m4-8v8m5-8v8M3 21h18"/></symbol>
+  <symbol id="i-calendar" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4m10-4v4M3 11h18m-13 5h2m4 0h2"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="7"/><path d="m16 16 5 5"/></symbol>
+  <symbol id="i-terminal" viewBox="0 0 24 24"><path d="m4 5 6 6-6 6m9 0h7"/></symbol>
+  <symbol id="i-chart" viewBox="0 0 24 24"><path d="M4 20V12m6 8V7m6 13V3m5 17H2"/></symbol>
+  <symbol id="i-results" viewBox="0 0 24 24"><path d="M8 3h8v7a4 4 0 0 1-8 0V3Zm0 2H4v3a4 4 0 0 0 4 4m8-7h4v3a4 4 0 0 1-4 4m-4 2v6m-4 1h8"/></symbol>
+  <symbol id="i-layers" viewBox="0 0 24 24"><path d="m3 7 9-5 9 5-9 5-9-5Zm0 5 9 5 9-5M3 17l9 5 9-5"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 8a8 8 0 0 0-14-3L3 8m0-5v5h5m-4 8a8 8 0 0 0 14 3l3-3m0 5v-5h-5"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6m0-10h.01"/></symbol>
+  <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M4 12h16m-6-6 6 6-6 6"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="m12 3 10 18H2L12 3Zm0 6v5m0 3h.01"/></symbol>
+  <symbol id="i-move" viewBox="0 0 24 24"><path d="M7 21V3m-4 4 4-4 4 4m6-4v18m-4-4 4 4 4-4"/></symbol>
+</defs></svg>
+<aside class="sidebar">
+  <a class="brand" href="/ultimate" aria-label="Kaiba overview"><svg><use href="#i-layers"/></svg><span><strong>KAIBA</strong><small>Unified Crypto<br>Intelligence</small></span></a>
+  <nav aria-label="Workspace">
+    <a class="nav-link active" href="#overview" data-nav="overview"><svg><use href="#i-overview"/></svg><span>Overview</span></a>
+    <a class="nav-link" href="#pulse" data-nav="pulse"><svg><use href="#i-chart"/></svg><span>Market pulse</span></a>
+    <p class="nav-group">Intelligence</p>
+    <a class="nav-link" href="#wallets" data-nav="wallets"><svg><use href="#i-wallet"/></svg><span>Wallet flows</span></a>
+    <a class="nav-link" href="#institutions" data-nav="institutions"><svg><use href="#i-bank"/></svg><span>Institutions</span></a>
+    <a class="nav-link" href="#macro" data-nav="macro"><svg><use href="#i-calendar"/></svg><span>Macro calendar</span></a>
+    <a class="nav-link" href="#discover" data-nav="discover"><svg><use href="#i-search"/></svg><span>Discover</span></a>
+    <p class="nav-group trading-group">Trading</p>
+    <a class="nav-link" href="/terminal"><svg><use href="#i-terminal"/></svg><span>Web3 terminal</span></a>
+    <a class="nav-link" href="#perps" data-nav="perps"><svg><use href="#i-chart"/></svg><span>Aegis perps</span></a>
+    <a class="nav-link" href="/trades"><svg><use href="#i-results"/></svg><span>Results</span></a>
+  </nav>
+  <a class="sidebar-health" href="#sources"><span><svg><use href="#i-layers"/></svg><b>Source health</b><i id="health-dot"></i></span><small id="sidebar-status">Checking cached sources…</small><em>Check source health <svg><use href="#i-arrow"/></svg></em></a>
+</aside>
+<main id="main" class="workspace">
+  <header class="topbar" id="overview"><div><h1>Market pulse</h1><p>Follow the market. Inspect the evidence.</p></div><div class="toolbar"><label class="search"><svg><use href="#i-search"/></svg><input id="search" type="search" placeholder="Search intelligence" aria-label="Search intelligence"></label><button id="refresh" class="refresh" type="button"><svg><use href="#i-refresh"/></svg><span>Refresh</span></button></div></header>
+  <div class="notice" role="status" id="notice"><svg><use href="#i-info"/></svg><span>Loading your workspace…</span><a href="#sources">Check source health.</a></div>
+  <section class="pulse-section" id="pulse" aria-label="Market and wallet rankings">
+    <div class="pulse-source-line"><span id="pulse-status">Awaiting market and wallet snapshot</span><span id="pulse-clock">Source times and coverage stay visible.</span></div>
+    <section class="panel chain-panel" aria-labelledby="chains-title">
+      <div class="panel-heading pulse-heading"><h2 id="chains-title">Chains in focus</h2><div class="pulse-tools"><label class="visually-hidden" for="pulse-chain">Filter rankings by chain</label><select id="pulse-chain"><option value="all">All chains</option><option value="sol">Solana</option><option value="eth">Ethereum</option><option value="base">Base</option><option value="bsc">BNB Chain</option><option value="arbitrum">Arbitrum</option><option value="robinhood">Robinhood</option></select><div class="filters" role="group" aria-label="Rank chains"><button type="button" data-chain-sort="volume" class="selected" aria-pressed="true">24h DEX volume</button><button type="button" data-chain-sort="growth" aria-pressed="false">24h growth</button></div></div></div>
+      <div class="chain-heatmap" id="chain-heatmap"></div>
+      <p class="panel-note" id="chain-coverage">Reported DEX spot volume · covered chains only.</p>
+    </section>
+    <div class="pulse-grid">
+      <section class="panel token-ranks" aria-labelledby="token-ranks-title">
+        <div class="panel-heading pulse-heading"><h2 id="token-ranks-title">Trending tokens</h2><span id="token-rank-count">Existing market feed</span></div>
+        <div class="pulse-tools rank-toolbar"><label class="visually-hidden" for="token-chain">Token chain</label><select id="token-chain"><option value="all">All chains</option><option value="sol">Solana</option><option value="bsc">BNB Chain</option><option value="eth">Ethereum</option><option value="base">Base</option><option value="robinhood">Robinhood</option><option value="arbitrum">Arbitrum</option></select><div class="filters" role="group" aria-label="Rank tokens"><button type="button" data-token-sort="rank" class="selected" aria-pressed="true">Source rank</button><button type="button" data-token-sort="reported" aria-pressed="false">Reported volume</button><button type="button" data-token-sort="volume1h" aria-pressed="false">1h volume</button><button type="button" data-token-sort="volume24h" aria-pressed="false">24h volume</button></div></div>
+        <div class="table-scroll rank-table"><table><thead><tr><th>Source #</th><th>Token</th><th>Chain</th><th>Market cap</th><th>Liquidity</th><th>Reported volume</th><th>Source time</th></tr></thead><tbody id="token-rank-body"></tbody></table></div>
+        <div class="empty pulse-empty" id="token-rank-empty"><svg><use href="#i-chart"/></svg><strong>Awaiting token rankings</strong><p>Uses the existing market feed.</p></div><p class="panel-note" id="token-rank-basis">Ranks belong to each source list. Volume is compared only within the selected period.</p>
+      </section>
+      <section class="panel wallet-ranks" aria-labelledby="wallet-ranks-title">
+        <div class="panel-heading"><h2 id="wallet-ranks-title">Wallet leaders</h2><span id="wallet-rank-count"></span></div>
+        <div class="filters wallet-rank-filters" role="group" aria-label="Rank wallets"><button type="button" data-wallet-sort="pnl" class="selected" aria-pressed="true">Highest recorded PnL</button><button type="button" data-wallet-sort="today" aria-pressed="false">Found today</button><button type="button" data-wallet-sort="recent" aria-pressed="false">Recently reviewed</button></div>
+        <p class="rank-scope" id="wallet-rank-scope">Among reviewed wallets · source history.</p>
+        <div class="table-scroll rank-table"><table><thead><tr><th>Wallet</th><th>PnL USD</th><th>Win rate</th><th>Closed</th><th>Evidence</th></tr></thead><tbody id="wallet-rank-body"></tbody></table></div>
+        <div class="empty pulse-empty" id="wallet-rank-empty"><svg><use href="#i-wallet"/></svg><strong>Awaiting wallet snapshot</strong><p>Discovery date and PnL period are shown separately.</p></div><p class="panel-note">Recorded profits describe the source wallet. Copying profitability remains unproven.</p>
+      </section>
+    </div>
+  </section>
+  <section class="metrics" aria-label="Portfolio summary">
+    <article class="metric"><svg><use href="#i-layers"/></svg><div><h2>Open positions</h2><p>Kaiba ledger</p></div><strong id="metric-open">—</strong></article>
+    <article class="metric"><svg><use href="#i-move"/></svg><div><h2>Realized today</h2><p id="pnl-label">Kaiba ledger · UTC</p></div><strong id="metric-pnl">—</strong></article>
+    <article class="metric"><svg class="fresh-icon"><use href="#i-refresh"/></svg><div><h2>Data freshness</h2><p>Aegis cache</p></div><strong id="metric-fresh" class="amber">Checking</strong></article>
+  </section>
+  <div class="dashboard-grid">
+    <section class="panel market-panel" aria-labelledby="market-title"><div class="panel-heading"><h2 id="market-title">Market overview</h2><span><svg><use href="#i-info"/></svg>Aegis · Market observations</span></div><div class="market-content"><div id="market-list" class="market-list"></div><div class="chart-empty" id="market-context"><svg><use href="#i-chart"/></svg><p>Connect fresh market observations<br>to see the trend.</p></div></div></section>
+    <section class="panel macro-panel" id="macro" aria-labelledby="macro-title"><div class="panel-heading"><h2 id="macro-title">Next macro events</h2><span><svg><use href="#i-info"/></svg>Source-linked calendar</span></div><div id="macro-list"></div><a class="panel-link" href="#brief">Daily macro brief <svg><use href="#i-arrow"/></svg></a></section>
+    <section class="panel wallets-panel" id="wallets" aria-labelledby="wallet-title"><div class="panel-heading"><h2 id="wallet-title">Wallet &amp; whale activity</h2><span id="alert-count"></span></div><div class="filters" role="group" aria-label="Activity type"><button type="button" class="selected" data-activity="all" aria-pressed="true">All</button><button type="button" data-activity="smart" aria-pressed="false">Smart wallets</button><button type="button" data-activity="whale" aria-pressed="false">Whales</button><label class="notify-label"><input type="checkbox" id="sound-alerts"> In-app alerts</label></div><div class="table-scroll"><table><thead><tr><th>Observation</th><th>Asset</th><th>Direction</th><th>Observed size</th><th>Source time</th></tr></thead><tbody id="activity-body"></tbody></table></div><div id="activity-empty" class="empty"><svg><use href="#i-wallet"/></svg><strong>No recent wallet activity</strong><p>Fresh observations will appear here as the collectors update.</p></div><p class="panel-note">Smart-wallet labels describe the source. They do not establish a profitable trade.</p></section>
+    <section class="panel institutions-panel" id="institutions" aria-labelledby="institution-title"><div class="panel-heading"><h2 id="institution-title">Institutional flows</h2></div><div class="filters" role="group" aria-label="ETF asset"><button type="button" class="selected" data-etf="BTC" aria-pressed="true">BTC ETFs</button><button type="button" data-etf="ETH" aria-pressed="false">ETH ETFs</button></div><div class="table-scroll"><table><thead><tr><th>Product</th><th>Net flow (USD)</th><th>Report date</th></tr></thead><tbody id="institution-body"></tbody></table></div><p class="panel-note"><svg><use href="#i-info"/></svg>ETF flows are reported daily. Wallet transfers are a separate signal.</p></section>
+    <section class="panel discover-panel" id="discover" aria-labelledby="discover-title"><div class="discover-heading"><h2 id="discover-title">Discover</h2><div class="filters" role="group" aria-label="Opportunity type"><button type="button" class="selected" data-kind="all" aria-pressed="true">All</button><button type="button" data-kind="token" aria-pressed="false">Memecoins</button><button type="button" data-kind="nft" aria-pressed="false">NFTs</button><button type="button" data-kind="airdrop" aria-pressed="false">Airdrops</button><button type="button" data-kind="launchpad" aria-pressed="false">Launchpads</button><button type="button" data-kind="chain" aria-pressed="false">New chains</button></div></div><div id="discover-list"></div><div class="empty" id="discover-empty"><svg><use href="#i-search"/></svg><strong>No discoveries yet</strong><p>Explore new tokens, narratives and early opportunities on the <a href="/alpha">Alpha page</a>.</p></div></section>
+    <section class="panel brief-panel" id="brief" aria-labelledby="brief-title"><div class="panel-heading"><h2 id="brief-title">Daily macro brief</h2><span>07:00 WIB · daily compilation</span></div><div id="brief-content" class="brief-content"></div><div id="macro-readings" class="macro-readings"></div><div class="official-links"><a href="https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm" target="_blank" rel="noopener noreferrer">Fed / FOMC</a><a href="https://www.bls.gov/schedule/news_release/cpi.htm" target="_blank" rel="noopener noreferrer">BLS / CPI</a><a href="https://www.bea.gov/news/schedule/full" target="_blank" rel="noopener noreferrer">BEA / PCE</a></div><div id="news-list"></div></section>
+    <section class="panel perps-panel" id="perps" aria-labelledby="perps-title"><div class="panel-heading"><h2 id="perps-title">Aegis perps</h2><span>Binance USD-M</span></div><div id="perps-content" class="brief-content"></div><p class="panel-note">Kaiba and Aegis keep their own execution and risk controls.</p><div class="terminal-links"><a href="/terminal">Open Web3 terminal <svg><use href="#i-arrow"/></svg></a><a href="/trades">Review realized results <svg><use href="#i-arrow"/></svg></a></div></section>
+    <section class="panel sources-panel" id="sources" aria-labelledby="sources-title"><div class="panel-heading"><h2 id="sources-title">Source health</h2><span id="updated-at">Awaiting snapshot</span></div><div id="source-list" class="source-list"></div><p class="panel-note">Refresh reads saved observations. Source timestamps show when the underlying evidence was collected.</p></section>
+  </div>
+  <footer><span>Kaiba + Aegis · One workspace</span><a href="/">Command centre</a><a href="/agent">Agent</a><span id="snapshot-age"></span></footer>
+</main>
+<div class="toast" id="toast" role="status" hidden></div>
+</body>
+</html>

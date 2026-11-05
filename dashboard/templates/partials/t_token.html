@@ -1,0 +1,215 @@
+{% set t = tok.token %}{% set d = tok.dossier %}
+{% set f = {} %}{% if d %}{% for x in d.fields %}{% set _ = f.update({x.key: x}) %}{% endfor %}{% endif %}
+{% set sym = t.symbol or (tok.address|short) %}
+<header class="th" data-token="{{ tok.chain }}:{{ tok.address }}">
+  <div class="id">
+    <span class="med lg c-{{ tok.chain }}">{{ (t.symbol or tok.address)[:1]|upper }}</span>
+    <div style="min-width:0">
+      <div class="nmline">
+        <h2>{{ t.symbol or 'Unnamed token' }}</h2>
+        {% if t.name and t.name != t.symbol %}<span class="muted">{{ t.name|truncate(28, True, '…') }}</span>{% endif %}
+        {% if d and d.grade and d.grade != 'UNSCORED' %}{% if d.grade|length == 1 %}<span class="grade g-{{ d.grade }}" title="dossier score {{ '%.1f'|format(d.score) if d.score is not none else '—' }}, built {{ d.built_at_ms|ago }} ago">{{ d.grade }}</span>{% else %}<span class="pill bad" title="the dossier's verdict, built {{ d.built_at_ms|ago }} ago">{{ d.grade|lower }}</span>{% endif %}{% endif %}
+      </div>
+      <div class="meta">
+        <span class="chip c-{{ tok.chain }}">{{ {'sol': 'Solana', 'robinhood': 'Robinhood', 'bsc': 'BNB'}.get(tok.chain, tok.chain) }}</span>
+        {% if t.launchpad %}<span class="chip">{{ t.launchpad }}</span>{% endif %}
+        {% if t.migrated_ms %}<span class="chip ok" title="graduated {{ t.migrated_ms|ago }} ago">graduated</span>{% elif tok.curve %}<span class="chip" title="bonding-curve progress">curve {{ tok.curve.progress|pctx if tok.curve.progress is not none else '' }}</span>{% endif %}
+        <button class="addr" type="button" data-copy="{{ tok.address }}" title="copy the contract address">{{ tok.address|short(5, 5) }} <svg class="i s"><use href="#i-copy"/></svg></button>
+        {% if t.created_ms %}<span>born {{ t.created_ms|ago }} ago</span>{% endif %}
+      </div>
+    </div>
+  </div>
+  <div class="px">
+    {% set q = tok.quote %}{% set pf = f.get('price_usd') %}
+    {% if q %}<span class="big">${{ q.price|px }}</span><small title="{% if pf and pf.value is not none and q.source != 'dossier' and not q.source.startswith('dossier') %}dossier said ${{ pf.value|px }}, {{ d.built_at_ms|ago }} ago{% else %}{{ pf.basis if pf and pf.basis else '' }}{% endif %}">{{ q.source }} · {{ q.ts|ago }} ago</small>
+    {% elif tok.series.points %}<span class="big">{{ tok.series.points[-1][1]|px }}</span><span class="unit">{{ tok.series.unit }}</span><small>{{ tok.series.source }}</small>
+    {% else %}<span class="big faint">—</span><small>no price yet</small>{% endif %}
+  </div>
+  <div class="kv">
+    {% for key, label in [('market_cap_usd', 'Market cap'), ('liquidity_usd', 'Liquidity'), ('holder_count', 'Holders'), ('volume_24h_usd', 'Volume 24h')] %}
+    {% set x = f.get(key) %}
+    <div title="{% if x %}{{ x.basis or 'no basis recorded' }}{% if x.provider %} · {{ x.provider }}{% endif %}{% if x.observed_ms %} · {{ x.observed_ms|ago }} ago{% endif %}{% else %}not in the dossier{% endif %}">
+      <span>{{ label }}</span><b class="{{ 'stale' if not x or x.value is none }}">{{ x|field if x else '—' }}</b>
+    </div>
+    {% endfor %}
+  </div>
+</header>
+
+<div class="kx-chart" data-chart{% if tok.gmgn_chart %} data-has-gmgn{% endif %}>
+  <div class="ctl">
+    {% if tok.gmgn_chart %}
+    <div class="csw" role="group" aria-label="Chart source">
+      <button type="button" data-csrc="gmgn" title="GMGN's candle chart: every trade on the token, with volume and indicators">GMGN candles</button>
+      <button type="button" data-csrc="kaiba" title="the prices we hold: protection's marks, our swap tape or the curve, with our own entries marked">Our data</button>
+    </div>
+    {% else %}
+    <span class="lbl">Price <small>/ {{ tok.series.unit or 'USD' }}</small></span>
+    {% endif %}
+    <span class="kaiba-only">{% if tok.series.points %}{% for r, label in [('3600000', '1h'), ('21600000', '6h'), ('86400000', '24h'), ('0', 'All')] %}<button type="button" data-range="{{ r }}" class="{{ 'on' if r == '0' }}">{{ label }}</button>{% endfor %}{% endif %}</span>
+    <span class="src kaiba-only">{% if tok.series.points %}{{ tok.series.source }} · {{ tok.series.points|length }} points{% endif %}</span>
+    {% if tok.gmgn_chart %}<span class="src gmgn-only" title="GMGN's public chart embed. It takes a few seconds to draw; it stays black when GMGN has no trades for the token.">GMGN chart · black = no trades on GMGN · <a href="{{ tok.gmgn_chart }}" target="_blank" rel="noopener noreferrer">open ↗</a></span>{% endif %}
+  </div>
+  {% if tok.gmgn_chart %}
+  <div class="cpane" data-cpane="gmgn" hidden>
+    <iframe data-src="{{ tok.gmgn_chart }}" title="GMGN price chart for {{ t.symbol or tok.address }}" referrerpolicy="no-referrer"
+      sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox" loading="lazy"></iframe>
+  </div>
+  {% endif %}
+  <div class="cpane" data-cpane="kaiba"{% if tok.gmgn_chart %} hidden{% endif %}>
+    {% if tok.series.points and tok.series.points|length >= 2 %}
+    <canvas data-series="{{ tok.series|series }}" data-marks="{{ tok|entry_marks }}" aria-label="price chart"></canvas>
+    {% else %}
+    <div class="nochart">No price history we can stand behind yet: no protection marks, no single swap feed with two prints, no curve snapshots.{% if tok.gmgn_chart %} GMGN's candles are one click away.{% endif %}</div>
+    {% endif %}
+  </div>
+</div>
+
+<nav class="kx-seg under" data-tabs="tok">
+  <button type="button" class="on" data-tab="ov">Overview</button>
+  <button type="button" data-tab="cr">Creator &amp; launch</button>
+  <button type="button" data-tab="so">Social &amp; feeds{% if tok.feeds %} <span class="n">{{ tok.feeds|length }}</span>{% endif %}</button>
+  <button type="button" data-tab="ag">Agent's view{% if tok.triage or tok.signals %} <span class="n">{{ (tok.triage|length) + (tok.signals|length) }}</span>{% endif %}</button>
+  <button type="button" data-tab="tr">Our trades{% if tok.positions %} <span class="n">{{ tok.positions|length }}</span>{% endif %}</button>
+</nav>
+<div class="tabs-body">
+  <div class="tpane" data-pane="ov">
+    {% if d %}
+    <div class="sec">
+      <h4>Safety <small>from the dossier; "?" means not measured, never assumed safe</small></h4>
+      <div class="pills">
+        {% if d.can_sell is not none %}<span class="pill {{ 'ok' if d.can_sell else 'bad' }}">{{ 'sellable' if d.can_sell else 'CANNOT SELL' }}</span>{% endif %}
+        {% if d.mint_revoked is not none %}<span class="pill {{ 'ok' if d.mint_revoked else 'bad' }}">mint {{ 'revoked' if d.mint_revoked else 'LIVE' }}</span>{% endif %}
+        {% if d.freeze_revoked is not none %}<span class="pill {{ 'ok' if d.freeze_revoked else 'bad' }}">freeze {{ 'revoked' if d.freeze_revoked else 'LIVE' }}</span>{% endif %}
+        {% for b in d.blockers %}<span class="pill bad" title="blocker">{{ b }}</span>{% endfor %}
+        {% for w in d.warnings %}<span class="pill warn" title="warning">{{ w }}</span>{% endfor %}
+        {% for u in d.unknowns[:8] %}<span class="pill unk" title="not measured">? {{ u }}</span>{% endfor %}
+        {% if not d.blockers and not d.warnings and d.can_sell is none and d.mint_revoked is none %}<span class="pill unk">no safety checks recorded</span>{% endif %}
+      </div>
+    </div>
+    <div class="sec">
+      <h4>Market and holders <small>hover a value for where it came from</small></h4>
+      <div class="ev">
+        {% for x in d.fields %}{% if true %}
+        <div title="{{ x.basis or 'no basis recorded' }}{% if x.provider %} · {{ x.provider }}{% endif %}">
+          <span>{{ x.label }}</span>
+          {% if x.value is not none %}<b>{{ x|field }}</b>{% else %}<b class="na">not measured</b>{% endif %}
+          <small>{% if x.provider %}{{ x.provider }}{% endif %}{% if x.observed_ms %} · {{ x.observed_ms|ago }} ago{% endif %}</small>
+        </div>
+        {% endif %}{% endfor %}
+      </div>
+    </div>
+    {% else %}
+    <p class="empty"><b>No dossier yet.</b> The scanner has not graded this token, so there are no market, holder or safety numbers we can show. The chart and our own records are still below.</p>
+    {% endif %}
+  </div>
+
+  <div class="tpane" data-pane="cr" hidden>
+    <div class="cols">
+      <div class="box">
+        <h5>Creator</h5>
+        {% if tok.creator %}
+          {% set r = tok.creator.record %}{% set dp = tok.creator.deployer %}
+          <p><a class="mono" href="/w/{{ tok.chain }}/{{ tok.creator.address }}">{{ tok.creator.address|short(6, 6) }}</a></p>
+          {% if r %}
+          <div class="stat"><span>Launches</span><b>{{ r.launches }}</b></div>
+          <div class="stat"><span>Graduated</span><b>{{ r.graduated }}</b></div>
+          <div class="stat"><span>Rugged</span><b class="{{ 'neg' if r.rugged }}">{{ r.rugged }}</b></div>
+          {% if r.median_peak_mcap_usd %}<div class="stat"><span>Median peak cap</span><b>{{ r.median_peak_mcap_usd|usd }}</b></div>{% endif %}
+          {% endif %}
+          {% if dp %}
+          <div class="stat"><span>Runners / scored</span><b>{{ dp.runners }} / {{ dp.scored }}</b></div>
+          {% if dp.best_multiple %}<div class="stat"><span>Best multiple</span><b>{{ '%.1f'|format(dp.best_multiple|float) }}×</b></div>{% endif %}
+          {% endif %}
+          {% if not r and not dp %}<p class="nodata">No launch record for this creator yet.</p>{% endif %}
+        {% else %}<p class="nodata">Creator unknown.</p>{% endif %}
+      </div>
+      <div class="box">
+        <h5>Launch structure</h5>
+        {% set b = tok.bundles %}
+        {% if b %}
+          <div class="stat"><span>Bundled at launch</span><b>{{ b.bundled_pct|pctx }}</b></div>
+          <div class="meter {{ 'bad' if b.bundled_pct|pct100 > 30 else 'warn' if b.bundled_pct|pct100 > 10 else 'ok' }}"><i style="width: {{ b.bundled_pct|pct100 }}%"></i></div>
+          <div class="stat"><span>Sniped</span><b>{{ b.sniped_pct|pctx }}</b></div>
+          <div class="stat"><span>Bundle groups</span><b>{{ b.bundle_groups or 0 }}</b></div>
+          <div class="stat"><span>Sniper entities</span><b>{{ b.sniper_entities or 0 }}</b></div>
+          <div class="stat"><span>Launch buys</span><b>{{ b.launch_buys or 0 }}</b></div>
+          <p class="muted">coverage {{ b.coverage }} · computed {{ b.computed_ms|ago }} ago</p>
+        {% else %}<p class="nodata">Not computed for this token.</p>{% endif %}
+      </div>
+      <div class="box">
+        <h5>Bonding curve</h5>
+        {% if tok.curve %}
+          <div class="stat"><span>Progress</span><b>{{ tok.curve.progress|pctx if tok.curve.progress is not none else '—' }}</b></div>
+          {% if tok.curve.progress is not none %}<div class="meter"><i style="width: {{ tok.curve.progress|pct100 }}%"></i></div>{% endif %}
+          <div class="stat"><span>Real reserve</span><b>{{ '%.2f'|format(tok.curve.real_sol or 0) }} {{ tok.native }}</b></div>
+          <p class="muted">{{ tok.curve.source }} · {{ tok.curve.observed_ms|ago }} ago</p>
+        {% elif t.migrated_ms %}<p class="nodata">Graduated {{ t.migrated_ms|ago }} ago; trades on its pool.</p>
+        {% else %}<p class="nodata">No curve snapshot.</p>{% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="tpane" data-pane="so" hidden>
+    <div class="cols">
+      <div class="box">
+        <h5>Attention on X</h5>
+        {% if tok.x %}
+          <div class="stat"><span>Posts</span><b>{{ tok.x.n_posts or 0 }}</b></div>
+          <div class="stat"><span>Authors</span><b>{{ tok.x.n_authors or 0 }}</b></div>
+          <div class="stat"><span>Biggest account</span><b>{{ tok.x.max_followers|n0 }}</b></div>
+          {% if tok.x.posts_1h is not none %}<div class="stat"><span>Posts, last hour</span><b>{{ tok.x.posts_1h }}</b></div>{% endif %}
+          <p class="muted">observed {{ tok.x.observed_ms|ago }} ago</p>
+        {% else %}<p class="nodata">No X sighting recorded.</p>{% endif %}
+        {% if tok.tweet %}<p>Launched from a {{ tok.tweet.kind }} by <b>@{{ tok.tweet.author }}</b></p>{% endif %}
+      </div>
+      <div class="box">
+        <h5>First seen on the feeds</h5>
+        {% if tok.feeds %}
+        <ul class="tl">{% for x in tok.feeds %}
+          <li><time>{{ x.first_seen_ms|hms }}</time><div><b>{{ x.feed }}</b>{% if x.first_rank %} <span class="why">at #{{ x.first_rank }}</span>{% endif %}{% if x.narrative %}<div class="why">{{ x.narrative|truncate(90, True, '…') }}</div>{% endif %}</div></li>{% endfor %}
+        </ul>
+        {% else %}<p class="nodata">No trending or smart-money feed has listed it.</p>{% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="tpane" data-pane="ag" hidden>
+    <div class="cols">
+      <div class="box">
+        <h5>Triage verdicts</h5>
+        {% if tok.triage %}
+        <ul class="tl">{% for tr in tok.triage %}
+          <li><time>{{ tr.ts_ms|ago }}</time><div><span class="pill {{ 'ok' if tr.verdict == 'promote' else 'bad' if tr.verdict == 'reject' else 'unk' }}">{{ tr.verdict }}</span>{% if tr.score is not none %} <span class="why mono">{{ '%.0f'|format(tr.score|float) }}</span>{% endif %}
+            {% if tr.reasons %}<div class="why">{{ tr.reasons[:4]|join(' · ') }}</div>{% endif %}</div></li>{% endfor %}
+        </ul>
+        {% else %}<p class="nodata">Triage never looked at it.</p>{% endif %}
+      </div>
+      <div class="box">
+        <h5>Lane signals</h5>
+        {% if tok.signals %}
+        <ul class="tl">{% for s in tok.signals %}
+          <li><time>{{ s.created_ms|ago }}</time><div><span class="pill sig">{{ s.lane }}</span> <span class="why mono">strength {{ '%.2f'|format(s.strength|float) }}</span>
+            {% if s.reasons %}<div class="why">{{ s.reasons[:3]|join(' · ') }}</div>{% endif %}</div></li>{% endfor %}
+        </ul>
+        {% else %}<p class="nodata">No lane has signalled on it.</p>{% endif %}
+      </div>
+    </div>
+    <p class="muted" style="margin-top:12px">Want a second opinion? <button class="kb xs ghost" type="button" data-ask="Analyze {{ sym }} on {{ tok.chain }}, address {{ tok.address }}. Use the Kaiba tools: the dossier and its provenance, the creator's record, holders and bundles, triage and lane signals, and our own history on it. Would you paper trade it now? Give a clear verdict, the evidence, and what would change your mind.">Ask the agent about {{ sym }}</button></p>
+  </div>
+
+  <div class="tpane" data-pane="tr" hidden>
+    {% if tok.positions %}
+    <table class="kx-t">
+      <thead><tr><th>Lane</th><th>Mode</th><th>Opened</th><th class="r">Result</th><th>Exit</th></tr></thead>
+      <tbody>{% for p in tok.positions %}
+        <tr class="{{ 'is-live' if not p.paper }}"><td>{{ p.lane }}</td>
+          <td>{% if p.paper %}<span class="chip paper">paper</span>{% else %}<span class="chip live">LIVE</span>{% endif %}</td>
+          <td class="mono">{{ p.opened_ms|ago }} ago</td>
+          <td class="r mono {{ 'pos' if p.ret and p.ret > 0 else 'neg' if p.ret and p.ret < 0 }}">{{ p.ret|ret }}{% if not p.closed_ms %} <small>open</small>{% endif %}</td>
+          <td class="muted">{{ (p.exit_reason or '')|replace('_', ' ') }}</td></tr>{% endfor %}
+      </tbody>
+    </table>
+    {% else %}<p class="empty">We have never held {{ sym }}.</p>{% endif %}
+  </div>
+</div>
+<template data-ticket-src>{% include "partials/t_ticket.html" %}</template>

@@ -1,0 +1,23 @@
+{% set names = {'sol': 'Solana', 'bsc': 'BNB Chain', 'robinhood': 'Robinhood · ETH'} %}
+<div class="kx-tk">
+  {% for chain, p in ticker.prices.items() %}
+  <div class="kx-tk-c" title="{{ p.symbol }} from the native-price sampler, {{ p.ts_ms|ago }} ago">
+    <span class="med sm c-{{ chain }}">{{ p.symbol[:1] }}</span>
+    <b>{{ p.symbol }}</b>
+    <span class="mono">{% if p.price %}${{ '{:,.2f}'.format(p.price) }}{% else %}—{% endif %}</span>
+    {% if p.change_24h is not none %}<span class="mono {{ 'pos' if p.change_24h > 0 else 'neg' }}">{{ p.change_24h|ret }}</span>{% endif %}
+  </div>
+  {% endfor %}
+  {% for k in ['paper', 'live'] %}{% set m = ticker.today.get(k) %}{% if m or k == 'paper' %}
+  <div class="kx-tk-c" title="realized today (UTC), closed positions only, at today's native price{% if k == 'paper' %}; only the closes the paper scoreboard counts, each capped at +300% as it does{% if m and m.not_counted %}; not counted: {% for why, n in m.not_counted_by.items() %}{{ why }} ×{{ n }}{% if not loop.last %}, {% endif %}{% endfor %}{% endif %}{% endif %}{% if m and not m.priced %}; some closes had no native price{% endif %}">
+    <span class="lbl">{{ k }} today</span>
+    {% if m %}<span class="mono {{ 'pos' if m.usd > 0 else 'neg' if m.usd < 0 }}">{{ m.usd|usd }}</span><small>{{ m.n }} closed · {{ m.wins }} won{% if m.not_counted %} · not counted: {{ m.not_counted }}{% endif %}</small>{% else %}<span class="mono">—</span>{% endif %}
+  </div>
+  {% endif %}{% endfor %}
+  {% set lv = (ticker.open.get('live', 0) or 0) + (ticker.open.get('canary', 0) or 0) %}
+  <div class="kx-tk-c"><span class="lbl">open</span><span class="mono">{{ ticker.open.get('shadow', 0) or 0 }}</span><small>paper</small>{% if lv %}<span class="mono live-txt">{{ lv }}</span><small>live</small>{% endif %}</div>
+  {% if ticker.entries_paused %}<div class="kx-tk-c flag">ENTRIES PAUSED</div>{% endif %}
+  {% if ticker.reduce_only %}<div class="kx-tk-c flag">REDUCE-ONLY</div>{% endif %}
+  {% if ticker.kill_switch %}<div class="kx-tk-c flag bad">KILL SWITCH ON</div>{% endif %}
+  <div class="kx-tk-c clock"><time data-clock>{{ ticker.at_ms|hms }}</time><small>UTC</small></div>
+</div>

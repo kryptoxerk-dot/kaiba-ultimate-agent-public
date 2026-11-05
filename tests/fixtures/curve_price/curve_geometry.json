@@ -1,0 +1,33 @@
+{
+  "_why": "pump.fun's 'constants' are per launch. These two coins were live in the same minute and graduate 747x apart. Anything that hard-codes 30 SOL / 793.1e12 / 85 SOL is wrong for at least one of them.",
+  "classic_85_sol": {
+    "_source": "data/kaiba.db curve_snapshots, live pump.fun 2026-09-20",
+    "_note": "classic geometry: starts at 30 virtual SOL, graduates at 85",
+    "token": "3GzeyKuMi3QNuQbSWcxASLx3kxmgiYxxYZyFS2SXpump",
+    "decimals": 6,
+    "observed_ms": 1789893411610,
+    "real_sol_lamports": 311383572,
+    "virtual_sol_lamports": 30311383572,
+    "real_token_atoms": "782077259239881",
+    "virtual_token_atoms": "1061977259239881",
+    "progress_pct": "1.389830083117160916997458452",
+    "graduation_sol": "85.0053592338739340858697106",
+    "created_ms": 1789892849000,
+    "source": "pumpfun"
+  },
+  "low_cap": {
+    "_source": "data/kaiba.db curve_snapshots, live pump.fun 2026-09-20",
+    "_note": "creator chose a tiny starting market cap; graduates at 0.11 SOL",
+    "token": "FDWP9BwBKw5eERWNLWgYSvhPd1Re1KiFva6uSNswpump",
+    "decimals": 6,
+    "observed_ms": 1789893784041,
+    "real_sol_lamports": 5173351,
+    "virtual_sol_lamports": 42156371,
+    "real_token_atoms": "721124665833151",
+    "virtual_token_atoms": "1001024665833151",
+    "progress_pct": "16.26051469788065072937231563",
+    "graduation_sol": "0.1137835651840419351733511969",
+    "created_ms": 1789892846000,
+    "source": "pumpfun"
+  }
+}

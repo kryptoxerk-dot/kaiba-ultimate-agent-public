@@ -1,0 +1,85 @@
+[Unit]
+# Tier 1 drains the durable triage queue written by ingestion, builds the expensive token
+# dossier/curve context, and records lane signals for the engine. It holds no signer keys.
+Description=Kaiba tier-1 token scanner and lane signal builder
+Documentation=file:///opt/kaiba/current/docs/runbooks/deploy.md
+Wants=network-online.target
+After=network-online.target kaiba-ingest.service
+PartOf=kaiba.target
+StartLimitIntervalSec=300
+StartLimitBurst=10
+
+[Service]
+Type=exec
+User=kaiba-core
+Group=kaiba-core
+SupplementaryGroups=kaiba kaiba-state
+WorkingDirectory=/opt/kaiba/current
+
+EnvironmentFile=/etc/kaiba/core.env
+Environment=HOME=/var/lib/kaiba
+Environment=KAIBA_CONFIG_DIR=/etc/kaiba
+Environment=KAIBA_DATA_DIR=/var/lib/kaiba
+Environment=KAIBA_DB_PATH=/var/lib/kaiba/db/kaiba.db
+Environment=KAIBA_RISK_PATH=/etc/kaiba/config/risk.yaml
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PYTHONUNBUFFERED=1
+
+# The scanner reads provider credentials but must never see signing, dashboard, Hermes,
+# or chat credentials. If a provider lane shells out to gmgn-cli, apply the node-JIT
+# drop-in to this unit explicitly; the default hardening stays fail-closed.
+UnsetEnvironment=GMGN_PRIVATE_KEY KAIBA_SIGNER_PASSPHRASE KAIBA_SIGNER_KEYSTORE
+UnsetEnvironment=SOLANA_PRIVATE_KEY EVM_PRIVATE_KEY
+UnsetEnvironment=KAIBA_DASHBOARD_PASSWORD AGE_IDENTITY_FILE RCLONE_CONFIG_PASS
+UnsetEnvironment=HELIUS_WEBHOOK_SECRET ALCHEMY_WEBHOOK_SIGNING_KEY
+UnsetEnvironment=CRYPTOPANIC_API_KEY NEWSAPI_KEY XAI_API_KEY ANTHROPIC_API_KEY OPENROUTER_API_KEY
+UnsetEnvironment=LANGFUSE_PUBLIC_KEY LANGFUSE_SECRET_KEY TELEGRAM_BOT_TOKEN TG_API_HASH TG_API_ID
+UnsetEnvironment=PYTHONHOME PYTHONPATH PYTHONSTARTUP PYTHONINSPECT PYTHONOPTIMIZE
+
+ExecStart=/opt/kaiba/venv/bin/python -I -B -m kaiba.cli.main scan run
+Restart=always
+RestartSec=5
+TimeoutStopSec=45
+KillMode=mixed
+
+# ---- hardening baseline -------------------------------------------------------------
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+PrivateMounts=yes
+ProtectHostname=yes
+ProtectClock=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectProc=invisible
+ProcSubset=pid
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RemoveIPC=yes
+KeyringMode=private
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+CapabilityBoundingSet=
+AmbientCapabilities=
+UMask=0077
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+# ---- explicit write surface ---------------------------------------------------------
+ReadWritePaths=/var/lib/kaiba/db /var/lib/kaiba/cache /var/lib/kaiba/logs
+ReadOnlyPaths=/opt/kaiba/current /opt/kaiba/venv /etc/kaiba/policy /etc/kaiba/config
+InaccessiblePaths=/etc/kaiba/signer /var/lib/kaiba/signer /var/lib/kaiba/backups /var/lib/kaiba/hermes
+
+MemoryMax=768M
+CPUQuota=150%
+TasksMax=128
+
+[Install]
+WantedBy=multi-user.target

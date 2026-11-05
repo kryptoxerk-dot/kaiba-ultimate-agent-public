@@ -1,0 +1,26 @@
+[Unit]
+Description=Kaiba core-state backup: one read snapshot of the irreplaceable tables, gzipped, last 7 kept
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/kaiba
+Environment=KAIBA_ENV=prod
+Environment=PYTHONUNBUFFERED=1
+# No EnvironmentFile, deliberately: this unit needs no credential and must never see one.
+# It reads the live database through a read-only (mode=ro) attachment, so it cannot take
+# the write lock; protection never waits on it. It writes only under data/backups.
+ExecStart=%h/kaiba/.venv/bin/python -B -m kaiba.ops.core_backup --db %h/kaiba/data/kaiba.db --out-dir %h/kaiba/data/backups --keep 7 --max-snapshot-s 1800 --max-chunked-s 10800 --min-free-gb 5
+# Low CPU and IO priority, but NOT the idle IO class. The box's scheduler (mq-deadline,
+# kernel 6.8) honours IO classes, and on this IO-saturated disk it STARVES the idle class:
+# retention ran 4k rows in 417 s under idle (10-13), and on 10-18 this backup sat in disk-wait
+# for an hour holding its read while the WAL grew 0.5 -> 3.5 GB. A deadline cannot fire inside
+# a blocked read, so the run must get IO at all. Best-effort 7 is the lowest class that does,
+# the same as kaiba-retention. db_guard may also stop this unit (EXPENDABLE_UNITS).
+# The chunked registry copy after the snapshot is short reads only, so it may run long:
+# 10-18 the 1 h phase cap and 1.5 h unit timeout left no margin at ~12 MB/min.
+Nice=19
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+UMask=0077
+MemoryMax=1G
+TimeoutStartSec=14400

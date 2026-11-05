@@ -1,0 +1,436 @@
+{
+  "_source": "data/kaiba.db, recorded live from pump.fun and Helius on 2026-09-20. Not synthetic.",
+  "_selection": "Every consecutive pair of curve_snapshots whose swap rows reconcile EXACTLY with the reserve deltas in both legs, and whose curve geometry (virtual_sol - real_sol) did not change between the two. The reconciliation proves our trade coverage of the window is complete; one further window was dropped because the curve itself was re-parameterised mid-window, which the scanner already documents as observed instability.",
+  "_why": "Replaying each window's trades from `start` must reproduce every amount_token and amount_native and land exactly on `end`. Trades are ordered by (slot, block_index) because ts_ms is only second-resolution and several trades share a second.",
+  "windows": [
+    {
+      "token": "2iKtUhsxcTP6azR7PznAtYexn7EUpBwJQ5UUcCnrpump",
+      "decimals": 6,
+      "start": {
+        "observed_ms": 1789892866166,
+        "real_sol_lamports": 11186588,
+        "virtual_sol_lamports": 5689355028,
+        "real_token_atoms": "793813182482883",
+        "virtual_token_atoms": "1073713182482883"
+      },
+      "end": {
+        "observed_ms": 1789892957839,
+        "real_sol_lamports": 1,
+        "virtual_sol_lamports": 5678168441,
+        "real_token_atoms": "795928510185679",
+        "virtual_token_atoms": "1075828510185679"
+      },
+      "trades": [
+        {
+          "ts_ms": 1789892880000,
+          "slot": 448677447,
+          "block_index": 148,
+          "side": "sell",
+          "amount_token": "2115327702796",
+          "amount_native": "11186587",
+          "tx": "2BmymgVJ2RBS58TWyxPxWNgWsRxyDGC6KKRK5r8PLPunp43QHkFVtjz1GYPyQ2KmP8yTeBzJj9NqXvphn9qQTPks"
+        }
+      ]
+    },
+    {
+      "token": "3GzeyKuMi3QNuQbSWcxASLx3kxmgiYxxYZyFS2SXpump",
+      "decimals": 6,
+      "start": {
+        "observed_ms": 1789893040845,
+        "real_sol_lamports": 1907700363,
+        "virtual_sol_lamports": 31907700363,
+        "real_token_atoms": "728947384157466",
+        "virtual_token_atoms": "1008847384157466"
+      },
+      "end": {
+        "observed_ms": 1789893130861,
+        "real_sol_lamports": 1344787586,
+        "virtual_sol_lamports": 31344787586,
+        "real_token_atoms": "747065008386817",
+        "virtual_token_atoms": "1026965008386817"
+      },
+      "trades": [
+        {
+          "ts_ms": 1789893099000,
+          "slot": 448678274,
+          "block_index": 589,
+          "side": "sell",
+          "amount_token": "3916314204945",
+          "amount_native": "123385722",
+          "tx": "2VVPbiZRdWwXoDnKVVUCTR797A2WUQyB1RMJd8NVXKvzDtQU9wSG2C3HPjpi6J61rZy8UyE33yTNn7GB1xCeY58K"
+        },
+        {
+          "ts_ms": 1789893099000,
+          "slot": 448678275,
+          "block_index": 424,
+          "side": "sell",
+          "amount_token": "5029263918845",
+          "amount_native": "157057194",
+          "tx": "2W8Muikrt1XsGayKa1SPodNTmYku4CbiiqEYgMCFnB4Qkpc9hvm4bK3VikyPmeNbFUurMZaGKgu5txANvgj21Ycr"
+        },
+        {
+          "ts_ms": 1789893116000,
+          "slot": 448678337,
+          "block_index": 240,
+          "side": "sell",
+          "amount_token": "9172078443138",
+          "amount_native": "282470848",
+          "tx": "5Z9oGdavRFaTSgN4s8Ki14FuGZjLa9uLdXw47125nFnjFgwHbrWxJZcpogJZD4XNBdbZcMAJm2GyuPytwoNy7few"
+        },
+        {
+          "ts_ms": 1789893127000,
+          "slot": 448678378,
+          "block_index": 985,
+          "side": "buy",
+          "amount_token": "32337577",
+          "amount_native": "987",
+          "tx": "3X4WKNMv2n3GtQUh7Kto4cXz8csdkoa5zG468UvbzoZs1TvbdLvqKZsbCqbLEZezQHFxKwzHDTSJFmWbuD5NTofU"
+        }
+      ]
+    },
+    {
+      "token": "3GzeyKuMi3QNuQbSWcxASLx3kxmgiYxxYZyFS2SXpump",
+      "decimals": 6,
+      "start": {
+        "observed_ms": 1789893130861,
+        "real_sol_lamports": 1344787586,
+        "virtual_sol_lamports": 31344787586,
+        "real_token_atoms": "747065008386817",
+        "virtual_token_atoms": "1026965008386817"
+      },
+      "end": {
+        "observed_ms": 1789893180774,
+        "real_sol_lamports": 1344786600,
+        "virtual_sol_lamports": 31344786600,
+        "real_token_atoms": "747065040724394",
+        "virtual_token_atoms": "1026965040724394"
+      },
+      "trades": [
+        {
+          "ts_ms": 1789893133000,
+          "slot": 448678401,
+          "block_index": 543,
+          "side": "sell",
+          "amount_token": "32337577",
+          "amount_native": "986",
+          "tx": "2bhrQ6B4dGxaPpj6eXtTyo9C7k1fBksJ7qYexqDKqY5AbWA3Eormj1QjvMqE5YMyE6FC7C38DETuWoAYMr8cFuy2"
+        }
+      ]
+    },
+    {
+      "token": "3GzeyKuMi3QNuQbSWcxASLx3kxmgiYxxYZyFS2SXpump",
+      "decimals": 6,
+      "start": {
+        "observed_ms": 1789893180774,
+        "real_sol_lamports": 1344786600,
+        "virtual_sol_lamports": 31344786600,
+        "real_token_atoms": "747065040724394",
+        "virtual_token_atoms": "1026965040724394"
+      },
+      "end": {
+        "observed_ms": 1789893411610,
+        "real_sol_lamports": 311383572,
+        "virtual_sol_lamports": 30311383572,
+        "real_token_atoms": "782077259239881",
+        "virtual_token_atoms": "1061977259239881"
+      },
+      "trades": [
+        {
+          "ts_ms": 1789893209000,
+          "slot": 448678683,
+          "block_index": 207,
+          "side": "sell",
+          "amount_token": "229736643861",
+          "amount_native": "7010399",
+          "tx": "2PGAiWvx7hrxRqjVfrEN8PBK7iM6AS1kGuQ3vexwxvZr41ju5QqWpNC7Cmg7H8RJJEA4vH2BobKwfYYJZyzPLEn6"
+        },
+        {
+          "ts_ms": 1789893267000,
+          "slot": 448678906,
+          "block_index": 845,
+          "side": "sell",
+          "amount_token": "118966964943",
+          "amount_native": "3629037",
+          "tx": "5Ff5HcP426XweUWMKZzoSr3rvCXgu2FeiMzBsukCqKrPgo8G9k2LFTtrEQm8vD5k5v48FpzgwuJHeLTde33Ktjk4"
+        },
+        {
+          "ts_ms": 1789893362000,
+          "slot": 448679269,
+          "block_index": 35,
+          "side": "sell",
+          "amount_token": "45263375269610",
+          "amount_native": "1322319146",
+          "tx": "4bEQVmPY2iF1CfFYXH7M6dWqaK4wSG1hAMWxpmWmgLoBsapr52De5NDoddJQYoSc9SRiCrHx52GVCh1YrNQfTTyf"
+        },
+        {
+          "ts_ms": 1789893363000,
+          "slot": 448679273,
+          "block_index": 1072,
+          "side": "buy",
+          "amount_token": "10599860362927",
+          "amount_native": "299555554",
+          "tx": "DDQ2SFZ4exsy5jr6aJusbyrD1RqB4uDWG5oAaUdVFLR5bPkZt1xmGQwJJj41aZeWGWf3NYB9HwgCP9UAuCn3E8X"
+        }
+      ]
+    },
+    {
+      "token": "A7xjaVEBN5iPkphsEK8r9YFWWSTFjfmERmAhxdHnpump",
+      "decimals": 6,
+      "start": {
+        "observed_ms": 1789892579347,
+        "real_sol_lamports": 92103420,
+        "virtual_sol_lamports": 30092103420,
+        "real_token_atoms": "789815850404652",
+        "virtual_token_atoms": "1069715850404652"
+      },
+      "end": {
+        "observed_ms": 1789892670453,
+        "real_sol_lamports": 111856504,
+        "virtual_sol_lamports": 30111856504,
+        "real_token_atoms": "789114127317337",
+        "virtual_token_atoms": "1069014127317337"
+      },
+      "trades": [
+        {
+          "ts_ms": 1789892582000,
+          "slot": 448676335,
+          "block_index": 781,
+          "side": "buy",
+          "amount_token": "350976662284",
+          "amount_native": "9876542",
+          "tx": "67LvyFzybTBrdmnuL4YdrGNoQoeWUBs3PTQauPTF2RGhLRpwHtHh2xN8T6C2seJhwTVP9TXu82DC8ZVMR9mqYMDk"
+        },
+        {
+          "ts_ms": 1789892634000,
+          "slot": 448676525,
+          "block_index": 248,
+          "side": "buy",
+          "amount_token": "350746425031",
+          "amount_native": "9876542",
+          "tx": "5rNyBX6Thw3GYF93bHCJ7QtAqtnPEy3ZU7tUR2JXTn4qwvjPvt6iENhMyoPWtaDZSQMzuN3t2WtUHmEuUmvsnQgn"
+        }
+      ]
+    },
+    {
+      "token": "A7xjaVEBN5iPkphsEK8r9YFWWSTFjfmERmAhxdHnpump",
+      "decimals": 6,
+      "start": {
+        "observed_ms": 1789892670453,
+        "real_sol_lamports": 111856504,
+        "virtual_sol_lamports": 30111856504,
+        "real_token_atoms": "789114127317337",
+        "virtual_token_atoms": "1069014127317337"
+      },
+      "end": {
+        "observed_ms": 1789892758899,
+        "real_sol_lamports": 121733046,
+        "virtual_sol_lamports": 30121733046,
+        "real_token_atoms": "788763610903084",
+        "virtual_token_atoms": "1068663610903084"
+      },
+      "trades": [
+        {
+          "ts_ms": 1789892754000,
+          "slot": 448676980,
+          "block_index": 162,
+          "side": "buy",
+          "amount_token": "350516414253",
+          "amount_native": "9876542",
+          "tx": "2kd8d9zrBJGQop2iNMSNLAFUrmfTiB4NR3vmNp4AXsqdmKpnwFCgbzNT3RSakDaGbsbH45x8jSXWAmYLj1PbcGGr"
+        }
+      ]
+    },
+    {
+      "token": "B4R2sZDso4ZRzq4pwPf23yCdiAgTgRYsDj1UgKrupump",
+      "decimals": 6,
+      "start": {
+        "observed_ms": 1789892474256,
+        "real_sol_lamports": 99012169,
+        "virtual_sol_lamports": 30099012169,
+        "real_token_atoms": "789570314156940",
+        "virtual_token_atoms": "1069470314156940"
+      },
+      "end": {
+        "observed_ms": 1789892564572,
+        "real_sol_lamports": 194266941,
+        "virtual_sol_lamports": 30194266941,
+        "real_token_atoms": "786196423664257",
+        "virtual_token_atoms": "1066096423664257"
+      },
+      "trades": [
+        {
+          "ts_ms": 1789892484000,
+          "slot": 448675965,
+          "block_index": 858,
+          "side": "buy",
+          "amount_token": "6903576335743",
+          "amount_native": "195555555",
+          "tx": "5mbN3iDKe4t2bdG11rFTwsEPtudBhKVMafPqwsEJw8onuuFMAFd142Nj8zsAPM9v9p986uugDEtHym5owcENkvf9"
+        },
+        {
+          "ts_ms": 1789892486000,
+          "slot": 448675973,
+          "block_index": 665,
+          "side": "sell",
+          "amount_token": "3529685843060",
+          "amount_native": "100300783",
+          "tx": "k1LKD3QyAwdKGPUTTwuicjhF1ZaDemA7KcTRvH6QFbLZwh21JMV2XTzYMPPdAaLC1axuY65267Pr6iQjCxANcYS"
+        }
+      ]
+    },
+    {
+      "token": "B4R2sZDso4ZRzq4pwPf23yCdiAgTgRYsDj1UgKrupump",
+      "decimals": 6,
+      "start": {
+        "observed_ms": 1789892655189,
+        "real_sol_lamports": 194266941,
+        "virtual_sol_lamports": 30194266941,
+        "real_token_atoms": "786196423664257",
+        "virtual_token_atoms": "1066096423664257"
+      },
+      "end": {
+        "observed_ms": 1789892744594,
+        "real_sol_lamports": 1,
+        "virtual_sol_lamports": 30000000001,
+        "real_token_atoms": "793100000000000",
+        "virtual_token_atoms": "1073000000000000"
+      },
+      "trades": [
+        {
+          "ts_ms": 1789892724000,
+          "slot": 448676868,
+          "block_index": 905,
+          "side": "sell",
+          "amount_token": "6903576335743",
+          "amount_native": "194266940",
+          "tx": "3Mmsh6ymUN8scZkiQ13iFmgmCPd7KNJqcAMv2KZmYPUeZVShPjNFAnzfkLGs6a2Be5YhaoQgV4qhtqeyNJuuViLP"
+        }
+      ]
+    },
+    {
+      "token": "BpwBVHU11whiXYqYEiJ41gH8MuX9ug5o8z2ETx9hpump",
+      "decimals": 6,
+      "start": {
+        "observed_ms": 1789892570076,
+        "real_sol_lamports": 76804881,
+        "virtual_sol_lamports": 30076804881,
+        "real_token_atoms": "790359960418709",
+        "virtual_token_atoms": "1070259960418709"
+      },
+      "end": {
+        "observed_ms": 1789892661500,
+        "real_sol_lamports": 2,
+        "virtual_sol_lamports": 30000000002,
+        "real_token_atoms": "793100000000000",
+        "virtual_token_atoms": "1073000000000000"
+      },
+      "trades": [
+        {
+          "ts_ms": 1789892638000,
+          "slot": 448676540,
+          "block_index": 885,
+          "side": "sell",
+          "amount_token": "2740039581291",
+          "amount_native": "76804879",
+          "tx": "4N4jzV2jLrqwNzXgw23Zgopp3svCpbtJgbUUoLMJ3onNEPzjJmuk81GKnisJRkmie9H8gUL486Sd6DKaCKWEPgEx"
+        }
+      ]
+    },
+    {
+      "token": "BurGVdLmnENNBjnPXHSrixKpWkC8vgm9aoGxw1BYpump",
+      "decimals": 6,
+      "start": {
+        "observed_ms": 1789892868696,
+        "real_sol_lamports": 6927958,
+        "virtual_sol_lamports": 6973478750,
+        "real_token_atoms": "793555502087838",
+        "virtual_token_atoms": "1073455502087838"
+      },
+      "end": {
+        "observed_ms": 1789892960499,
+        "real_sol_lamports": 7382002,
+        "virtual_sol_lamports": 6973932794,
+        "real_token_atoms": "793485613981514",
+        "virtual_token_atoms": "1073385613981514"
+      },
+      "trades": [
+        {
+          "ts_ms": 1789892874000,
+          "slot": 448677425,
+          "block_index": 766,
+          "side": "buy",
+          "amount_token": "69888106324",
+          "amount_native": "454044",
+          "tx": "5PJjhuy1N7vRhMwet1F4abXaNLwTQdeC247XZ8ix3rMtRBYYDovLi7F3tWA9A6JScVkg8rfbFFcZpzM7hfYZbPD4"
+        }
+      ]
+    },
+    {
+      "token": "FDWP9BwBKw5eERWNLWgYSvhPd1Re1KiFva6uSNswpump",
+      "decimals": 6,
+      "start": {
+        "observed_ms": 1789893133870,
+        "real_sol_lamports": 5635690,
+        "virtual_sol_lamports": 42618710,
+        "real_token_atoms": "710265242642172",
+        "virtual_token_atoms": "990165242642172"
+      },
+      "end": {
+        "observed_ms": 1789893784041,
+        "real_sol_lamports": 5173351,
+        "virtual_sol_lamports": 42156371,
+        "real_token_atoms": "721124665833151",
+        "virtual_token_atoms": "1001024665833151"
+      },
+      "trades": [
+        {
+          "ts_ms": 1789893180000,
+          "slot": 448678573,
+          "block_index": 601,
+          "side": "buy",
+          "amount_token": "20749402374732",
+          "amount_native": "912213",
+          "tx": "2k8CMQxmmTvMwEeGb6W1BXpVKjoPvSJK3c2nFkt1S2PStGAiAZ7VUUu5eMijsTMJqRcDY7n4m9ft4aWDjvxjxaaM"
+        },
+        {
+          "ts_ms": 1789893212000,
+          "slot": 448678696,
+          "block_index": 195,
+          "side": "sell",
+          "amount_token": "31608825565711",
+          "amount_native": "1374552",
+          "tx": "2hFwfw8GuFLfBmDa8Efbz1yaqyj8BoHb4quK97LtekTfu4sdqvqLzTmu3TPqtPgmxcxxZYv5tLd81bpLauw4EuKk"
+        }
+      ]
+    },
+    {
+      "token": "Nzhu46oBjeDU8QjQgqk1nyNKz1RF5V7SS5VWCm7pump",
+      "decimals": 6,
+      "start": {
+        "observed_ms": 1789892576136,
+        "real_sol_lamports": 37808889,
+        "virtual_sol_lamports": 30037808889,
+        "real_token_atoms": "791749405301343",
+        "virtual_token_atoms": "1071649405301343"
+      },
+      "end": {
+        "observed_ms": 1789892667463,
+        "real_sol_lamports": 36060697,
+        "virtual_sol_lamports": 30036060697,
+        "real_token_atoms": "791811778638828",
+        "virtual_token_atoms": "1071711778638828"
+      },
+      "trades": [
+        {
+          "ts_ms": 1789892608000,
+          "slot": 448676431,
+          "block_index": 154,
+          "side": "sell",
+          "amount_token": "62373337485",
+          "amount_native": "1748192",
+          "tx": "39B9q5odHZoHRJKNQSbg5PuJUpL3zAQUD3hYEfzp2A2Gepw8BUZYfn3z3hh997RyMdydpdXqMnm1nZ3Q42oP4rbT"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,35 @@
+{
+  "note": "Identical to report_clean.json except that RugCheck reports a live mint authority where GoPlus reports it revoked. Hand-built. This is the disagreement case: the merge must keep both claims, adopt the unsafe reading, and warn rather than let whichever adapter ran last decide.",
+  "body": {
+    "mint": "So11111111111111111111111111111111111111112",
+    "tokenProgram": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+    "creator": "CreAtor11111111111111111111111111111111111",
+    "creatorBalance": 0,
+    "token": {
+      "mintAuthority": "AuTh111111111111111111111111111111111111111",
+      "freezeAuthority": null,
+      "supply": 1000000000000000,
+      "decimals": 6
+    },
+    "tokenMeta": {"name": "Clean Coin", "symbol": "CLEAN", "mutable": false, "updateAuthority": ""},
+    "rugged": false,
+    "score_normalised": 35,
+    "risks": [
+      {"name": "Mint Authority still enabled", "value": "", "description": "tokens can be minted", "score": 30000, "level": "danger"}
+    ],
+    "price": 0.00031,
+    "totalHolders": 1210,
+    "totalMarketLiquidity": 305000,
+    "topHolders": [
+      {"address": "Hd1111111111111111111111111111111111111111", "owner": "Ow111111111111111111111111111111111111111", "pct": 18.0, "insider": false}
+    ],
+    "markets": [
+      {
+        "pubkey": "Mkt11111111111111111111111111111111111111",
+        "marketType": "raydium",
+        "liquidityA": "PoolAccount1111111111111111111111111111111",
+        "lp": {"lpLockedPct": 100.0, "lpLockedUSD": 305000, "baseUSD": 152500, "quoteUSD": 152500}
+      }
+    ]
+  }
+}

@@ -1,0 +1,26 @@
+{% if not telegram.available %}
+<p class="nodata pad">{{ telegram.reason }}</p>
+{% elif not telegram.session %}
+<p class="nodata pad">{{ telegram.reason or 'No Telegram conversation yet.' }}</p>
+{% else %}
+{% set s = telegram.session %}
+<div class="ag-meta">
+  <b>{{ s.title or 'Telegram' }}</b>
+  <span class="muted">last active {{ s.active_ms|ago }} ago · {{ s.messages }} messages · {{ s.tool_calls }} tool calls{% if s.cost_usd %} · ${{ '%.2f'|format(s.cost_usd|float) }}{% endif %}</span>
+</div>
+<div class="ag-thread">
+  {% for m in s.thread %}
+    {% if m.role == 'user' %}
+    <div class="bub me"><div class="bub-h">you · {{ m.ts_ms|ago }} ago</div><div class="md">{{ m.html|safe }}</div></div>
+    {% elif m.role == 'assistant' %}
+    <div class="bub ai">
+      <div class="bub-h">agent · {{ m.ts_ms|ago }} ago{% if m.calls %} · <span class="sig-txt">{{ m.calls|join(', ') }}</span>{% endif %}</div>
+      {% if m.html %}<div class="md">{{ m.html|safe }}</div>{% endif %}
+      {% if m.truncated %}<small class="muted">… shortened here</small>{% endif %}
+    </div>
+    {% else %}
+    <details class="bub tool"><summary>{{ m.tool }} result · {{ m.ts_ms|ago }} ago</summary><pre>{{ m.text }}</pre></details>
+    {% endif %}
+  {% endfor %}
+</div>
+{% endif %}

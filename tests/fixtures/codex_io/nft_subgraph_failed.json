@@ -1,0 +1,11 @@
+{
+ "_recorded": "2026-10-21 graph.codex.io free plan. getNftEvents (verbatim): NFT coverage removed.",
+ "errors": [
+  {
+   "message": "Failed to fetch from Subgraph 'nfts'."
+  }
+ ],
+ "data": {
+  "nft": null
+ }
+}

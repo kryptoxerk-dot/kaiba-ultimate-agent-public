@@ -1,0 +1,31 @@
+{
+  "source": "https://api.cryptolisting.app/v1/listings?tier=free",
+  "kind": "json",
+  "body": {
+    "tier": "free",
+    "delay_minutes": 15,
+    "data": [
+      {
+        "exchange": "Binance",
+        "symbol": "ondo",
+        "title": "Binance will list ONDO",
+        "announced_at": "2026-09-19T12:00:00Z",
+        "url": "https://www.binance.com/en/support/announcement/a1b2c3d4",
+        "chain": "eth",
+        "contract": "0x1234567890abcdef1234567890abcdef12345678"
+      },
+      {
+        "exchange": "Upbit",
+        "symbol": "JUP",
+        "title": "Upbit market support for Jupiter",
+        "announced_at": "2026-09-19T00:00:00Z",
+        "chain": "sol"
+      },
+      {
+        "exchange": "Noise",
+        "title": "no symbol here"
+      }
+    ]
+  },
+  "note": "Hand-built to match the documented/observed layout of the source, NOT a live capture. Shapes follow docs/research/06-hunters-airdrops-nft.md. Regenerate by hand if a provider's real layout is captured later."
+}

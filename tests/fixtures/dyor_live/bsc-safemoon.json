@@ -1,0 +1,331 @@
+{
+ "note": "Live recording, not hand-built. goplus is the per-address entry already unwrapped from GoPlus's result map; rugcheck holds one key per route.",
+ "recorded_at_ms": 1789897108891,
+ "token": {
+  "label": "SAFEMOON",
+  "address": "0x8076c74c5e3f5852037f31ff0093eeb8c8add8d3",
+  "chain": "bsc",
+  "why": "can_take_back_ownership=1 alongside owner_change_balance=0. The mapping can_take_back_ownership -> balance_mutable makes this a blocker for an authority that cannot rewrite balances."
+ },
+ "chain": {
+  "owner": "0x0000000000000000000000000da844e89760c95cde3f7cf6df1e76182ffde66d",
+  "decimals": "0x0000000000000000000000000000000000000000000000000000000000000009",
+  "totalSupply": "0x00000000000000000000000000000000000000000000d3c21bcecceda1000000"
+ },
+ "chain_dev_pct": null,
+ "goplus": {
+  "anti_whale_modifiable": "1",
+  "buy_tax": "1",
+  "can_take_back_ownership": "1",
+  "cannot_buy": "0",
+  "cannot_sell_all": "0",
+  "creator_address": "0xc95063d946242f26074a76c8a2e94c9d735dfc78",
+  "creator_balance": "69.545963445",
+  "creator_percent": "0.000000",
+  "dex": [
+   {
+    "liquidity_type": "UniV2",
+    "name": "PancakeV1",
+    "liquidity": "18575.79067170",
+    "pair": "0x9adc6fb78cefa07e13e9294f150c1e8c1dd566c0"
+   },
+   {
+    "liquidity_type": "UniV2",
+    "name": "PancakeV1",
+    "liquidity": "286.37965467",
+    "pair": "0xcc6b11de64dce6e5052a84b67cbbfd210ed530f7"
+   },
+   {
+    "liquidity_type": "UniV2",
+    "name": "PancakeV2",
+    "liquidity": "213.09196222",
+    "pair": "0xf93fdc895aca65d7b457a47894d1f95911b7215a"
+   },
+   {
+    "liquidity_type": "UniV2",
+    "name": "PancakeV2",
+    "liquidity": "188.26667103",
+    "pair": "0xef967e3da982ecc1c84bbe6053fd61af2a65bb9a"
+   },
+   {
+    "liquidity_type": "UniV2",
+    "name": "PancakeV1",
+    "liquidity": "179.19453986",
+    "pair": "0x56f92090bb2539d4b409707e3b564239558a7f1a"
+   },
+   {
+    "liquidity_type": "UniV2",
+    "name": "PancakeV2",
+    "liquidity": "106.35951998",
+    "pair": "0x581740fd44964148ac9bb53433c25bdfe9d5188d"
+   },
+   {
+    "liquidity_type": "UniV2",
+    "name": "PancakeV1",
+    "liquidity": "72.64660554",
+    "pair": "0xfb7deb2236815222113d949d935cca4901531677"
+   },
+   {
+    "liquidity_type": "UniV2",
+    "name": "PancakeV2",
+    "liquidity": "65.33544382",
+    "pair": "0xff3dd404afba451328de089424c74685bf0a43c9"
+   },
+   {
+    "liquidity_type": "UniV2",
+    "name": "Biswap",
+    "liquidity": "15.73099372",
+    "pair": "0x3668ca2009af4c0a4a9e258ef69ead1fabbfb7da"
+   },
+   {
+    "liquidity_type": "UniV2",
+    "name": "Ape",
+    "liquidity": "2.08051303",
+    "pair": "0x0b0300eaf4f44e03d5e2858d608a9554852d245a"
+   },
+   {
+    "liquidity_type": "UniV2",
+    "name": "mdex",
+    "liquidity": "0.94143099",
+    "pair": "0xb859e3219fa4088a0070d851bd05f7dae62e0bc3"
+   },
+   {
+    "liquidity_type": "UniV2",
+    "name": "Biswap",
+    "liquidity": "0.79904123",
+    "pair": "0x2b8ccd98f97149ddb3e6bf3125555677c65c8730"
+   },
+   {
+    "liquidity_type": "UniV2",
+    "name": "PancakeV1",
+    "liquidity": "0.17709460",
+    "pair": "0xc9255dcf22afe2ed88123c11fb6d74032e501193"
+   },
+   {
+    "liquidity_type": "UniV2",
+    "name": "PancakeV2",
+    "liquidity": "0.00033751",
+    "pair": "0xb6308c9148ec47d460cb7f913cdbf8fa602bce23"
+   },
+   {
+    "liquidity_type": "UniV2",
+    "name": "mdex",
+    "liquidity": "0.00000001",
+    "pair": "0x132a7cfea1ec83c38a4cebd16e2f934122fa0804"
+   }
+  ],
+  "external_call": "0",
+  "hidden_owner": "0",
+  "holder_count": "2889279",
+  "holders": [
+   {
+    "address": "0x0000000000000000000000000000000000000001",
+    "tag": "",
+    "is_contract": 0,
+    "balance": "439472087155488.537280602",
+    "percent": "0.439472087155488537",
+    "is_locked": 1
+   },
+   {
+    "address": "0x9adc6fb78cefa07e13e9294f150c1e8c1dd566c0",
+    "tag": "PancakeV1",
+    "is_contract": 1,
+    "balance": "210862118787925.187324832",
+    "percent": "0.210862118787925187",
+    "is_locked": 0
+   },
+   {
+    "address": "0x0da844e89760c95cde3f7cf6df1e76182ffde66d",
+    "tag": "",
+    "is_contract": 0,
+    "balance": "182437003013024.710629187",
+    "percent": "0.182437003013024710",
+    "is_locked": 0
+   },
+   {
+    "address": "0xff3dd404afba451328de089424c74685bf0a43c9",
+    "tag": "PancakeV2",
+    "is_contract": 1,
+    "balance": "62718145939614.542262269",
+    "percent": "0.062718145939614542",
+    "is_locked": 0
+   },
+   {
+    "address": "0x3668ca2009af4c0a4a9e258ef69ead1fabbfb7da",
+    "tag": "Biswap",
+    "is_contract": 1,
+    "balance": "13760980179317.005707731",
+    "percent": "0.013760980179317005",
+    "is_locked": 0
+   },
+   {
+    "address": "0x9eca52d3b9ec0cc2f2d62c0dba155952ae6d57d2",
+    "tag": "",
+    "is_contract": 1,
+    "balance": "11644658811862.84649141",
+    "percent": "0.011644658811862846",
+    "is_locked": 0
+   },
+   {
+    "address": "0x29e99847a4f968372cf573a7965e2ad954cb0cbc",
+    "tag": "",
+    "is_contract": 1,
+    "balance": "5386097243384.66633023",
+    "percent": "0.005386097243384666",
+    "is_locked": 0
+   },
+   {
+    "address": "0x6c7f23b7a7637f4f706fc38a1b0804e964e330e7",
+    "tag": "",
+    "is_contract": 1,
+    "balance": "2045648920375.586544717",
+    "percent": "0.002045648920375586",
+    "is_locked": 0
+   },
+   {
+    "address": "0x92b1d615aa1511ea24c203ff48b0815800079a88",
+    "tag": "",
+    "is_contract": 1,
+    "balance": "1580293971408.243089766",
+    "percent": "0.001580293971408243",
+    "is_locked": 0
+   },
+   {
+    "address": "0x8076c74c5e3f5852037f31ff0093eeb8c8add8d3",
+    "tag": "",
+    "is_contract": 1,
+    "balance": "423304238201.180141094",
+    "percent": "0.000423304238201180",
+    "is_locked": 0
+   }
+  ],
+  "honeypot_with_same_creator": "0",
+  "is_anti_whale": "1",
+  "is_blacklisted": "0",
+  "is_honeypot": "0",
+  "is_in_dex": "1",
+  "is_mintable": "0",
+  "is_open_source": "1",
+  "is_proxy": "0",
+  "is_whitelisted": "1",
+  "lp_holder_count": "640",
+  "lp_holders": [
+   {
+    "address": "0x64431e145bb8aecc3df1e5e92289eaec7dd26a3d",
+    "tag": "",
+    "value": null,
+    "is_contract": 1,
+    "balance": "1972.211956154814511232",
+    "percent": "0.981071668817463987",
+    "NFT_list": null,
+    "is_locked": 0
+   },
+   {
+    "address": "0x9e2c4933d6228a69149e3011cb1302f3e46a4263",
+    "tag": "",
+    "value": null,
+    "is_contract": 0,
+    "balance": "12.971089365619288961",
+    "percent": "0.006452434410305159",
+    "NFT_list": null,
+    "is_locked": 0
+   },
+   {
+    "address": "0x8c89dd990c52680e947ecbd922881f7cce6e232c",
+    "tag": "",
+    "value": null,
+    "is_contract": 0,
+    "balance": "5.90043345071513235",
+    "percent": "0.002935155156206282",
+    "NFT_list": null,
+    "is_locked": 0
+   },
+   {
+    "address": "0x631fc1ea2270e98fbd9d92658ece0f5a269aa161",
+    "tag": "",
+    "value": null,
+    "is_contract": 0,
+    "balance": "1.354747453436040704",
+    "percent": "0.000673915570190557",
+    "NFT_list": null,
+    "is_locked": 0
+   },
+   {
+    "address": "0xa122cb49b5cd42e582c18bf5fcec64d58028dcf9",
+    "tag": "",
+    "value": null,
+    "is_contract": 0,
+    "balance": "1.135605802027362922",
+    "percent": "0.000564904130023600",
+    "NFT_list": null,
+    "is_locked": 0
+   },
+   {
+    "address": "0x5b53501ae82b0245b42b05de7fde03173e1d124d",
+    "tag": "",
+    "value": null,
+    "is_contract": 0,
+    "balance": "0.957591725643779871",
+    "percent": "0.000476351494265757",
+    "NFT_list": null,
+    "is_locked": 0
+   },
+   {
+    "address": "0x2a9484bb635cfbccc1ad7c348ff4ed30aa1dfbec",
+    "tag": "",
+    "value": null,
+    "is_contract": 0,
+    "balance": "0.879123382447690073",
+    "percent": "0.000437317622592642",
+    "NFT_list": null,
+    "is_locked": 0
+   },
+   {
+    "address": "0x6128d2b54126af7ff735915a51ebd8417f3967fd",
+    "tag": "",
+    "value": null,
+    "is_contract": 0,
+    "balance": "0.749594173226792047",
+    "percent": "0.000372883656935770",
+    "NFT_list": null,
+    "is_locked": 0
+   },
+   {
+    "address": "0x76aa2a363c8c74dcd9cb548549f186c91b936ca0",
+    "tag": "",
+    "value": null,
+    "is_contract": 0,
+    "balance": "0.622147770823015708",
+    "percent": "0.000309485778071456",
+    "NFT_list": null,
+    "is_locked": 0
+   },
+   {
+    "address": "0x97fa362fd86392d013e9a2b4d954d8fd1bde72cb",
+    "tag": "",
+    "value": null,
+    "is_contract": 0,
+    "balance": "0.486696235613959313",
+    "percent": "0.000242105766873001",
+    "NFT_list": null,
+    "is_locked": 0
+   }
+  ],
+  "lp_total_supply": "2010.262877667258253769",
+  "owner_address": "0x0da844e89760c95cde3f7cf6df1e76182ffde66d",
+  "owner_balance": "182994769723387.78",
+  "owner_change_balance": "0",
+  "owner_percent": "0.182995",
+  "personal_slippage_modifiable": "0",
+  "selfdestruct": "0",
+  "sell_tax": "0",
+  "slippage_modifiable": "1",
+  "token_name": "SafeMoon",
+  "token_symbol": "SAFEMOON",
+  "total_supply": "1000000000000000",
+  "trading_cooldown": "0",
+  "transfer_pausable": "0",
+  "transfer_tax": ""
+ },
+ "rugcheck": null
+}

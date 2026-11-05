@@ -1,0 +1,17 @@
+-- When a provider's in-flight count first rose ABOVE its cap.
+--
+-- `inflight` is persisted so several processes can share one provider budget. The cost of
+-- that choice is that a lost decrement is permanent: it survives every restart. MEASURED
+-- 2026-09-22 on the live box -- pumpfun held 68 slots against a maximum of 2 and rpc 27
+-- against 6, accumulated across restarts, so every call to both providers was refused and
+-- the agent looked idle while nothing was wrong with it.
+--
+-- The decrement cannot be made reliable: it rides whatever transaction the caller has
+-- open, so their rollback undoes it, and eight watchdog workers share one connection so
+-- savepoints unwind each other. This column makes the CAP self-healing instead. A count
+-- above the cap is impossible under `reserve`, which refuses there; only an EXIT may
+-- bypass it, and an exit is short. So an excess that PERSISTS past a lease is a leak, and
+-- `reserve` reclaims it.
+--
+-- NULL means "not currently over the cap".
+ALTER TABLE provider_state ADD COLUMN inflight_over_since_ms INTEGER;

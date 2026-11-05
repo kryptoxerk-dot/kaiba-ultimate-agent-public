@@ -1,0 +1,123 @@
+{% extends "term_layout.html" %}
+{% block title %}Wallet {{ w.address|short }} · Kaiba{% endblock %}
+{% block main %}
+{% set s = w.score %}
+<div class="kx-page"><div class="kx-wrap">
+  <section class="kx-panel">
+    <header class="th">
+      <div class="id">
+        <span class="med lg c-{{ w.chain }}"><svg class="i"><use href="#i-wallet"/></svg></span>
+        <div style="min-width:0">
+          <div class="nmline">
+            <h2 class="mono">{{ w.address|short(6, 6) }}</h2>
+            {% if s and s.grade %}<span class="grade g-{{ s.grade }}" title="{{ s.model_version }}, scored {{ s.scored_at_ms|ago }} ago">{{ s.grade }}</span>{% endif %}
+            {% if w.wallet and w.wallet.name %}<span class="muted">{{ w.wallet.name|truncate(60, True, '…') }}</span>{% endif %}
+          </div>
+          <div class="meta">
+            <span class="chip c-{{ w.chain }}">{{ {'sol': 'Solana', 'robinhood': 'Robinhood', 'bsc': 'BNB'}.get(w.chain, w.chain) }}</span>
+            {% if s and s.archetype %}<span class="chip">{{ s.archetype|replace('_', ' ') }}</span>{% endif %}
+            {% if w.watch %}<span class="chip ok" title="{{ w.watch.reason }}">agent tracks it · {{ w.watch.tier }} · {{ w.watch.status }}</span>{% endif %}
+            {% if w.entity %}<span class="chip" title="entity {{ w.entity.entity_id }}">cluster of {{ w.entity.size if w.entity.size is not none else '?' }}{% if w.entity.size and w.entity.size > 5000 %}+{% endif %}</span>{% endif %}
+            <button class="addr" type="button" data-copy="{{ w.address }}" title="copy address">{{ w.address|short(6, 6) }} <svg class="i s"><use href="#i-copy"/></svg></button>
+            {% for label, url in w.links %}<a href="{{ url }}" target="_blank" rel="noopener noreferrer">{{ label }} ↗</a>{% endfor %}
+          </div>
+        </div>
+      </div>
+      <div class="kv" style="margin-left:auto">
+        <div><span>Score</span><b>{{ '%.1f'|format(s.score) if s and s.score is not none else '—' }}</b></div>
+        <div><span>Realized</span><b class="{{ 'pos' if s and s.realized_pnl_usd and s.realized_pnl_usd > 0 else 'neg' if s and s.realized_pnl_usd and s.realized_pnl_usd < 0 }}">{{ s.realized_pnl_usd|usd if s else '—' }}</b></div>
+        <div><span>Win rate</span><b>{{ ('%.0f%%'|format(s.win_rate * 100)) if s and s.win_rate is not none else '—' }}</b></div>
+        <div><span>Closed trades</span><b>{{ s.closed_trades if s and s.closed_trades is not none else '—' }}</b></div>
+      </div>
+    </header>
+    {% if not w.known and not w.trades %}
+    <p class="empty">We have no record of this wallet: it is not graded, not tracked and not on our tape.</p>
+    {% endif %}
+    <div class="tpane">
+      <div class="ev">
+        <div><span>Evidence weight</span><b>{{ '%.0f'|format(s.evidence_weight) if s and s.evidence_weight is not none else '—' }}</b></div>
+        <div><span>Distinct tokens</span><b>{{ s.distinct_tokens if s and s.distinct_tokens is not none else '—' }}</b></div>
+        <div><span>Median hold</span><b>{{ s.median_hold_s|dur if s and s.median_hold_s is not none else '—' }}</b></div>
+        <div title="{{ w.tape.window }}"><span>Our tape</span><b>{{ w.tape.swaps }} swaps · {{ w.tape.tokens }} tokens</b><small>last 300 swaps, 14-day retention</small></div>
+        <div title="sells minus buys on tokens it both bought and sold, in our tape window"><span>Tape net</span><b class="{{ 'pos' if w.tape.net and w.tape.net > 0 else 'neg' if w.tape.net and w.tape.net < 0 }}">{{ ('%+.3f'|format(w.tape.net)) if w.tape.net is not none else '—' }} {{ w.native }}</b><small>{{ w.tape.closed }} round trips · {{ w.tape.wins }} won</small></div>
+      </div>
+    </div>
+  </section>
+
+  {% if behavior %}{% set b = behavior %}
+  <section class="kx-panel">
+    <div class="kx-ph">
+      <h3>How it trades</h3>
+      <span class="pill {{ 'warn' if b.stale else 'unk' }}" title="wallet behavior lab, refreshed daily">{{ b.episodes }} tokens · 14 days · updated {{ (b.at * 1000)|ago if b.at else '—' }} ago</span>
+      <div class="act"><a href="/labs">all profiles →</a></div>
+    </div>
+    <div class="tpane">
+      <div class="beh-classes">{% for c in b.classes %}<span class="chip ok" title="{{ b.class_notes[c] }}">{{ c|replace('_', ' ') }}</span>{% else %}<span class="faint">{{ 'no class: its habits are mixed' if b.episodes >= 5 else 'too few tokens to class (needs 5)' }}</span>{% endfor %}</div>
+      <div class="ev">
+        <div title="median seconds from token creation to its first buy"><span>Enters after launch</span><b>{{ b.F1_entry_age_s|dur }}</b></div>
+        <div title="median entry price / highest price in the 6 h before (below 1 = buying under the recent high)"><span>Entry vs prior 6 h high</span><b>{{ ('%.2f×'|format(b.F2_entry_vs_prior_high)) if b.F2_entry_vs_prior_high is not none else '—' }}</b><small>{{ b.f2_priced or 0 }} of {{ b.episodes }} priced</small></div>
+        <div><span>First buy</span><b>{{ b.F5_usd|usd }}</b><small>{{ ('%.1f bps of market cap'|format(b.F5_bps_of_mcap)) if b.F5_bps_of_mcap is not none else '' }}</small></div>
+        <div><span>First sell after</span><b>{{ b.F6_first_sell_s|dur }}</b><small>takes {{ b.F6_first_sell_frac|pctx }} of the bag</small></div>
+        <div><span>Full exit after</span><b>{{ b.F7_hold_s|dur }}</b><small>{{ b.share_fully_exited|pctx }} of tokens fully exited</small></div>
+        <div><span>Adds or re-enters</span><b>{{ b.share_multi_entry|pctx }}</b><small>of tokens</small></div>
+        <div title="sells minus buys on tokens it fully exited, GMGN prices"><span>Closed net, 14 days</span><b class="{{ 'pos' if b.closed_net_usd and b.closed_net_usd > 0 else 'neg' if b.closed_net_usd }}">{{ b.closed_net_usd|usd }}</b><small>{{ b.closed_won or 0 }}/{{ b.closed or 0 }} won</small></div>
+      </div>
+      <p class="muted lab-note">{{ b.caveat|capitalize }}.</p>
+    </div>
+  </section>
+  {% endif %}
+
+  <div class="kx-grid2 even">
+    <section class="kx-panel">
+      <div class="kx-ph"><h3>Why it scores what it scores</h3></div>
+      <div class="kx-body">
+        {% if s and s.factors %}
+        {% for f in s.factors %}
+        <div class="bar" title="{{ f.detail }}">
+          <span>{{ f.name|replace('_', ' ') }}</span>
+          <i><em style="width: {{ ((f.share or 0) * 100)|round(0) }}%"></em></i>
+          <b>{{ '%.1f'|format(f.points|float) }}/{{ '%.0f'|format(f.max_points|float) }}</b>
+        </div>
+        {% endfor %}
+        <div class="pills" style="margin-top:10px">
+          {% for b in s.blockers %}<span class="pill unk">{{ b }}</span>{% endfor %}
+          {% for p in s.penalties %}<span class="pill bad">{{ p.name if p is mapping else p }}</span>{% endfor %}
+        </div>
+        {% else %}<p class="nodata">Not scored.</p>{% endif %}
+      </div>
+    </section>
+    <section class="kx-panel">
+      <div class="kx-ph"><h3>Score history</h3></div>
+      <div class="kx-chart">
+        {% if w.history.points|length >= 2 %}<canvas data-series="{{ w.history|series }}" aria-label="score history"></canvas>{% else %}<div class="nochart">No score history.</div>{% endif %}
+      </div>
+      <div class="kx-body">
+        {% if w.tags %}<h5 style="font-size:12px;margin-bottom:6px">Tags</h5><div class="pills">{% for t in w.tags %}<span class="pill sig" title="{{ t.source }} · seen {{ t.n }}×, last {{ t.last_ms|ago }} ago">{{ t.tag }}</span>{% endfor %}</div>{% endif %}
+        {% if w.deployer or w.creator %}<h5 style="font-size:12px;margin:12px 0 6px">As a deployer</h5>
+          {% if w.creator %}<div class="stat"><span>Launches · graduated · rugged</span><b>{{ w.creator.launches }} · {{ w.creator.graduated }} · {{ w.creator.rugged }}</b></div>{% endif %}
+          {% if w.deployer %}<div class="stat"><span>Runners / scored</span><b>{{ w.deployer.runners }} / {{ w.deployer.scored }}</b></div>{% endif %}
+        {% endif %}
+        {% if w.bundles %}<h5 style="font-size:12px;margin:12px 0 6px">In launch bundles</h5><p class="muted">{{ w.bundles|length }} tokens{% for b in w.bundles[:6] %} · <a href="/t/{{ w.chain }}/{{ b.token }}">{{ b.token|short }}</a> ({{ b.role }}){% endfor %}</p>{% endif %}
+      </div>
+    </section>
+  </div>
+
+  <section class="kx-panel">
+    <div class="kx-ph"><h3>Tokens on our tape</h3><span class="cnt">{{ w.tokens|length }}</span><div class="act"><small>{{ w.tape.window }}</small></div></div>
+    {% if w.tokens %}
+    <div style="overflow-x:auto">
+    <table class="kx-t">
+      <thead><tr><th>Token</th><th class="r">Buys</th><th class="r">Sells</th><th class="r">In ({{ w.native }})</th><th class="r">Out ({{ w.native }})</th><th class="r">Net</th><th class="r">Last</th></tr></thead>
+      <tbody>{% for a in w.tokens %}
+        <tr><td><div class="tok"><span class="med sm c-{{ w.chain }}">{{ ((a.symbol or a.token)|string)[:1]|upper }}</span><a href="/t/{{ w.chain }}/{{ a.token }}"><b>{{ a.symbol or (a.token|short) }}</b></a></div></td>
+          <td class="r mono">{{ a.buys }}</td><td class="r mono">{{ a.sells }}</td>
+          <td class="r mono">{{ '%.3f'|format(a['in']) }}</td><td class="r mono">{{ '%.3f'|format(a.out) }}</td>
+          <td class="r mono {{ 'pos' if a.net and a.net > 0 else 'neg' if a.net and a.net < 0 }}">{{ ('%+.3f'|format(a.net)) if a.net is not none else 'open' }}</td>
+          <td class="r mono muted">{{ a['last']|ago }}</td></tr>{% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% else %}<p class="empty">No swaps on our tape.</p>{% endif %}
+  </section>
+</div></div>
+{% endblock %}

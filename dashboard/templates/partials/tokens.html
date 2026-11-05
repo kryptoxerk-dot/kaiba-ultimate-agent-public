@@ -1,0 +1,21 @@
+<div class="panel-head">
+  <div><h3>Token dossiers</h3><small>most recently built, with blockers</small></div>
+</div>
+{% if tokens %}
+<div class="table">
+  <div class="table-row header"><span>Token</span><span>Grade</span><span>Score</span><span>Blockers</span></div>
+  {% for t in tokens %}
+  <div class="table-row">
+    <span class="token-name">
+      <strong>{{ t.symbol or t.address_short }}</strong>
+      <button class="addr" type="button" data-copy="{{ t.address }}" title="{{ t.address }}">{{ t.address_short }}<span class="copy-glyph" aria-hidden="true">⧉</span></button>
+    </span>
+    <span><span class="badge grade-{{ t.grade }}">{{ t.grade }}</span></span>
+    <span class="score">{{ t.score|num(1) }}</span>
+    <span class="{% if t.blockers %}warn{% else %}queue{% endif %}">{{ t.blockers|join(', ') if t.blockers else 'none' }}</span>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<p class="nodata">No token dossier has been built yet.</p>
+{% endif %}

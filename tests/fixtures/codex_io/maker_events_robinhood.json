@@ -1,0 +1,103 @@
+{
+ "_recorded": "2026-10-21 graph.codex.io, free plan, via the box; key never in the request body. maker = PONS creator, networkId 4663, limit 3.",
+ "data": {
+  "getTokenEventsForMaker": {
+   "cursor": "eyJkeW5hbW9DdXJzb3IiOnsibWFrZXIiOnsiUyI6IjB4YjlmNWY0ZWExYWYxZjVkMzY3ODQ3MGViOThlOGZiZGNhZGViMjRiMCJ9LCJpZCI6eyJTIjoiMHgxMGNjNmJkMzgxMTJjYWMxODJkYjkwYjZhNzFkOGJiNTkzOTUyNmJhOjQ2NjMifSwidGltZXN0YW1wIjp7Ik4iOiIxNzgzOTc4MDUxIn0sInNvcnRLZXkiOnsiUyI6IjAwMDAwMDAwMDg5OTAyMDAjMDAwMDAwMDIjMDAwMDAwMDUifX0sIndhcm1PZmZzZXQiOjAsInNvdXJjZSI6ImR5bmFtbyJ9",
+   "items": [
+    {
+     "address": "0x8068ab043efd411b87506c41be1add38faaf18c0af0016c663ca92feff0b8159",
+     "networkId": 4663,
+     "blockNumber": 59569476,
+     "timestamp": 1789060074,
+     "transactionHash": "0x32bf3afa6204c659cc2ca80cf5e9f5e041079e09d775ae67bcfdef8823abbebf",
+     "logIndex": 7,
+     "maker": "0xb9f5f4ea1af1f5d3678470eb98e8fbdcadeb24b0",
+     "eventType": "Swap",
+     "eventDisplayType": "Sell",
+     "quoteToken": "token1",
+     "token0Address": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+     "token1Address": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+     "token0SwapValueUsd": "2448.5399999982269276",
+     "token1SwapValueUsd": "0.99996048192890819882",
+     "walletAge": 5086358,
+     "walletLabels": null,
+     "labels": {
+      "sandwich": null,
+      "washtrade": null
+     },
+     "data": {
+      "type": "Swap",
+      "amount0": "-399646862216182",
+      "amount1": "978590",
+      "amountNonLiquidityToken": "0.97859",
+      "priceUsd": "0.99996048192890819882",
+      "priceUsdTotal": "0.9785513280108102742832638",
+      "priceBaseToken": "4.083905028829049959649423738227678535e-4",
+      "priceBaseTokenTotal": "3.99646862216182e-4"
+     }
+    },
+    {
+     "address": "0xe4d0b1eaddb4b19e584cd43047b273f95afb623e",
+     "networkId": 4663,
+     "blockNumber": 59569476,
+     "timestamp": 1789060074,
+     "transactionHash": "0x32bf3afa6204c659cc2ca80cf5e9f5e041079e09d775ae67bcfdef8823abbebf",
+     "logIndex": 12,
+     "maker": "0xb9f5f4ea1af1f5d3678470eb98e8fbdcadeb24b0",
+     "eventType": "Swap",
+     "eventDisplayType": "Buy",
+     "quoteToken": "token0",
+     "token0Address": "0x7b27f01cc0127f6e10a45389774b90e1597babfe",
+     "token1Address": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+     "token0SwapValueUsd": "7.0729667603614152e-6",
+     "token1SwapValueUsd": "2448.5399999999998906",
+     "walletAge": 5086358,
+     "walletLabels": null,
+     "labels": {
+      "sandwich": null,
+      "washtrade": null
+     },
+     "data": {
+      "type": "Swap",
+      "amount0": "-138350901561509782946180",
+      "amount1": "399646862216182",
+      "amountNonLiquidityToken": "138350.90156150978294618",
+      "priceUsd": "7.0729667603614152e-6",
+      "priceUsdTotal": "0.978551328010592908951179379482250233936",
+      "priceBaseToken": "2.88864660588e-9",
+      "priceBaseTokenTotal": "3.99646862216182e-4"
+     }
+    },
+    {
+     "address": "0x10cc6bd38112cac182db90b6a71d8bb5939526ba",
+     "networkId": 4663,
+     "blockNumber": 8990200,
+     "timestamp": 1783978051,
+     "transactionHash": "0x1580667f0e53ab769dbceb8030ca6b2b4572850b06687573caa0fd640cdd63f9",
+     "logIndex": 5,
+     "maker": "0xb9f5f4ea1af1f5d3678470eb98e8fbdcadeb24b0",
+     "eventType": "Burn",
+     "eventDisplayType": "Burn",
+     "quoteToken": "token1",
+     "token0Address": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+     "token1Address": "0x39dbed3a2bd333467115de45665cc57f813c4571",
+     "token0SwapValueUsd": "NaN",
+     "token1SwapValueUsd": "NaN",
+     "walletAge": 4335,
+     "walletLabels": null,
+     "labels": {
+      "sandwich": null,
+      "washtrade": null
+     },
+     "data": {}
+    }
+   ]
+  },
+  "usageData": {
+   "total": {
+    "computeUnits": "10000000",
+    "count": "0"
+   }
+  }
+ }
+}

@@ -1,0 +1,55 @@
+{
+  "inputMint": "So11111111111111111111111111111111111111112",
+  "inAmount": "20000000",
+  "outputMint": "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263",
+  "outAmount": "72680000000",
+  "otherAmountThreshold": "71953200000",
+  "swapMode": "ExactIn",
+  "slippageBps": 100,
+  "platformFee": null,
+  "priceImpactPct": "0",
+  "routePlan": [
+    {
+      "swapInfo": {
+        "ammKey": "FpCMFDFGYotvufJ7HrFHsWEiiQCGbkLCtwHiDnh7o28Q",
+        "label": "Whirlpool",
+        "inputMint": "So11111111111111111111111111111111111111112",
+        "outputMint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        "inAmount": "20000000",
+        "outAmount": "2166141",
+        "updateContextSlot": "448697748"
+      },
+      "percent": 100,
+      "bps": null
+    },
+    {
+      "swapInfo": {
+        "ammKey": "5ZWCKP2E8LqTUmo98xhq1YELjcqvxpNsv4xfzVbKGswc",
+        "label": "Scorch",
+        "inputMint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        "outputMint": "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263",
+        "inAmount": "2166141",
+        "outAmount": "72680000000",
+        "updateContextSlot": "448697841"
+      },
+      "percent": 100,
+      "bps": null
+    }
+  ],
+  "contextSlot": 448697841,
+  "timeTaken": 0.008223232,
+  "swapUsdValue": "2.165238183189342",
+  "mostReliableAmmsQuoteReport": {
+    "info": {
+      "BZtgQEyS6eXUXicYPHecYQ7PybqodXQMvkjUbP4R8mUU": "2165837",
+      "5zpyutJu9ee6jFymDGoK7F6S5Kczqtc9FomP3ueKuyA9": "72621673974",
+      "Czfq3xZZDmsdGdUyrNLtRhGc47cXcZtLG4crryfu44zE": "2165763"
+    }
+  },
+  "longtailMarketQuoteReport": null,
+  "useIncurredSlippageForQuoting": null,
+  "useRewards": null,
+  "otherRoutePlans": null,
+  "loadedLongtailToken": false,
+  "instructionVersion": null
+}

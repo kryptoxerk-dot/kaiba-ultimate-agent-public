@@ -1,0 +1,28 @@
+{
+  "jsonrpc": "2.0",
+  "id": "kaiba-getTokenAccounts",
+  "result": {
+    "total": 3,
+    "limit": 2,
+    "page": 1,
+    "cursor": "Y3Vyc29yOjI",
+    "token_accounts": [
+      {
+        "address": "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU",
+        "mint": "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263",
+        "owner": "5tzFkiKscXHK5ZXCGbXZxdw7gTjjD1mBwuoFbhUvuAi9",
+        "amount": 41000000000,
+        "delegated_amount": 0,
+        "frozen": false
+      },
+      {
+        "address": "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM",
+        "mint": "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263",
+        "owner": "GDfnEsia2WLAW5t8yx2X5j2mkfA74i5kwGdDuZHt7XmG",
+        "amount": 12500000000,
+        "delegated_amount": 0,
+        "frozen": false
+      }
+    ]
+  }
+}

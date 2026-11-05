@@ -1,0 +1,14 @@
+-- Decision-time dossier features, written with every decision (2026-10-27, lead).
+--
+-- Found by the wallets-and-methods refutation of the launch-snipe entry-veto test: the
+-- forward test for 2026-11-03 needs each decision's top10_pct / liquidity / holder count AS
+-- READ AT THE DECISION, and nothing kept them. token_dossiers holds one row per
+-- (chain, address) that is rebuilt later, 0 of 5,312 decision theses or blockers carried
+-- top10, and the only way to recover the value was to drop every row whose dossier had
+-- been rebuilt more than 60 s after the decision -- which were the winners (33 launch-snipe
+-- rows at +37.4% capped against a lane at -20.8%): an outcome-correlated exclusion.
+--
+-- features_json is a small object of the dossier's measured values at ts_ms, with null for
+-- every unknown (never a default), plus the dossier's build time and age. Records only:
+-- no lane, size or risk key reads it. The 11-03 veto test is ex-ante on this column.
+ALTER TABLE decisions ADD COLUMN features_json TEXT NOT NULL DEFAULT '{}';

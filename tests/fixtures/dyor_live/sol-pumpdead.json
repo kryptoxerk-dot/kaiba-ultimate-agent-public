@@ -1,0 +1,342 @@
+{
+ "note": "Live recording, not hand-built. goplus is the per-address entry already unwrapped from GoPlus's result map; rugcheck holds one key per route.",
+ "recorded_at_ms": 1789897076749,
+ "token": {
+  "label": "PUMPDEAD",
+  "address": "3eB4xJAdTEFJVztbW5JmcxfiwjPZfYQzdHG6ZEN1pump",
+  "chain": "sol",
+  "why": "Liquidity of 2.2e-07 USD \u2014 genuinely dead, and the control proving a real zero-ish liquidity reading is distinguishable from an unindexed one."
+ },
+ "chain": {
+  "data": {
+   "parsed": {
+    "info": {
+     "decimals": 6,
+     "extensions": [
+      {
+       "extension": "metadataPointer",
+       "state": {
+        "authority": null,
+        "metadataAddress": "3eB4xJAdTEFJVztbW5JmcxfiwjPZfYQzdHG6ZEN1pump"
+       }
+      },
+      {
+       "extension": "tokenMetadata",
+       "state": {
+        "additionalMetadata": [],
+        "mint": "3eB4xJAdTEFJVztbW5JmcxfiwjPZfYQzdHG6ZEN1pump",
+        "name": "Wardog ",
+        "symbol": "WARDOG",
+        "updateAuthority": null,
+        "uri": "https://ipfs.io/ipfs/QmQCc6mZuMr9brsrd6YjZXM5muLFwvTMKkyty6SoATUcNM"
+       }
+      }
+     ],
+     "freezeAuthority": null,
+     "isInitialized": true,
+     "mintAuthority": null,
+     "supply": "1000000000000000"
+    },
+    "type": "mint"
+   },
+   "program": "spl-token-2022",
+   "space": 398
+  },
+  "executable": false,
+  "lamports": 2672080,
+  "owner": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+  "rentEpoch": 18446744073709551615,
+  "space": 398
+ },
+ "chain_dev_pct": "0",
+ "goplus": {
+  "balance_mutable_authority": {
+   "authority": [],
+   "status": "0"
+  },
+  "closable": {
+   "authority": [],
+   "status": "0"
+  },
+  "creators": [],
+  "default_account_state": "1",
+  "default_account_state_upgradable": {
+   "authority": [],
+   "status": "0"
+  },
+  "freezable": {
+   "authority": [],
+   "status": "0"
+  },
+  "metadata": {
+   "description": "",
+   "name": "Wardog ",
+   "symbol": "WARDOG",
+   "uri": "https://ipfs.io/ipfs/QmQCc6mZuMr9brsrd6YjZXM5muLFwvTMKkyty6SoATUcNM"
+  },
+  "metadata_mutable": {
+   "metadata_upgrade_authority": [],
+   "status": "0"
+  },
+  "mintable": {
+   "authority": [],
+   "status": "0"
+  },
+  "non_transferable": "0",
+  "total_supply": "1000000000",
+  "transfer_fee": {},
+  "transfer_fee_upgradable": {
+   "authority": [],
+   "status": "0"
+  },
+  "transfer_hook": [],
+  "transfer_hook_upgradable": {
+   "authority": [],
+   "status": "0"
+  },
+  "trusted_token": 0
+ },
+ "rugcheck": {
+  "summary": {
+   "tokenProgram": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "tokenType": "",
+   "risks": [
+    {
+     "name": "Creator history of rugged tokens",
+     "value": "",
+     "description": "Creator has a history of rugging tokens.",
+     "score": 14400,
+     "level": "danger"
+    }
+   ],
+   "score": 14401,
+   "score_normalised": 55,
+   "lpLockedPct": 0
+  },
+  "report": {
+   "mint": "3eB4xJAdTEFJVztbW5JmcxfiwjPZfYQzdHG6ZEN1pump",
+   "tokenProgram": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "creator": "3iJmCdC1mwhzGzEGyrUnykAFd5XCn8wbCffizPz5kQWq",
+   "creatorBalance": 0,
+   "token": {
+    "mintAuthority": null,
+    "supply": 1000000000000000,
+    "decimals": 6,
+    "isInitialized": true,
+    "freezeAuthority": null
+   },
+   "token_extensions": {
+    "nonTransferable": false,
+    "transferFeeConfig": null,
+    "defaultAccountState": null,
+    "permanentDelegate": null,
+    "metadataPointer": {
+     "authority": null,
+     "metadataAddress": "3eB4xJAdTEFJVztbW5JmcxfiwjPZfYQzdHG6ZEN1pump"
+    },
+    "groupPointer": null,
+    "groupMemberPointer": null,
+    "tokenMetadata": {
+     "authority": null,
+     "mint": "3eB4xJAdTEFJVztbW5JmcxfiwjPZfYQzdHG6ZEN1pump",
+     "name": "Wardog ",
+     "symbol": "WARDOG",
+     "uri": "https://ipfs.io/ipfs/QmQCc6mZuMr9brsrd6YjZXM5muLFwvTMKkyty6SoATUcNM",
+     "additionalMetadata": {}
+    },
+    "mintCloseAuthority": null,
+    "confidentialTransferMint": null,
+    "interestBearingConfig": null,
+    "transferHook": null,
+    "confidentialTransferFeeConfig": null,
+    "tokenGroup": null,
+    "tokenGroupMember": null,
+    "scaledUiAmountConfig": null,
+    "pausableConfig": null
+   },
+   "tokenMeta": {
+    "name": "Wardog",
+    "symbol": "WARDOG",
+    "uri": "https://ipfs.io/ipfs/QmQCc6mZuMr9brsrd6YjZXM5muLFwvTMKkyty6SoATUcNM",
+    "mutable": false,
+    "updateAuthority": "11111111111111111111111111111111"
+   },
+   "topHolders": [],
+   "freezeAuthority": null,
+   "mintAuthority": null,
+   "risks": [
+    {
+     "name": "Creator history of rugged tokens",
+     "value": "",
+     "description": "Creator has a history of rugging tokens.",
+     "score": 14400,
+     "level": "danger"
+    }
+   ],
+   "score": 14401,
+   "score_normalised": 55,
+   "fileMeta": {
+    "description": "",
+    "name": "Wardog",
+    "symbol": "WARDOG",
+    "image": ""
+   },
+   "lockerOwners": {},
+   "lockers": {},
+   "lockerScanStatus": "none",
+   "markets": [
+    {
+     "pubkey": "bTWpewhQNgUWYEm7M5T9NB9U69MAwjzDS5XSH1SVVDZ",
+     "marketType": "pump_fun",
+     "mintA": "3eB4xJAdTEFJVztbW5JmcxfiwjPZfYQzdHG6ZEN1pump",
+     "mintB": "So11111111111111111111111111111111111111112",
+     "mintLP": "11111111111111111111111111111111",
+     "liquidityA": "GjSPWQiMSwToqvMgJRbVYboPG8Wnfr61h7nJADdwwM9D",
+     "liquidityB": "bTWpewhQNgUWYEm7M5T9NB9U69MAwjzDS5XSH1SVVDZ",
+     "mintAAccount": {
+      "mintAuthority": null,
+      "supply": 1000000000000000,
+      "decimals": 6,
+      "isInitialized": true,
+      "freezeAuthority": null
+     },
+     "mintBAccount": {
+      "mintAuthority": null,
+      "supply": 0,
+      "decimals": 9,
+      "isInitialized": false,
+      "freezeAuthority": null
+     },
+     "mintLPAccount": {
+      "mintAuthority": null,
+      "supply": 0,
+      "decimals": 0,
+      "isInitialized": false,
+      "freezeAuthority": null
+     },
+     "liquidityAAccount": {
+      "mint": "3eB4xJAdTEFJVztbW5JmcxfiwjPZfYQzdHG6ZEN1pump",
+      "owner": "bTWpewhQNgUWYEm7M5T9NB9U69MAwjzDS5XSH1SVVDZ",
+      "amount": 793100000000000,
+      "delegate": null,
+      "state": 0,
+      "delegatedAmount": 0,
+      "closeAuthority": null
+     },
+     "liquidityBAccount": {
+      "mint": "So11111111111111111111111111111111111111112",
+      "owner": "bTWpewhQNgUWYEm7M5T9NB9U69MAwjzDS5XSH1SVVDZ",
+      "amount": 2,
+      "delegate": null,
+      "state": 0,
+      "delegatedAmount": 0,
+      "closeAuthority": null
+     },
+     "lp": {
+      "baseMint": "3eB4xJAdTEFJVztbW5JmcxfiwjPZfYQzdHG6ZEN1pump",
+      "quoteMint": "So11111111111111111111111111111111111111112",
+      "lpMint": "11111111111111111111111111111111",
+      "quotePrice": "108.53236322652498",
+      "basePrice": 0,
+      "base": 793100000,
+      "quote": "2E-9",
+      "reserveSupply": 2,
+      "currentSupply": 0,
+      "quoteUSD": "2.1706472645304998E-7",
+      "baseUSD": 0,
+      "pctReserve": 0,
+      "pctSupply": 0,
+      "holders": null,
+      "totalTokensUnlocked": 0,
+      "tokenSupply": 0,
+      "lpLocked": 2,
+      "lpUnlocked": 0,
+      "lpLockedPct": 100,
+      "lpLockedUSD": "2.1706472645304998E-7",
+      "lpMaxSupply": 0,
+      "lpCurrentSupply": 0,
+      "lpTotalSupply": 2
+     }
+    }
+   ],
+   "totalMarketLiquidity": "2.1706472645304998E-7",
+   "totalStableLiquidity": "2.1706472645304998E-7",
+   "totalLPProviders": 0,
+   "totalHolders": 0,
+   "price": 0,
+   "rugged": false,
+   "tokenType": "",
+   "transferFee": {
+    "pct": 0,
+    "maxAmount": 0,
+    "authority": "11111111111111111111111111111111"
+   },
+   "knownAccounts": {
+    "33mA9E4UuN8WNe5rPLR8J8NLouG3RrZekTLMHcZXPyYP": {
+     "name": "Printr Stake Pool",
+     "type": "LOCKER"
+    },
+    "3iJmCdC1mwhzGzEGyrUnykAFd5XCn8wbCffizPz5kQWq": {
+     "name": "Creator",
+     "type": "CREATOR"
+    },
+    "GjSPWQiMSwToqvMgJRbVYboPG8Wnfr61h7nJADdwwM9D": {
+     "name": "Pump Fun",
+     "type": "AMM"
+    },
+    "bTWpewhQNgUWYEm7M5T9NB9U69MAwjzDS5XSH1SVVDZ": {
+     "name": "Pump Fun",
+     "type": "AMM"
+    }
+   },
+   "events": [],
+   "verification": null,
+   "validation": {
+    "validated": false
+   },
+   "graphInsidersDetected": 0,
+   "insiderNetworks": null,
+   "detectedAt": "2026-09-20T04:35:23.024296001Z",
+   "creatorTokens": [
+    {
+     "mint": "8E91fPyD8LScyndDMxmcn5g843uqqy1RushMjn6hpump",
+     "marketCap": "3041.606564409246",
+     "createdAt": "2026-09-20T09:31:04.774461226Z"
+    },
+    {
+     "mint": "DBFLWzejdDZ2FnW1LGYhNxPxdQtLzE9zAHu4v1bfpump",
+     "marketCap": "3041.390058548043",
+     "createdAt": "2026-09-20T09:17:20.300501106Z"
+    },
+    {
+     "mint": "HSCz3CweobWs1CNiYFagTGpKBLgLpX2Wb8Gw35sWpump",
+     "marketCap": "3055.222622599643",
+     "createdAt": "2026-09-20T07:27:11.23591567Z"
+    },
+    {
+     "mint": "AAsCwNS5u8ysASLvimV53UCrrHZA3c4GWAQ54qk5pump",
+     "marketCap": "2890.9312974074164",
+     "createdAt": "2026-09-14T12:35:42.420774202Z"
+    },
+    {
+     "mint": "Fzr1p4u7yfPLk61a8o2Yj5Wi9DyheULSSHhFJab5pump",
+     "marketCap": "3974.9464747692505",
+     "createdAt": "2025-02-26T07:11:25.0839683Z"
+    },
+    {
+     "mint": "67zTCo8Eais6zKNB5dEBWHf1dwoeMMrSLDCoQi8spump",
+     "marketCap": "5951.194629856318",
+     "createdAt": "2024-12-01T11:48:49.847387093Z"
+    }
+   ],
+   "launchpad": {
+    "name": "Pump.Fun",
+    "logo": "https://api.rugcheck.xyz/public/logos/pump_fun.png",
+    "url": "https://x.com/pumpfun",
+    "platform": "pump_fun"
+   },
+   "deployPlatform": "unknown"
+  },
+  "insiders": []
+ }
+}

@@ -1,0 +1,15 @@
+# Codex SOCIAL-FOLLOW-SNIPE: owner-authorized follow discovery / official CA source.
+enabled: true
+db_path: data/social-follow.db
+socket_path: data/social-follow.sock
+watch_path: data/social-project-watch.json
+poll_interval_s: 120
+page_size: 20
+max_projects: 20
+max_post_age_s: 30
+verification_ttl_s: 86400
+handoff: true
+live_official_posts: false  # arming exception is prepared separately for lead integration
+source_priority: [elonmusk, cz_binance, heyibinance, toly, solana, a1lon9, vladtenev, baijubhatt, robinhoodapp, ponsdotfamily, theunipcs, blknoiz06, cobie, frankdegods, crashiusclay69, muststopmurad]
+# Existing launch-snipe modes, venues, tax gates, caps and ordinary sizing govern entries.
+# Never apply the creator's 5%-of-supply launch buy or launch-specific budget exceptions.

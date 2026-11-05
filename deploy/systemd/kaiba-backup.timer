@@ -1,0 +1,16 @@
+[Unit]
+Description=Nightly Kaiba encrypted backup
+Documentation=file:///opt/kaiba/current/docs/runbooks/deploy.md
+
+[Timer]
+# 03:17 UTC: after the nightly reflection job (01:30) and well clear of the US and EU
+# session opens, so a long sqlite .backup never contends with an active trading window.
+# The odd minute keeps it off every other cron's shoulder.
+OnCalendar=*-*-* 03:17:00 UTC
+AccuracySec=1min
+RandomizedDelaySec=5min
+Persistent=true
+Unit=kaiba-backup.service
+
+[Install]
+WantedBy=timers.target

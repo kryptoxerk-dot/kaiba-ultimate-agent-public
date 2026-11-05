@@ -1,0 +1,19 @@
+{
+  "note": "Hand-built, NOT a live capture, in the live /insiders/graph shape (tests/fixtures/rugcheck/live/ pins real bodies). The clean case for report_clean.json: RugCheck found one transfer network, and every wallet in it holds 0 now (live bodies carry many zero-holding nodes). That is a MEASURED zero, cluster_pct = 0 from a body that answered, which is a different object from the empty list in insiders_graph_empty.json: that one is unknown.",
+  "body": [
+    {
+      "net_id": "net-exited",
+      "network_type": "transfer",
+      "relatedMint": null,
+      "nodes": [
+        {"id": "Ex1111111111111111111111111111111111111111", "participant": true, "holdings": 0},
+        {"id": "Ex2222222222222222222222222222222222222222", "participant": true, "holdings": 0},
+        {"id": "Ex3333333333333333333333333333333333333333", "participant": true, "holdings": 0}
+      ],
+      "links": [
+        {"source": "Ex1111111111111111111111111111111111111111", "target": "Ex2222222222222222222222222222222222222222"},
+        {"source": "Ex1111111111111111111111111111111111111111", "target": "Ex3333333333333333333333333333333333333333"}
+      ]
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "args": [
+    "token",
+    "info",
+    "--chain",
+    "sol",
+    "--address",
+    "So11111111111111111111111111111111111111112",
+    "--raw"
+  ],
+  "returncode": 3221226505,
+  "stdout": "",
+  "stderr": "[gmgn-cli] GET /v1/token/info failed: HTTP 401 code=401 error=AUTH_KEY_INVALID message=api key invalid\nAssertion failed: !(handle->flags & UV_HANDLE_CLOSING), file src\\win\\async.c, line 94\n",
+  "_recorded": "2026-09-21 local, gmgn-cli 1.6.1, immediately after the GMGN PRO upgrade",
+  "_why": "The live response to every read on this account. GMGN rejects the API key itself (AUTH_KEY_INVALID), which is not a plan problem and cannot be bought around."
+}

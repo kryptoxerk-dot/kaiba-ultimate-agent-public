@@ -1,0 +1,85 @@
+[Unit]
+# Truth reconciliation. Walks every order that is not terminal, asks the chain and the
+# provider what actually happened, resolves UNKNOWN states, repairs position rows, and
+# refreshes the six report files Hermes reads.
+#
+# This is the only correct response to an ambiguous send. Never resubmit blindly:
+# docs/runbooks/incident-ambiguous-send.md.
+Description=Kaiba order and position reconciliation
+Documentation=file:///opt/kaiba/current/docs/runbooks/incident-ambiguous-send.md
+Wants=network-online.target
+After=network-online.target
+# Deliberately safe to start by hand during an incident: systemd will not run a second
+# instance of a oneshot unit that is already running, so a manual start during a timed
+# run waits rather than racing it over the same order rows.
+
+[Service]
+Type=oneshot
+User=kaiba-core
+Group=kaiba-core
+SupplementaryGroups=kaiba kaiba-state kaiba-signer-ipc kaiba-reports
+WorkingDirectory=/opt/kaiba/current
+
+EnvironmentFile=/etc/kaiba/core.env
+Environment=HOME=/var/lib/kaiba
+Environment=KAIBA_CONFIG_DIR=/etc/kaiba
+Environment=KAIBA_DATA_DIR=/var/lib/kaiba
+Environment=KAIBA_DB_PATH=/var/lib/kaiba/db/kaiba.db
+Environment=KAIBA_RISK_PATH=/etc/kaiba/config/risk.yaml
+Environment=KAIBA_SIGNER_SOCKET=/run/kaiba/signer/signer.sock
+Environment=KAIBA_REPORTS_DIR=/var/lib/kaiba/reports
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PYTHONUNBUFFERED=1
+
+UnsetEnvironment=KAIBA_SIGNER_PASSPHRASE KAIBA_SIGNER_KEYSTORE SOLANA_PRIVATE_KEY EVM_PRIVATE_KEY
+UnsetEnvironment=KAIBA_DASHBOARD_PASSWORD AGE_IDENTITY_FILE RCLONE_CONFIG_PASS
+UnsetEnvironment=ANTHROPIC_API_KEY OPENROUTER_API_KEY TELEGRAM_BOT_TOKEN TG_API_HASH
+UnsetEnvironment=PYTHONHOME PYTHONPATH PYTHONSTARTUP PYTHONINSPECT PYTHONOPTIMIZE
+
+ExecStart=/opt/kaiba/venv/bin/python -I -B -m kaiba.cli.main reconcile once --write-reports
+# A reconcile that overruns its 5-minute window must be killed, not left to overlap the
+# next one.
+TimeoutStartSec=240
+Restart=no
+
+# ---- hardening baseline (identical across every kaiba unit) -------------------------
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+PrivateMounts=yes
+ProtectHostname=yes
+ProtectClock=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectProc=invisible
+ProcSubset=pid
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+# NOTE: reconciliation queries the GMGN order state through the node-based gmgn-cli.
+# If you enable that path, apply deploy/systemd/dropins/allow-node-jit.conf to THIS unit.
+MemoryDenyWriteExecute=yes
+RemoveIPC=yes
+KeyringMode=private
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+CapabilityBoundingSet=
+AmbientCapabilities=
+UMask=0077
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+# ---- explicit write surface ---------------------------------------------------------
+ReadWritePaths=/var/lib/kaiba/db /var/lib/kaiba/reports /var/lib/kaiba/logs /var/lib/kaiba/cache
+ReadWritePaths=/run/kaiba/signer
+ReadOnlyPaths=/opt/kaiba/current /opt/kaiba/venv /etc/kaiba/policy /etc/kaiba/config
+InaccessiblePaths=/etc/kaiba/signer /var/lib/kaiba/signer /var/lib/kaiba/backups /var/lib/kaiba/hermes
+
+MemoryMax=512M
+CPUQuota=100%
+TasksMax=64

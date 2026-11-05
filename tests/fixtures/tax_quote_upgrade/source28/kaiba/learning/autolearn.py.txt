@@ -1,0 +1,877 @@
+"""Autonomous research worker: discover, paper-test, journal, and learn from new evidence.
+
+Uses the current Kaiba factory/broker/learning APIs. This module has no live transport
+and never changes risk, modes, rosters, credentials or promotion configuration.
+"""
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import sqlite3
+import time
+from collections.abc import Callable, Mapping, Sequence
+from contextlib import contextmanager
+from decimal import Decimal
+from pathlib import Path
+from typing import Any
+
+from kaiba.learning.autolearn_io import (
+    DAY_MS,
+    GuardedReader,
+    SourceDeferred,
+    load_json,
+    persist_lessons,
+    quote_evidence,
+    read_opportunities,
+)
+
+VERSION = "autolearn/2"
+DEFAULT_GROUPS = [("sm-trenches", c) for c in ("sol", "bsc", "robinhood")]
+
+
+class PollingReader(GuardedReader):
+    """Keep the decision cursor on the rowid index instead of scanning a whole lane."""
+
+    def _read(self, sql, args, *, dictionaries):
+        # VPS EXPLAIN chose idx_decisions_lane plus a temporary ORDER BY tree even
+        # with rowid>21190. NOT INDEXED preserves the identical population/order
+        # while letting SQLite seek its built-in INTEGER PRIMARY KEY.
+        sql = sql.replace("FROM decisions WHERE rowid>?", "FROM decisions NOT INDEXED WHERE rowid>?")
+        return super()._read(sql, args, dictionaries=dictionaries)
+
+
+def _digest(value: Any) -> str:
+    return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":"), default=str).encode()).hexdigest()
+
+
+def atomic_json(path: Path, value: Any) -> None:
+    from kaiba.core.redact import redact_text
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(path.suffix + ".partial")
+    text = json.dumps(value, indent=2, sort_keys=True, default=str, allow_nan=False)
+    temporary.write_text(redact_text(text) + "\n", encoding="utf-8")
+    os.replace(temporary, path)
+
+
+def _load(path: Path, default: Any) -> Any:
+    if not path.is_file():
+        return default
+    # Corrupted durable state is an error, not permission to erase the experiment.
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _pid_alive(pid: int) -> bool:
+    if pid <= 0:
+        raise ValueError("invalid worker PID")
+    if os.name == "nt":
+        # Windows os.kill(pid, 0) terminates the process; it is not a POSIX probe.
+        import ctypes
+        from ctypes import wintypes
+        kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+        kernel.OpenProcess.restype = wintypes.HANDLE
+        kernel.GetExitCodeProcess.argtypes = (wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD))
+        kernel.GetExitCodeProcess.restype = wintypes.BOOL
+        kernel.CloseHandle.argtypes = (wintypes.HANDLE,)
+        kernel.CloseHandle.restype = wintypes.BOOL
+        handle = kernel.OpenProcess(0x1000, False, pid)
+        if not handle:
+            if ctypes.get_last_error() == 87:
+                return False
+            raise PermissionError("worker process liveness unavailable")
+        try:
+            code = wintypes.DWORD()
+            if not kernel.GetExitCodeProcess(handle, ctypes.byref(code)):
+                raise PermissionError("worker process liveness unavailable")
+            return code.value == 259
+        finally:
+            kernel.CloseHandle(handle)
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+
+
+def _summary_markdown(report: Mapping[str, Any]) -> str:
+    lines = ["# Kaiba autonomous learning", "", f"Status: {report['status']}; version {VERSION}.",
+             "Research uses actual PaperBroker fills on captured prices. Funding is disabled.", ""]
+    for campaign in report.get("campaigns", []):
+        lines.extend([f"## {campaign['campaign_id']}", "",
+                      "| Chain | Exit hypothesis | Complete closes | Verdict |", "|---|---|---:|---|"])
+        for arm in campaign.get("assessment", {}).get("arms", []):
+            spec = arm["spec"]
+            score = arm.get("score") or {}
+            lines.append(f"| {spec['chain']} | {spec['exit']['name']} | {score.get('n', 0)} | {arm['status']} |")
+        lines.append("")
+    lines.extend(["## Evidence", "", json.dumps(report.get("economic_coverage", {}), sort_keys=True),
+                  "", "Unknown costs, unmatched inventory and unavailable exits remain unproven.",
+                  "Existing candidate filters and exits remain frozen during forward collection."])
+    if report.get("deferred"):
+        lines.extend(["", "Deferred: " + str(report["deferred"])])
+    return "\n".join(lines) + "\n"
+
+
+class AutoLearner:
+    def __init__(self, db_path: Path | str, state_dir: Path | str, *, learning_root: Path | str | None = None,
+                 groups: Sequence[tuple[str, str]] = DEFAULT_GROUPS,
+                 max_candidates: int = 12, max_stake_usd: str = "30", max_open_per_arm: int = 3,
+                 admission_clock: bool = False,
+                 clock: Callable[[], float] = time.time,
+                 reader_factory: Callable[..., GuardedReader] = PollingReader):
+        from kaiba.core.config import get_settings
+        self.db_path, self.state_dir = Path(db_path).resolve(), Path(state_dir).resolve()
+        self.learning_root = Path(learning_root or get_settings().kaiba_data_dir / "learning").resolve()
+        if not self.state_dir.is_relative_to(self.learning_root) or self.state_dir == self.db_path.parent:
+            raise ValueError("autolearn state must stay inside an explicit research learning root")
+        if self.db_path.is_relative_to(self.state_dir):
+            raise ValueError("source database must not be inside mutable research state")
+        if not 1 <= max_candidates <= 18 or not 0 < Decimal(max_stake_usd) <= 120:
+            raise ValueError("research capacity/stake exceeds its fixed envelope")
+        if not groups or len(groups) > 9:
+            raise ValueError("invalid research groups")
+        if type(admission_clock) is not bool or admission_clock and max_candidates > 12:
+            raise ValueError("admission clock requires the configured twelve-arm envelope")
+        self.groups, self.max_candidates = list(groups), int(max_candidates)
+        self.max_stake_usd, self.max_open_per_arm = Decimal(max_stake_usd), int(max_open_per_arm)
+        self.clock, self.reader_factory = clock, reader_factory
+        self.admission_clock = admission_clock
+        self.state_dir.mkdir(parents=True, exist_ok=True)
+        self.state_path = self.state_dir / "state.json"
+
+    def _campaign_path(self, name: str) -> Path:
+        path = (self.state_dir / name).resolve()
+        if path.parent != self.state_dir or path.suffix != ".json" or path.name != name:
+            raise ValueError("campaign path escapes research state")
+        return path
+
+    def _paper(self):
+        from kaiba.learning.allocation_runtime import load_context
+        allocated = load_context(self.state_dir, learning_root=self.learning_root,
+            now_ms=int(self.clock() * 1000), max_active_arms=self.max_candidates,
+            max_stake_usd=self.max_stake_usd, max_open_per_arm=self.max_open_per_arm, clock=self.clock)
+        if allocated is not None:
+            return allocated.runner()
+        from kaiba.learning.candidate_paper import CandidatePaperRunner
+        runner = CandidatePaperRunner
+        if self.admission_clock:
+            from kaiba.learning.autolearn_clock import CampaignPaper
+            runner = CampaignPaper
+        return runner(self.state_dir / "paper", learning_root=self.learning_root,
+                                    max_stake_usd=self.max_stake_usd, max_open_per_arm=self.max_open_per_arm,
+                                    clock=self.clock)
+
+    def _assess(self, manifest, outcomes, *, now_ms, prior_state):
+        from kaiba.learning.strategy_campaign import assess_campaign
+        if self.admission_clock:
+            from kaiba.learning.autolearn_clock import assess_dispatch
+            return assess_dispatch(manifest, outcomes, now_ms=now_ms, prior_state=prior_state)
+        return assess_campaign(manifest, outcomes, now_ms=now_ms, prior_state=prior_state)
+
+    def _storage_bytes(self) -> int:
+        return sum(p.stat().st_size for p in self.state_dir.rglob("*") if p.is_file() and not p.is_symlink())
+
+    def _ladder(self):
+        from kaiba.core.config import get_risk
+        from kaiba.learning.signal_audit import ExitLadder
+        return ExitLadder.from_protection(getattr(get_risk(), "protection", None))
+
+    def _bootstrap(self, state: dict, now: int) -> list[dict]:
+        from kaiba.learning.allocation_runtime import load_context
+        allocated = load_context(self.state_dir, learning_root=self.learning_root, state=state,
+            now_ms=now, max_active_arms=self.max_candidates, max_stake_usd=self.max_stake_usd,
+            max_open_per_arm=self.max_open_per_arm, clock=self.clock)
+        if allocated is not None:
+            return allocated.manifests()
+        if self.admission_clock:
+            from kaiba.learning.autolearn_clock import bootstrap_clock_cohort
+            return bootstrap_clock_cohort(self, state, now)
+        from kaiba.learning.strategy_campaign import generate_campaign, source_versions
+        campaigns = [self._campaign_path(name) for name in state.get("campaign_files", [])]
+        manifests = [_load(path, None) for path in campaigns]
+        if any(not isinstance(m, Mapping) for m in manifests):
+            raise ValueError("invalid_frozen_campaign_packet")
+        if campaigns and any(m.get("source_versions") != source_versions() for m in manifests):
+            # A changed model starts a separate experiment. Automatic retirement is
+            # limited to never-filled books; any broker history needs integration.
+            receipts = []
+            for manifest in manifests:
+                for arm in manifest["hypotheses"]:
+                    book = self._paper().book_path(manifest["campaign_id"], arm["hypothesis_id"])
+                    if not book.exists():
+                        continue
+                    conn = sqlite3.connect(book.resolve().as_uri() + "?mode=ro", uri=True, timeout=.25)
+                    started = time.monotonic()
+                    conn.set_progress_handler(lambda start=started: int(time.monotonic() - start > 3), 1000)
+                    try:
+                        if any(conn.execute("SELECT 1 FROM " + table + " LIMIT 1").fetchone()
+                               for table in ("orders", "positions")):
+                            raise ValueError("changed_campaign_has_broker_history; preserve and integrate its book")
+                        receipts.append({"book": book.name, "orders": 0, "positions": 0})
+                    finally:
+                        conn.close()
+            retired = {"at_ms": now, "campaign_files": [p.name for p in campaigns],
+                       "reason": "source_changed_never_filled", "book_checks": receipts,
+                       "prior_assessment": state.get("assessment", {})}
+            atomic_json(self.state_dir / ("retired-" + str(now) + ".json"), retired)
+            state.setdefault("retired_campaigns", []).append(retired)
+            state["campaign_files"], state["assessment"] = [], {}
+            state["source_initialized"] = False
+            state["start_journalled"] = False
+            state.setdefault("pending_lessons", []).append({"evidence_id": "retired:" + _digest(retired), "lane": None,
+                "text": "Changed paper code starts a new frozen experiment; never-filled prior evidence is retained.",
+                "body": json.dumps({"type": "empty_campaign_retired", "at_ms": now,
+                    "campaign_files": retired["campaign_files"], "receipt": "retired-" + str(now) + ".json",
+                    "receipt_hash": _digest(retired), "funding_allowed": False})})
+            campaigns = []
+        if not campaigns:
+            manifest = generate_campaign([], self._ladder(), now_ms=now,
+                                         groups=self.groups, max_candidates=self.max_candidates)
+            path = self.state_dir / (manifest["campaign_id"] + ".json")
+            atomic_json(path, manifest)
+            state["campaign_files"] = [path.name]
+            state["selected_ms"] = now
+            state["decision_cursor"] = 0
+            campaigns = [path]
+            manifests = [manifest]
+        if sum(len(m["hypotheses"]) for m in manifests) > 18:
+            raise ValueError("global research capacity exceeded")
+        return manifests
+
+    def _discovery(self, reader: GuardedReader, state: dict, now: int) -> dict | None:
+        """Reuse the factory on a bounded settled window; freeze an additional campaign at most weekly."""
+        from kaiba.learning.allocation_runtime import load_context
+        allocated = load_context(self.state_dir, learning_root=self.learning_root, state=state,
+            now_ms=now, max_active_arms=self.max_candidates, max_stake_usd=self.max_stake_usd,
+            max_open_per_arm=self.max_open_per_arm, clock=self.clock)
+        if allocated is not None:
+            return {"status": "deferred", "reason": "allocation_generation_has_no_additional_leases",
+                    "generation": allocated.authority["generation"], "funding_allowed": False}
+        from kaiba.learning import autolearn_discovery as dc
+        from kaiba.learning import strategy_campaign as sc
+        work_path = self.state_dir / "discovery-work.json"
+        if not state.get("discovery_pending"):
+            if (state.get("discovery_version") == dc.VERSION
+                    and now - int(state.get("last_discovery_ms", 0)) < DAY_MS):
+                return None
+            # Retain the previous work and aggregate trial journal; registered learned
+            # campaigns additionally retain their exact selection sample below.
+            if work_path.is_file():
+                os.replace(work_path, self.state_dir / "previous-discovery-work.json")
+            state["discovery_pending"] = True
+            state["discovery_version"] = dc.VERSION
+        ladder = self._ladder()
+        collection = dc.collect(reader, work_path, groups=self.groups, ladder=ladder,
+                                now_ms=now, signal_cap=750, budget_seconds=20)
+        coverage = {k: v for k, v in collection.items() if k != "observations"}
+        if "wal_over_limit:" in str(collection.get("reason", "")):
+            raise SourceDeferred(str(collection["reason"]))
+        if collection.get("status") != "complete":
+            if collection.get("terminal"):
+                state["discovery_pending"] = False
+                state["last_discovery_ms"] = now
+                if collection.get("error") == "frozen_discovery_code_or_policy_changed":
+                    # Retain the invalidated work snapshot and journal its failure;
+                    # a new, separately frozen sample may start on the next idle tick.
+                    state["discovery_version"] = None
+                state["pending_lessons"].append({"evidence_id": "discovery-invalid:" + _digest(coverage),
+                    "lane": None, "text": "Invalidated historical research remains unproven; retain its evidence and freeze a separate sample.",
+                    "body": json.dumps({"type": "autolearn_discovery_invalidated", **coverage,
+                                        "funding_allowed": False})})
+            return coverage
+        state["discovery_pending"] = False
+        state["last_discovery_ms"] = now
+        obs = collection["observations"]
+        registered = sum(len(_load(self._campaign_path(name), {})["hypotheses"])
+                         for name in state["campaign_files"])
+        remaining = (self.max_candidates if self.admission_clock else 18) - registered
+        manifest = sc.generate_campaign(obs, ladder, now_ms=now, groups=self.groups,
+                                        max_candidates=max(1, remaining), trained_only=True)
+        discovery = {"status": "complete", "at_ms": now, "observations": len(obs),
+                     "tried": manifest["tried"], "holdout_survivors": manifest["holdout_survivors"],
+                     "funding_allowed": False, "collection": coverage, "candidate_manifest": manifest}
+        atomic_json(self.state_dir / "latest-discovery.json", discovery)
+        state["pending_lessons"].append({"evidence_id": "discovery:" + _digest(discovery), "lane": None,
+            "text": "Historical strategy search is experimental; only prospective complete paper cashflows can establish an edge.",
+            "body": json.dumps({"type": "autolearn_discovery", "at_ms": now, "data_hash": manifest["data_hash"],
+                                "roster_hash": coverage.get("roster_hash"), "observations": len(obs),
+                                "tried": manifest["tried"], "survivors": manifest["holdout_survivors"],
+                                "funding_allowed": False})})
+        # Explore fixed exits without constantly changing their sample. Trained candidates
+        # may start a second campaign; none is a live promotion or a claim of profit.
+        trained = [h for h in manifest["hypotheses"] if h["kind"] == "trained"]
+        if trained and remaining >= 2 and len(state["campaign_files"]) < 2 and now - state["selected_ms"] >= 7 * DAY_MS:
+            path = self.state_dir / (manifest["campaign_id"] + ".json")
+            atomic_json(path, manifest)
+            atomic_json(self.state_dir / (manifest["campaign_id"] + "-selection.json"), _load(work_path, {}))
+            state["campaign_files"].append(path.name)
+        return {k: v for k, v in discovery.items() if k != "candidate_manifest"}
+
+    def _lessons(self, manifest: Mapping[str, Any], result: Mapping[str, Any]) -> list[dict]:
+        specs = {h["hypothesis_id"]: h["spec"] for h in manifest["hypotheses"]}
+        lessons = []
+        for row in result.get("outcomes", []):
+            if row.get("cost_complete") is not True or row.get("inventory_complete") is not True:
+                continue
+            spec = specs[row["hypothesis_id"]]
+            text = (f"PAPER ONLY: {spec['lane']} {spec['chain']} exit {spec['exit']['name']}; "
+                    f"frozen experiment {row['hypothesis_id']}, never a live-profit claim.")
+            body = {k: row.get(k) for k in ("outcome_id", "campaign_id", "hypothesis_id", "spec_hash", "token",
+                    "chain", "signal_ms", "opened_ms", "closed_ms", "entry_debit_native", "exit_credit_native",
+                    "pnl_native", "entry_latency_ms", "exit_latencies_ms", "cost_model_assumed")}
+            lessons.append({"evidence_id": row["outcome_id"], "lane": row["lane"], "text": text,
+                            "body": json.dumps({"type": "prospective_paper_outcome", **body, "funding_allowed": False}),
+                            "outcome": "hit" if int(row["pnl_native"]) > 0 else "miss"})
+        return lessons
+
+    def _scheduled_reviews(self, reader: GuardedReader, state: dict, report: dict, now: int) -> None:
+        """Collect local research nominations and operating evidence after paper polling."""
+        from kaiba.learning.agent_review import build_review
+        from kaiba.learning.autolearn_review import collect_review
+        from kaiba.learning.autolearn_wallets import run_wallet_review
+        if now - int(state.get("last_wallet_review_ms", 0)) >= 15 * 60_000:
+            if "wallet_tape_upgrade" in state or os.path.lexists(self.state_dir / "wallet-observation-tape"):
+                from kaiba.learning.wallet_observation_io import run_review_with_tape
+                result = run_review_with_tape(run_wallet_review, reader, self.db_path.parent / "claude-runners",
+                    now, state.get("wallet_review_state"), store_dir=self.state_dir / "wallet-observation-tape",
+                    learning_root=self.state_dir, expected_genesis=state["wallet_tape_upgrade"]["genesis_sha256"],
+                    clock=self.clock)
+            else:
+                result = run_wallet_review(reader, self.db_path.parent / "claude-runners", now_ms=now,
+                                           prior_state=state.get("wallet_review_state"))
+            review = result["review"]
+            # Preserve the exact selected candidate evidence without duplicating the
+            # whole mutable vendor cache in each operating report.
+            selected = {(r["chain"], r["address"]) for r in review.get("observation_queue", [])}
+            review["candidates"] = [r for r in review.get("candidates", [])
+                                    if (r["chain"], r["address"]) in selected]
+            review["candidate_details_scope"] = "selected_observation_queue_only"
+            review["intake"] = result["intake"]
+            atomic_json(self.state_dir / "latest-wallet-review.json", review)
+            state["wallet_review_state"] = result["next_state"]
+            state["last_wallet_review_ms"] = now
+            report["wallet_review"] = {k: review.get(k) for k in
+                ("version", "observed_ms", "coverage", "queue_policy", "intake", "copy_qualified_count")}
+        if now - int(state.get("last_agent_review_ms", 0)) >= 60 * 60_000:
+            packet = collect_review(reader, self.state_dir, report, now_ms=now)
+            review = build_review(packet, now_ms=now)
+            atomic_json(self.state_dir / "latest-agent-review.json", review)
+            report["agent_review"] = {"at_ms": now, "paper_status": review["paper_learning"]["status"],
+                "operation_status": review["operational_health"]["status"],
+                "repair_codes": [a["code"] for a in review["repair_actions"]], "funding_allowed": False}
+            if packet.get("source_deferred"):
+                for section in packet.get("section_status", {}).values():
+                    if "wal_over_limit:" in str(section.get("reason", "")):
+                        raise SourceDeferred(section["reason"])
+                raise SourceDeferred("operating_review_source_deferred; unknown sections retained")
+            state["last_agent_review_ms"] = now
+            day = now // DAY_MS
+            if state.get("agent_review_journal_day") != day:
+                receipt = "agent-review-" + str(day) + ".json"
+                receipt_path = self.state_dir / receipt
+                if receipt_path.is_symlink():
+                    raise ValueError("daily_review_receipt_symlink")
+                if receipt_path.exists():
+                    journal_review = _load(receipt_path, {})
+                    if (not isinstance(journal_review, Mapping) or journal_review.get("funding_allowed") is not False
+                            or int(journal_review.get("at_ms", 0)) // DAY_MS != day
+                            or int(journal_review["at_ms"]) > now):
+                        raise ValueError("invalid_retained_daily_review")
+                else:
+                    atomic_json(receipt_path, review)
+                    journal_review = review
+                state["pending_lessons"].append({"evidence_id": "agent-review:" + str(day), "lane": None,
+                    "text": "Operating health is not profit; repair measured evidence gaps before changing trading rules.",
+                    "body": json.dumps({"type": "agent_operating_review", "at_ms": journal_review["at_ms"],
+                        "receipt": receipt, "receipt_hash": _digest(journal_review),
+                        "repair_codes": [a["code"] for a in journal_review["repair_actions"]],
+                        "ledger": [{k: r.get(k) for k in ("chain", "mode", "position_count", "mean_ledger_return_pct")}
+                                   for r in journal_review["ledger"]["by_chain_mode"]],
+                        "wallets": journal_review["wallet_review"].get("coverage", {}).get("unique_chain_addresses"),
+                        "paper_status": journal_review["paper_learning"]["status"],
+                        "funding_allowed": False})})
+                state["agent_review_journal_day"] = day
+
+    def once(self) -> dict:
+        now = int(self.clock() * 1000)
+        lock_path = self.state_dir / "worker.lock"
+        try:
+            fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except FileExistsError:
+            # A hard-killed worker releases no Python finally. Reclaim only a provably
+            # dead PID; a malformed/foreign lock remains a visible refusal.
+            existing = load_json(lock_path.read_text(), {})
+            try:
+                if not _pid_alive(int(existing["pid"])):
+                    lock_path.unlink()
+                    return self.once()
+            except (PermissionError, KeyError, ValueError):
+                pass
+            return {"status": "locked", "funding_allowed": False}
+        os.write(fd, json.dumps({"pid": os.getpid(), "started_ms": now}).encode())
+        os.close(fd)
+        try:
+            return self._once(now)
+        finally:
+            lock_path.unlink(missing_ok=True)
+
+    def _flush_lessons(self, state: dict, report: dict, *, now_ms: int, limit: int) -> int:
+        from kaiba.learning.economic_work import acknowledge_revisions
+        pending = {r["evidence_id"]: r for r in state["pending_lessons"]}
+        selected = list(pending)[:max(0, limit)]
+        if not selected:
+            return 0
+        if now_ms < int(state.get("journal_retry_after_ms", 0)):
+            report["journal_schedule"] = {"status": "deferred", "reason": "journal_retry_backoff"}
+            return 0
+        try:
+            receipt = persist_lessons(self.db_path, [pending[k] for k in selected])
+        except sqlite3.OperationalError as exc:
+            # The canonical writer can commit a prefix before contention. Keep
+            # every pending identity: its existing dedupe receipts make retries
+            # safe, and no economic outbox revision is acknowledged on failure.
+            state["journal_retry_after_ms"] = max(now_ms, int(self.clock() * 1000)) + 60_000
+            report["journal_schedule"] = {"status": "deferred", "reason": str(exc)}
+            return 0
+        state["journal_retry_after_ms"] = 0
+        report["journal_schedule"] = {"status": "complete"}
+        journal = report.setdefault("journal", {"added": [], "repeated": 0})
+        journal["added"].extend(receipt["added"])
+        journal["repeated"] += receipt["repeated"]
+        processed = set(selected)
+        acknowledged = acknowledge_revisions(self.state_dir / "economic-work.json", processed, now_ms=now_ms)
+        report["economic_revisions_acknowledged"] = report.get("economic_revisions_acknowledged", 0) + acknowledged
+        state["pending_lessons"] = [v for k, v in pending.items() if k not in processed]
+        return len(processed)
+
+    def _once(self, now: int) -> dict:
+        from kaiba.learning.economic_work import cached_work, capture_work
+        state = _load(self.state_path, {"version": VERSION, "assessment": {}, "pending_lessons": []})
+        allocation_latched = ("research_allocation" in state or "paper_service_upgrade" in state
+                              or os.path.lexists(self.state_dir / "research-allocation"))
+        allocation_validated = False
+        report: dict[str, Any] = {"version": VERSION, "at_ms": now, "status": "running", "mode": "shadow",
+                                  "funding_allowed": False, "campaigns": [], "new_opportunities": 0, "phases": []}
+        frontier_ms = now
+        def current_ms() -> int:
+            # Disk work can outlive both the quote lifetime and the entry window.
+            # Never backdate admission to the beginning of that work, or move a
+            # processing frontier backward after a wall-clock adjustment.
+            nonlocal frontier_ms
+            frontier_ms = max(frontier_ms, int(self.clock() * 1000))
+            return frontier_ms
+
+        def record_phase(receipt: dict) -> None:
+            report["phase_count"] = report.get("phase_count", 0) + 1
+            report["phases"] = [*report["phases"], receipt][-128:]
+            report["phases_scope"] = "latest128_receipts; phase_count includes all phases"
+
+        @contextmanager
+        def phase(name: str):
+            began, measured = current_ms(), time.monotonic()
+            outcome = {"status": "complete"}
+            try:
+                yield outcome
+            except Exception:
+                outcome["status"] = "failed"
+                raise
+            finally:
+                ended = current_ms()
+                record_phase({"name": name, "started_ms": began, "completed_ms": ended,
+                    "elapsed_ms": ended - began, "measured_elapsed_ms": round((time.monotonic() - measured) * 1000),
+                    "status": outcome["status"]})
+        reader = self.reader_factory(self.db_path)
+        source_readers = [reader]
+        service = None
+        errors, defer_maintenance = [], False
+        service_pause_ms = None
+
+        def service_snapshot() -> bool:
+            nonlocal service_pause_ms
+            if service is None:
+                return False
+            snapshot = service.snapshot()
+            report["paper_service"] = snapshot
+            failed = bool(snapshot["counts"]["failed"])
+            wal = bool(snapshot["counts"]["wal_refusals"] or snapshot["wal_quiet_clock_unknown"])
+            if failed or wal:
+                if service_pause_ms is None:
+                    service_pause_ms = current_ms()
+                state["retry_after_ms"] = max(int(state.get("retry_after_ms", 0)),
+                    service_pause_ms + 60_000, snapshot["quiet_until_wall_ms"])
+                report["paper_service"]["durable_retry_after_ms"] = state["retry_after_ms"]
+            return failed or wal
+
+        def safe_registry(operation: str, sql: str, args: tuple) -> bool:
+            # Exact frozen _packet registry statements only. Physical captures,
+            # horizon/preflight/swaps/economic queries never become checkpoints.
+            if operation != "rows" or not args or any(type(v) is not str for v in args):
+                return False
+            count = len(args) - 1
+            if 1 <= count <= 20:
+                marks = ",".join("?" * count)
+                queries = (
+                    f"SELECT * FROM wallets WHERE chain=? AND address IN ({marks})",
+                    f"SELECT chain,address,tag,source FROM wallet_feed_tags WHERE chain=? AND address IN ({marks}) LIMIT 2001",
+                    f"SELECT chain,address,entity_id FROM entity_members WHERE chain=? AND address IN ({marks})",
+                    f"SELECT chain,address FROM hub_addresses WHERE chain=? AND address IN ({marks})",
+                )
+                if sql in queries:
+                    return True
+            if len(args) % 2 or not 1 <= len(args) // 2 <= 20 or len(set(args[::2])) != 1:
+                return False
+            requested = ",".join("(?,?)" for _ in args[::2])
+            return sql == (f"WITH requested(chain,address) AS (VALUES {requested}) "
+                "SELECT h.chain,h.address,h.score,h.grade,h.scored_at_ms,h.model_version "
+                "FROM requested AS r JOIN wallet_score_history AS h ON h.id IN "
+                "(SELECT x.id FROM wallet_score_history AS x INDEXED BY idx_wsh "
+                "WHERE x.chain=r.chain AND x.address=r.address "
+                "ORDER BY x.scored_at_ms DESC,x.id DESC LIMIT 2)")
+
+        def new_paper_tick(tick_reader: GuardedReader, *, checkpoint: bool = False) -> dict:
+            nonlocal frontier_ms, errors, defer_maintenance
+            began, cursor = current_ms(), int(state.get("decision_cursor", 0))
+            campaigns = []
+            with phase("pending_expiry"):
+                report["local_expiry"] = [paper.expire_pending(m, now_ms=current_ms()) for m in manifests]
+            if current_ms() < int(state.get("retry_after_ms", 0)):
+                raise SourceDeferred("source_retry_backoff")
+            tick_reader.guard()
+            if not state.get("source_initialized"):
+                # MAX(rowid) walks backward to the freeze boundary. Starting at zero
+                # forces every poll to scan years of pre-campaign decisions by rowid.
+                boundary = tick_reader.q("SELECT COALESCE(MAX(rowid),0) FROM decisions WHERE ts_ms<=?",
+                                    (int(state["selected_ms"]),))
+                state["decision_cursor"] = max(int(state.get("decision_cursor", 0)), int(boundary[0][0]))
+                state["source_initialized"] = True
+            with phase("source_opportunities"):
+                source = read_opportunities(tick_reader, after_rowid=int(state.get("decision_cursor", 0)),
+                                            selected_ms=int(state["selected_ms"]), now_ms=current_ms(),
+                                            lanes=sorted({g[0] for g in self.groups}), chains=sorted({g[1] for g in self.groups}))
+            ops = source["opportunities"]
+            source_observed_ms = current_ms()
+            for opportunity in ops:
+                opportunity["source_observed_ms"] = source_observed_ms
+            report["source_observed_ms"] = source_observed_ms
+            storage = self._storage_bytes()
+            if storage >= 256 * 1024 * 1024:
+                source["skipped"].extend({"decision_id": o["decision_id"], "reason": "research_storage_budget"} for o in ops)
+                ops = []  # Existing pending inventory/exits still get quotes and polling.
+            report["research_storage"] = {"bytes": storage, "entry_budget_bytes": 256 * 1024 * 1024}
+            queues = []
+            with phase("watched_inventory"):
+                for manifest in manifests:
+                    queues.append(list(paper.watched_tokens(manifest, limit=64)))
+            watches: list[tuple[str, str]] = []
+            # Existing inventory first, fairly between books; new candidates use spare
+            # quote slots. A lexicographic chain prefix cannot starve later books.
+            while any(queues) and len(watches) < 96:
+                for queue in queues:
+                    if queue:
+                        token_key = queue.pop(0)
+                        if token_key not in watches:
+                            watches.append(token_key)
+            for opportunity in ops:
+                token_key = opportunity["chain"], opportunity["token"]
+                if token_key not in watches and len(watches) < 96:
+                    watches.append(token_key)
+            quotes = {}
+            with phase("captured_quotes"):
+                for chain, token in watches:
+                    q = quote_evidence(tick_reader, chain, token, now_ms=current_ms(), max_age_ms=60_000)
+                    quotes[f"{chain}:{token}"] = q
+            # Every arm uses the same USD stake, converted with its captured native price;
+            # the PaperBroker enforces the tip-inclusive $120 ceiling independently.
+            for opportunity in ops:
+                opportunity["paper_stake_usd"] = str(self.max_stake_usd)
+                q = quotes.get(f"{opportunity['chain']}:{opportunity['token']}")
+                if q and not q.get("unavailable_reason"):
+                    from kaiba.core.schemas import NATIVE_DECIMALS, Chain
+                    scale = Decimal(10) ** NATIVE_DECIMALS[Chain(opportunity["chain"])]
+                    opportunity["size_base_units"] = int(self.max_stake_usd / Decimal(q["native_usd"]) * scale)
+            errors = []
+            family_rows = {}
+            paper_began, paper_measured = current_ms(), time.monotonic()
+            for manifest in manifests:
+                result = paper.run_candidates(manifest, ops, quotes, now_ms=current_ms())
+                frontier_ms = max(frontier_ms, int(result.get("processing_frontier_ms", frontier_ms)))
+                rows = result.get("assessment_rows", result["outcomes"])
+                if allocated is None:
+                    assessment = self._assess(manifest, rows, now_ms=current_ms(),
+                                                 prior_state=state["assessment"].get(manifest["campaign_id"]))
+                    state["assessment"][manifest["campaign_id"]] = assessment["next_state"]
+                else:
+                    family_rows[manifest["campaign_id"]] = rows
+                    assessment = {}
+                pending = {lesson["evidence_id"]: lesson for lesson in state["pending_lessons"]}
+                for lesson in self._lessons(manifest, result):
+                    previous = pending.get(lesson["evidence_id"])
+                    if previous is not None and previous != lesson:
+                        raise ValueError("paper_lesson_identity_conflict")
+                    if previous is None:
+                        state["pending_lessons"].append(lesson)
+                        pending[lesson["evidence_id"]] = lesson
+                campaigns.append({"campaign_id": manifest["campaign_id"], "paper": result,
+                                             "assessment": {k: v for k, v in assessment.items() if k != "next_state"}})
+                errors.extend(result.get("errors", []))
+            if allocated is not None:
+                family = allocated.assess(family_rows, now_ms=current_ms(), prior_state=state.get("allocation_family_assessment"))
+                state["allocation_family_assessment"] = family["next_state"]
+                for campaign in campaigns:
+                    cid = campaign["campaign_id"]
+                    original = family["assessments"][cid]
+                    state["assessment"][cid] = original["next_state"]
+                    local = {k: v for k, v in original.items() if k != "next_state"}
+                    campaign["local_assessment"] = local
+                    joint = {a["hypothesis_id"]: a for a in family["arms"] if a["campaign_id"] == cid}
+                    campaign["assessment"] = {**local, "authority": "joint_lifetime_family",
+                        "arms": [{**a, **joint[a["hypothesis_id"]]} for a in local["arms"]],
+                        "status": "PAPER_EVIDENCE_READY" if any(a["status"] == "PAPER_EVIDENCE_READY" for a in joint.values()) else "UNPROVEN"}
+                report["allocation_assessment"] = {k: v for k, v in family.items() if k not in ("next_state", "assessments")}
+            report["campaigns"] = campaigns
+            paper_ended = current_ms()
+            record_phase({"name": "paper_poll", "started_ms": paper_began,
+                "completed_ms": paper_ended, "elapsed_ms": paper_ended - paper_began,
+                "measured_elapsed_ms": round((time.monotonic() - paper_measured) * 1000),
+                "status": "partial" if errors else "complete"})
+            if not errors:
+                state["decision_cursor"] = source["next_rowid"]
+            report["new_opportunities"] += len(ops)
+            report.setdefault("source_skips", []).extend(source["skipped"])
+            report.update({"paper_errors": errors,
+                           "captured_quote_count": sum(not q.get("unavailable_reason") for q in quotes.values()),
+                           "quote_diagnostics": list(quotes.values()), "candidate_population": "incumbent_decisions_only"})
+            pending_entries = any(row.get("status") == "pending"
+                for c in report["campaigns"] for row in c["paper"].get("assessment_rows", []))
+            if pending_entries:
+                state.setdefault("maintenance_deferred_since_ms", current_ms())
+            else:
+                state.pop("maintenance_deferred_since_ms", None)
+            defer_maintenance = pending_entries and current_ms() - state["maintenance_deferred_since_ms"] < 120_000
+            report["maintenance"] = {"pending_entries": pending_entries, "deferred_for_pending": defer_maintenance,
+                "deferred_since_ms": state.get("maintenance_deferred_since_ms"), "maximum_deferral_ms": 120_000}
+            ended = current_ms()
+            report["paper_tick_count"] = report.get("paper_tick_count", 0) + 1
+            ticks = report.setdefault("paper_ticks", [])
+            ticks.append({"index": report["paper_tick_count"], "started_ms": began, "completed_ms": ended,
+                "source_observed_ms": source_observed_ms, "source_rows": source["source_rows"],
+                "new_opportunities": len(ops), "cursor_before": cursor,
+                "cursor_after": int(state.get("decision_cursor", 0)), "status": "partial" if errors else "complete"})
+            report["paper_ticks"] = ticks[-32:]
+            report["paper_ticks_scope"] = "latest32_receipts; new_opportunities is whole-cycle total"
+            state["last_paper_attempt_ms"] = ended
+            if not errors:
+                state["last_paper_service_ms"] = ended
+            if checkpoint:
+                pending = {}
+                for lesson in state["pending_lessons"]:
+                    previous = pending.get(lesson["evidence_id"])
+                    if previous is not None and previous != lesson:
+                        raise ValueError("pending_lesson_identity_conflict")
+                    pending.setdefault(lesson["evidence_id"], lesson)
+                state["pending_lessons"] = list(pending.values())
+                state["last_attempt_ms"] = now
+                atomic_json(self.state_path, state)
+            return {"status": "partial" if errors else "complete"}
+
+        def service_paper() -> dict:
+            tick_reader = reader if not report.get("paper_tick_count") else self.reader_factory(self.db_path)
+            if not any(tick_reader is previous for previous in source_readers):
+                source_readers.append(tick_reader)
+            return new_paper_tick(tick_reader, checkpoint=True)
+        try:
+            with phase("campaign_setup"):
+                from kaiba.learning.allocation_runtime import load_context
+                allocated = load_context(self.state_dir, learning_root=self.learning_root, state=state,
+                    now_ms=current_ms(), max_active_arms=self.max_candidates, max_stake_usd=self.max_stake_usd,
+                    max_open_per_arm=self.max_open_per_arm, clock=self.clock)
+                allocation_validated = allocated is not None
+                manifests = allocated.manifests() if allocated is not None else self._bootstrap(state, now)
+            state["version"] = VERSION
+            paper = allocated.runner() if allocated is not None else self._paper()
+            if (allocated is not None and getattr(allocated, "service_upgrade", None)
+                    and current_ms() >= int(state.get("retry_after_ms", 0))):
+                from kaiba.learning.cooperative_reader import CooperativeReader, PaperService
+                service = PaperService(service_paper, monotonic_clock=time.monotonic, wall_clock=self.clock)
+
+                def persist_service_pause() -> None:
+                    if service_snapshot():
+                        atomic_json(self.state_path, state)
+
+                class ReviewReader(CooperativeReader):
+                    def _read(self, operation, sql, args):
+                        try:
+                            return super()._read(operation, sql, args)
+                        except BaseException:
+                            # Optional review consumers may swallow a source refusal.
+                            # Persist its pause before control returns to that consumer.
+                            persist_service_pause()
+                            raise
+
+                    def guard(self):
+                        try:
+                            return super().guard()
+                        except BaseException:
+                            persist_service_pause()
+                            raise
+
+                service.checkpoint("initial_paper_poll")
+            else:
+                new_paper_tick(reader)
+            if service is not None:
+                service.checkpoint("before_economic_capture", guard=reader.guard)
+            economic_path = self.state_dir / "economic-work.json"
+            capture_reason = ("paper_entries_need_poll" if defer_maintenance else
+                "economic_retry_backoff" if current_ms() < int(state.get("economic_retry_after_ms", 0)) else
+                "economic_interval_not_due" if current_ms() - int(state.get("last_economic_capture_ms", 0)) < 60_000 else None)
+            with phase("economic_capture") as economic_phase:
+                if capture_reason:
+                    economic_work = cached_work(economic_path, now_ms=current_ms(), reason=capture_reason)
+                else:
+                    try:
+                        economic_work = capture_work(reader, economic_path, now_ms=current_ms())
+                    except (SourceDeferred, sqlite3.OperationalError) as exc:
+                        if "wal_over_limit:" in str(exc):
+                            raise  # WAL pressure always pauses every source read for >=60s.
+                        # This optional evidence lookup cannot disable the next
+                        # paper quote poll. Every future source read still checks
+                        # the WAL and its own short query deadline.
+                        state["economic_retry_after_ms"] = current_ms() + 60_000
+                        economic_work = cached_work(economic_path, now_ms=current_ms(), reason=str(exc))
+                        economic_work["capture"]["status"] = "deferred"
+                    else:
+                        state["last_economic_capture_ms"] = current_ms()
+                        state["economic_retry_after_ms"] = 0
+                economic_phase["status"] = economic_work["capture"].get("status", "complete")
+            economic = economic_work["economic"]
+            report["economic_coverage"] = {k: v for k, v in economic.items() if k != "outcomes"}
+            report["economic_capture"] = economic_work["capture"]
+            atomic_json(self.state_dir / "latest-economic-outcomes.json", economic)
+            for revision in economic_work["capture"]["revisions"]:
+                row = next((r for r in economic["outcomes"] if r["position_id"] == revision["position_id"]), None)
+                state["pending_lessons"].append({
+                    "evidence_id": "economic-revision:" + _digest(revision), "lane": revision.get("lane"),
+                    "text": "Revisited real-money evidence changed; unresolved custody and cashflows remain unproven.",
+                    "body": json.dumps({"type": "economic_evidence_revision", "at_ms": current_ms(),
+                        **revision, "unknown_reasons": row["unknown_reasons"][:12] if row else ["current_episode_unavailable"],
+                        "funding_allowed": False})})
+            if service is not None:
+                service.checkpoint("after_economic_capture", guard=reader.guard)
+            start_evidence_id = "start:" + manifests[0]["campaign_id"]
+            if not state.get("start_journalled"):
+                state["pending_lessons"].append({"evidence_id": start_evidence_id,
+                    "text": "Autonomous paper research is experimental; only fresh complete evidence can advance a strategy.",
+                    "body": json.dumps({"type": "autolearn_started", "campaign_id": manifests[0]["campaign_id"],
+                                        "hypotheses": len(manifests[0]["hypotheses"]), "funding_allowed": False}), "lane": None})
+            # Durable economic receipts drain before optional review reads. A cold
+            # registry lookup must not prevent their journal acknowledgment forever.
+            flushed = self._flush_lessons(state, report, now_ms=current_ms(), limit=40)
+            state["start_journalled"] = not any(r["evidence_id"] == start_evidence_id for r in state["pending_lessons"])
+            with phase("wallet_and_operating_reviews") as review_phase:
+                if defer_maintenance:
+                    report["review_schedule"] = {"status": "deferred", "reason": "paper_entries_need_poll"}
+                elif current_ms() < int(state.get("review_retry_after_ms", 0)):
+                    report["review_schedule"] = {"status": "deferred", "reason": "review_retry_backoff"}
+                else:
+                    try:
+                        review_reader = (ReviewReader(reader, service, safe_predicate=safe_registry)
+                                         if service is not None else reader)
+                        try:
+                            self._scheduled_reviews(review_reader, state, report, current_ms())
+                        finally:
+                            service_snapshot()
+                        if service_snapshot():
+                            snapshot = report["paper_service"]
+                            reason = ("wal_over_limit:cooperative_review" if snapshot["counts"]["wal_refusals"]
+                                      or snapshot["wal_quiet_clock_unknown"] else "paper_service_failed")
+                            raise SourceDeferred(reason)
+                        if service is not None:
+                            service.checkpoint("after_scheduled_reviews", guard=reader.guard)
+                    except (SourceDeferred, sqlite3.OperationalError) as exc:
+                        failed_service = service_snapshot()
+                        if "wal_over_limit:" in str(exc) or failed_service:
+                            raise
+                        state["review_retry_after_ms"] = current_ms() + 60_000
+                        report["review_schedule"] = {"status": "deferred", "reason": str(exc)}
+                    else:
+                        state["review_retry_after_ms"] = 0
+                        state.pop("maintenance_deferred_since_ms", None)
+                        report["review_schedule"] = {"status": "complete"}
+                review_phase["status"] = report["review_schedule"]["status"]
+            self._flush_lessons(state, report, now_ms=current_ms(), limit=40 - flushed)
+            report.setdefault("journal", {"added": [], "repeated": 0})
+            try:
+                busy = any(row.get("status") in ("pending", "open")
+                           for c in report["campaigns"] for row in c["paper"].get("assessment_rows", []))
+                if busy:
+                    report["discovery"] = {"status": "deferred", "reason": "prospective_inventory_needs_poll"}
+                elif allocated is not None:
+                    allocated._revalidate_bindings(now_ms=current_ms())
+                    report["discovery"] = {"status": "deferred", "reason": "allocation_generation_has_no_additional_leases",
+                        "generation": allocated.authority["generation"], "funding_allowed": False}
+                else:
+                    report["discovery"] = self._discovery(reader, state, current_ms())
+            except (SourceDeferred, sqlite3.OperationalError) as exc:
+                if "wal_over_limit:" in str(exc):
+                    raise
+                report["discovery"] = {"status": "deferred", "reason": str(exc)}
+            if not service_snapshot():
+                state["retry_after_ms"] = 0
+            incomplete = (errors or economic_work["capture"]["selection_deferred"]
+                          or economic_work["capture"].get("status") == "deferred"
+                          or report.get("journal_schedule", {}).get("status") == "deferred")
+            report["status"] = "partial" if incomplete else "complete"
+        except (SourceDeferred, sqlite3.OperationalError) as exc:
+            report["status"], report["deferred"] = "deferred", str(exc)
+            if str(exc) != "source_retry_backoff" and not service_snapshot():
+                state["retry_after_ms"] = current_ms() + 60_000
+        except (ValueError, KeyError, TypeError) as exc:
+            report["status"], report["error"] = "partial", "research_input_invalid:" + type(exc).__name__
+            report["input_error"] = str(exc)[:240]
+        finally:
+            if self.admission_clock:
+                report["clock_upgrade"] = state.get("clock_upgrade", {"status": "unavailable"})
+            report["completed_ms"] = current_ms()
+            report["elapsed_ms"] = report["completed_ms"] - now
+            service_snapshot()
+            report["source_queries"] = {"count": sum(r.queries for r in source_readers),
+                "wal_waits": sum(r.wal_waits for r in source_readers),
+                "maximum_s": max((x["duration_s"] for r in source_readers for x in r.receipts), default=0)}
+            state["last_attempt_ms"] = now
+            if not allocation_latched or allocation_validated:
+                atomic_json(self.state_path, state)
+            atomic_json(self.state_dir / "latest-report.json", report)
+            (self.state_dir / "latest-report.md").write_text(_summary_markdown(report), encoding="utf-8")
+        return report
+
+
+def main(argv: list[str] | None = None) -> int:
+    from kaiba.learning.process_reader import ProcessReader
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--once", action="store_true", help="run one bounded learning cycle")
+    parser.add_argument("--db", type=Path)
+    parser.add_argument("--state-dir", type=Path)
+    parser.add_argument("--max-candidates", type=int, default=12)
+    parser.add_argument("--paper-stake-usd", default="30")
+    parser.add_argument("--admission-clock", action="store_true",
+                        help="drain legacy books, then use a separately frozen admission-clock cohort")
+    args = parser.parse_args(argv)
+    from kaiba.core.config import get_settings
+    settings = get_settings()
+    learner = AutoLearner(args.db or settings.db_path,
+                          args.state_dir or settings.kaiba_data_dir / "learning" / "autolearn",
+                          max_candidates=args.max_candidates, max_stake_usd=args.paper_stake_usd,
+                          admission_clock=args.admission_clock, reader_factory=ProcessReader)
+    try:
+        report = learner.once()
+    finally:
+        ProcessReader.shutdown_all()
+    print(json.dumps({k: report.get(k) for k in ("status", "at_ms", "new_opportunities", "captured_quote_count",
+                                              "deferred", "source_queries", "funding_allowed")}))
+    return 0 if report["status"] in ("complete", "deferred", "locked") else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

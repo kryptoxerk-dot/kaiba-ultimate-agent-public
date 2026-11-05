@@ -1,0 +1,24 @@
+{
+  "_note": "A Pons launch on Robinhood Chain 4663, 11 minutes old, $12k of depth, four distinct buyers. EVM addresses are lowercase per CONTRACT.",
+  "chain": "robinhood",
+  "token": "0x9f8c2e1b7a5d4c3b2a1908f7e6d5c4b3a2918070",
+  "wallets": [
+    {"address": "0xaa11111111111111111111111111111111111111", "cohort": "tracked", "tags": []},
+    {"address": "0xbb22222222222222222222222222222222222222", "cohort": "tracked", "tags": []},
+    {"address": "0xcc33333333333333333333333333333333333333", "cohort": "tracked", "tags": []},
+    {"address": "0xdd44444444444444444444444444444444444444", "cohort": "tracked", "tags": []}
+  ],
+  "buys": [
+    {"wallet": "0xaa11111111111111111111111111111111111111", "side": "buy", "age_s": 500, "usd_value": "180", "amount_native": 45000000000000000, "price_usd": "0.004", "tx": "0xtx1"},
+    {"wallet": "0xbb22222222222222222222222222222222222222", "side": "buy", "age_s": 380, "usd_value": "240", "amount_native": 60000000000000000, "price_usd": "0.0042", "tx": "0xtx2"},
+    {"wallet": "0xcc33333333333333333333333333333333333333", "side": "buy", "age_s": 220, "usd_value": "95", "amount_native": 23000000000000000, "price_usd": "0.0045", "tx": "0xtx3"},
+    {"wallet": "0xdd44444444444444444444444444444444444444", "side": "buy", "age_s": 60, "usd_value": "310", "amount_native": 77000000000000000, "price_usd": "0.0047", "tx": "0xtx4"}
+  ],
+  "dossier": {
+    "built_age_s": 7,
+    "grade": "B",
+    "price_usd": "0.0047",
+    "liquidity_usd": "12000"
+  },
+  "token_meta": {"symbol": "PONS", "decimals": 18, "created_age_s": 660, "launchpad": "pons"}
+}

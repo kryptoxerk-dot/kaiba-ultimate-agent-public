@@ -1,0 +1,14 @@
+[Unit]
+# One handle for the whole agent: `systemctl stop kaiba.target` stops every long-running
+# service at once, and `systemctl start kaiba.target` brings them back in dependency
+# order. The timers are deliberately NOT part of this target — reconciliation must keep
+# running while the trading services are down, because that is exactly when order state
+# drifts.
+Description=Kaiba Ultimate Agent (all long-running services)
+Documentation=file:///opt/kaiba/current/docs/runbooks/deploy.md
+Wants=kaiba-signer.service kaiba-mcp.service kaiba-ingest.service kaiba-ops.service kaiba-scan.service kaiba-engine.service
+Wants=kaiba-protection.service kaiba-dashboard.service kaiba-hermes.service
+After=network-online.target
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,46 @@
+{
+  "note": "Hand-built, NOT a live capture, in the LIVE /insiders/graph shape (net_id, network_type, relatedMint, nodes[].{id, participant, holdings}, links), which tests/fixtures/rugcheck/live/ pins from real bodies. Rewritten 2026-10-21: the earlier version used size/tokenAmount, the keys of the REPORT's insiderNetworks rows, which /insiders/graph never sends, so it tested a parser against a shape no live response has. Two networks hold 350,000,000,000,000 of a 1,000,000,000,000,000 raw supply = 25% + 10% = 35%, which crosses the operator's 30% reject line. The single-wallet network must be ignored: a cluster of one is just a holder.",
+  "body": [
+    {
+      "net_id": "net-a",
+      "network_type": "transfer",
+      "relatedMint": null,
+      "nodes": [
+        {"id": "In1111111111111111111111111111111111111111", "participant": true, "holdings": 100000000000000},
+        {"id": "In2222222222222222222222222222222222222222", "participant": true, "holdings": 60000000000000},
+        {"id": "In3333333333333333333333333333333333333333", "participant": true, "holdings": 40000000000000},
+        {"id": "In4444444444444444444444444444444444444444", "participant": true, "holdings": 30000000000000},
+        {"id": "In5555555555555555555555555555555555555555", "participant": true, "holdings": 20000000000000}
+      ],
+      "links": [
+        {"source": "In1111111111111111111111111111111111111111", "target": "In2222222222222222222222222222222222222222"},
+        {"source": "In1111111111111111111111111111111111111111", "target": "In3333333333333333333333333333333333333333"},
+        {"source": "In1111111111111111111111111111111111111111", "target": "In4444444444444444444444444444444444444444"},
+        {"source": "In1111111111111111111111111111111111111111", "target": "In5555555555555555555555555555555555555555"}
+      ]
+    },
+    {
+      "net_id": "net-b",
+      "network_type": "transfer",
+      "relatedMint": null,
+      "nodes": [
+        {"id": "In6666666666666666666666666666666666666666", "participant": true, "holdings": 50000000000000},
+        {"id": "In7777777777777777777777777777777777777777", "participant": true, "holdings": 30000000000000},
+        {"id": "In8888888888888888888888888888888888888888", "participant": true, "holdings": 20000000000000}
+      ],
+      "links": [
+        {"source": "In6666666666666666666666666666666666666666", "target": "In7777777777777777777777777777777777777777"},
+        {"source": "In6666666666666666666666666666666666666666", "target": "In8888888888888888888888888888888888888888"}
+      ]
+    },
+    {
+      "net_id": "net-solo",
+      "network_type": "transfer",
+      "relatedMint": null,
+      "nodes": [
+        {"id": "So1o11111111111111111111111111111111111111", "participant": true, "holdings": 90000000000000}
+      ],
+      "links": []
+    }
+  ]
+}

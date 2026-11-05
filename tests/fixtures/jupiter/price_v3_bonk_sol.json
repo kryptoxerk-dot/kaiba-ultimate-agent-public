@@ -1,0 +1,18 @@
+{
+  "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263": {
+    "createdAt": "2024-06-07T10:26:40.709Z",
+    "liquidity": 1366135.9113007244,
+    "usdPrice": 2.980660175420679e-06,
+    "blockId": 448697837,
+    "decimals": 5,
+    "priceChange24h": -0.2724856533961879
+  },
+  "So11111111111111111111111111111111111111112": {
+    "createdAt": "2024-06-05T08:55:25.527Z",
+    "liquidity": 888695946.2432884,
+    "usdPrice": 108.24244619891185,
+    "blockId": 448697877,
+    "decimals": 9,
+    "priceChange24h": -3.2494737174572
+  }
+}

@@ -1,0 +1,25 @@
+[Unit]
+Description=Kaiba H5 slower-wallet re-entry: forward PAPER evaluator (read-only tape, on-chain prices at RESEARCH priority, no orders)
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/kaiba
+Environment=PYTHONUNBUFFERED=1
+Environment=KAIBA_DATA_DIR=%h/kaiba/data
+Environment=KAIBA_CONFIG_DIR=%h/kaiba/config
+Environment=KAIBA_DB_PATH=%h/kaiba/data/kaiba.db
+# The SOL RPC endpoint the price readers use comes from the same file every kaiba service reads.
+EnvironmentFile=-%h/.config/kaiba/.env
+ExecStart=/usr/bin/nice -n 19 /usr/bin/ionice -c3 %h/kaiba/.venv/bin/python -m kaiba.learning.h5_reentry run
+Restart=on-failure
+RestartSec=60
+MemoryMax=256M
+Nice=19
+IOSchedulingClass=idle
+NoNewPrivileges=true
+PrivateTmp=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=default.target

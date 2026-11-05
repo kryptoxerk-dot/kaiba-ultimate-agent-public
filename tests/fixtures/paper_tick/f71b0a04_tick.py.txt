@@ -1,0 +1,158 @@
+# Exact predecessor nested PAPER tick; Codex AUTOLEARN-BUDGET, 2026-10-18.
+# Source: kaiba/learning/autolearn.py:573-725
+# Full worker SHA256 (LF): f71b0a04b19bfb08798d7adde4f068556ecb30c7f0d1d62fc24627821583abce
+# Function AST SHA256 (ast.dump, include_attributes=False): ebfc71bc419f6a501b7ec39a16bdfa56c59df8dc4974796ecf75425c9fa0f598
+# Body below is dedented only; original comments, statements and calls retained.
+def new_paper_tick(tick_reader: GuardedReader, *, checkpoint: bool = False) -> dict:
+    nonlocal frontier_ms, errors, defer_maintenance
+    # Approvals belong to current owned-book results, never a previous tick's IDs.
+    qualified_lessons_by_campaign.clear()
+    began, cursor = current_ms(), int(state.get("decision_cursor", 0))
+    campaigns = []
+    with phase("pending_expiry"):
+        report["local_expiry"] = [paper.expire_pending(m, now_ms=current_ms()) for m in manifests]
+    if current_ms() < int(state.get("retry_after_ms", 0)):
+        raise SourceDeferred("source_retry_backoff")
+    tick_reader.guard()
+    if not state.get("source_initialized"):
+        # MAX(rowid) walks backward to the freeze boundary. Starting at zero
+        # forces every poll to scan years of pre-campaign decisions by rowid.
+        boundary = tick_reader.q("SELECT COALESCE(MAX(rowid),0) FROM decisions WHERE ts_ms<=?",
+                            (int(state["selected_ms"]),))
+        state["decision_cursor"] = max(int(state.get("decision_cursor", 0)), int(boundary[0][0]))
+        state["source_initialized"] = True
+    with phase("source_opportunities"):
+        source = read_opportunities(tick_reader, after_rowid=int(state.get("decision_cursor", 0)),
+                                    selected_ms=int(state["selected_ms"]), now_ms=current_ms(),
+                                    lanes=sorted({g[0] for g in self.groups}), chains=sorted({g[1] for g in self.groups}))
+    ops = source["opportunities"]
+    source_observed_ms = current_ms()
+    for opportunity in ops:
+        opportunity["source_observed_ms"] = source_observed_ms
+    report["source_observed_ms"] = source_observed_ms
+    storage = self._storage_bytes()
+    if storage >= 256 * 1024 * 1024:
+        source["skipped"].extend({"decision_id": o["decision_id"], "reason": "research_storage_budget"} for o in ops)
+        ops = []  # Existing pending inventory/exits still get quotes and polling.
+    report["research_storage"] = {"bytes": storage, "entry_budget_bytes": 256 * 1024 * 1024}
+    queues = []
+    with phase("watched_inventory"):
+        for manifest in manifests:
+            queues.append(list(paper.watched_tokens(manifest, limit=64)))
+    watches: list[tuple[str, str]] = []
+    # Existing inventory first, fairly between books; new candidates use spare
+    # quote slots. A lexicographic chain prefix cannot starve later books.
+    while any(queues) and len(watches) < 96:
+        for queue in queues:
+            if queue:
+                token_key = queue.pop(0)
+                if token_key not in watches:
+                    watches.append(token_key)
+    for opportunity in ops:
+        token_key = opportunity["chain"], opportunity["token"]
+        if token_key not in watches and len(watches) < 96:
+            watches.append(token_key)
+    quotes = {}
+    with phase("captured_quotes"):
+        quote_source = quote_evidence
+        if allocated is not None and getattr(allocated, "tax_quote_upgrade", None) is not None:
+            from kaiba.learning.tax_quote import quote_evidence as quote_source
+        for chain, token in watches:
+            q = quote_source(tick_reader, chain, token, now_ms=current_ms(), max_age_ms=60_000)
+            quotes[f"{chain}:{token}"] = q
+    # Every arm uses the same USD stake, converted with its captured native price;
+    # the PaperBroker enforces the tip-inclusive $120 ceiling independently.
+    for opportunity in ops:
+        opportunity["paper_stake_usd"] = str(self.max_stake_usd)
+        q = quotes.get(f"{opportunity['chain']}:{opportunity['token']}")
+        if q and not q.get("unavailable_reason"):
+            from kaiba.core.schemas import NATIVE_DECIMALS, Chain
+            scale = Decimal(10) ** NATIVE_DECIMALS[Chain(opportunity["chain"])]
+            opportunity["size_base_units"] = int(self.max_stake_usd / Decimal(q["native_usd"]) * scale)
+    errors = []
+    family_rows = {}
+    paper_began, paper_measured = current_ms(), time.monotonic()
+    for manifest in manifests:
+        result = paper.run_candidates(manifest, ops, quotes, now_ms=current_ms())
+        frontier_ms = max(frontier_ms, int(result.get("processing_frontier_ms", frontier_ms)))
+        rows = result.get("assessment_rows", result["outcomes"])
+        if allocated is None:
+            assessment = self._assess(manifest, rows, now_ms=current_ms(),
+                                         prior_state=state["assessment"].get(manifest["campaign_id"]))
+            state["assessment"][manifest["campaign_id"]] = assessment["next_state"]
+        else:
+            family_rows[manifest["campaign_id"]] = rows
+            assessment = {}
+        pending = {lesson["evidence_id"]: lesson for lesson in state["pending_lessons"]}
+        current_lessons = self._lessons(manifest, result)
+        qualified_lessons_by_campaign[manifest["campaign_id"]] = {}
+        for lesson in current_lessons:
+            previous = pending.get(lesson["evidence_id"])
+            if previous is not None and previous != lesson:
+                raise ValueError("paper_lesson_identity_conflict")
+            qualified_lessons_by_campaign[manifest["campaign_id"]][lesson["evidence_id"]] = lesson
+            if previous is None:
+                state["pending_lessons"].append(lesson)
+                pending[lesson["evidence_id"]] = lesson
+        campaigns.append({"campaign_id": manifest["campaign_id"], "paper": result,
+                                     "assessment": {k: v for k, v in assessment.items() if k != "next_state"}})
+        errors.extend(result.get("errors", []))
+    if allocated is not None:
+        family = allocated.assess(family_rows, now_ms=current_ms(), prior_state=state.get("allocation_family_assessment"))
+        state["allocation_family_assessment"] = family["next_state"]
+        for campaign in campaigns:
+            cid = campaign["campaign_id"]
+            original = family["assessments"][cid]
+            state["assessment"][cid] = original["next_state"]
+            local = {k: v for k, v in original.items() if k != "next_state"}
+            campaign["local_assessment"] = local
+            joint = {a["hypothesis_id"]: a for a in family["arms"] if a["campaign_id"] == cid}
+            campaign["assessment"] = {**local, "authority": "joint_lifetime_family",
+                "arms": [{**a, **joint[a["hypothesis_id"]]} for a in local["arms"]],
+                "status": "PAPER_EVIDENCE_READY" if any(a["status"] == "PAPER_EVIDENCE_READY" for a in joint.values()) else "UNPROVEN"}
+        report["allocation_assessment"] = {k: v for k, v in family.items() if k not in ("next_state", "assessments")}
+    report["campaigns"] = campaigns
+    paper_ended = current_ms()
+    record_phase({"name": "paper_poll", "started_ms": paper_began,
+        "completed_ms": paper_ended, "elapsed_ms": paper_ended - paper_began,
+        "measured_elapsed_ms": round((time.monotonic() - paper_measured) * 1000),
+        "status": "partial" if errors else "complete"})
+    if not errors:
+        state["decision_cursor"] = source["next_rowid"]
+    report["new_opportunities"] += len(ops)
+    report.setdefault("source_skips", []).extend(source["skipped"])
+    report.update({"paper_errors": errors,
+                   "captured_quote_count": sum(not q.get("unavailable_reason") for q in quotes.values()),
+                   "quote_diagnostics": list(quotes.values()), "candidate_population": "incumbent_decisions_only"})
+    pending_entries = any(row.get("status") == "pending"
+        for c in report["campaigns"] for row in c["paper"].get("assessment_rows", []))
+    if pending_entries:
+        state.setdefault("maintenance_deferred_since_ms", current_ms())
+    else:
+        state.pop("maintenance_deferred_since_ms", None)
+    defer_maintenance = pending_entries and current_ms() - state["maintenance_deferred_since_ms"] < 120_000
+    report["maintenance"] = {"pending_entries": pending_entries, "deferred_for_pending": defer_maintenance,
+        "deferred_since_ms": state.get("maintenance_deferred_since_ms"), "maximum_deferral_ms": 120_000}
+    ended = current_ms()
+    report["paper_tick_count"] = report.get("paper_tick_count", 0) + 1
+    ticks = report.setdefault("paper_ticks", [])
+    ticks.append({"index": report["paper_tick_count"], "started_ms": began, "completed_ms": ended,
+        "source_observed_ms": source_observed_ms, "source_rows": source["source_rows"],
+        "new_opportunities": len(ops), "cursor_before": cursor,
+        "cursor_after": int(state.get("decision_cursor", 0)), "status": "partial" if errors else "complete"})
+    report["paper_ticks"] = ticks[-32:]
+    report["paper_ticks_scope"] = "latest32_receipts; new_opportunities is whole-cycle total"
+    state["last_paper_attempt_ms"] = ended
+    if not errors:
+        state["last_paper_service_ms"] = ended
+    if checkpoint:
+        pending = {}
+        for lesson in state["pending_lessons"]:
+            previous = pending.get(lesson["evidence_id"])
+            if previous is not None and previous != lesson:
+                raise ValueError("pending_lesson_identity_conflict")
+            pending.setdefault(lesson["evidence_id"], lesson)
+        state["pending_lessons"] = list(pending.values())
+        state["last_attempt_ms"] = now
+        atomic_json(self.state_path, state)
+    return {"status": "partial" if errors else "complete"}

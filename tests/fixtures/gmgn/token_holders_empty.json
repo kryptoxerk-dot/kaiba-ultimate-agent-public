@@ -1,0 +1,15 @@
+{
+  "args": [
+    "token",
+    "holders",
+    "--chain",
+    "sol",
+    "--address",
+    "So11111111111111111111111111111111111111112",
+    "--limit",
+    "5"
+  ],
+  "returncode": 0,
+  "stdout": "{\"list\":[]}\n",
+  "stderr": ""
+}

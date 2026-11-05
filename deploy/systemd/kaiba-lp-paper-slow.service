@@ -1,0 +1,23 @@
+[Unit]
+Description=Kaiba DLMM LP bot, slow profile, paper stage (reads only, holds no key, cannot send)
+
+[Service]
+Type=simple
+WorkingDirectory=%h/kaiba
+Environment=PYTHONUNBUFFERED=1
+Environment=KAIBA_DATA_DIR=%h/kaiba/data
+Environment=KAIBA_CONFIG_DIR=%h/kaiba/config
+# Read only so the host guard sees protection's RPC host. This process uses no other value from it.
+EnvironmentFile=-%h/.config/kaiba/.env
+ExecStart=%h/kaiba/.venv/bin/python -m kaiba.execution.lp_paper run --profile slow
+Restart=always
+RestartSec=30
+MemoryMax=250M
+Nice=19
+IOSchedulingClass=idle
+NoNewPrivileges=true
+PrivateTmp=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=default.target

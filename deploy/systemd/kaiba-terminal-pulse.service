@@ -1,0 +1,17 @@
+[Unit]
+Description=Kaiba terminal pulse: wallets sample, cached GMGN trending, DefiLlama chain volume -> data/terminal-pulse/latest.json (read-only)
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/kaiba
+Environment=PYTHONUNBUFFERED=1
+Environment=KAIBA_DATA_DIR=%h/kaiba/data
+Environment=KAIBA_DB_PATH=%h/kaiba/data/kaiba.db
+# No EnvironmentFile: keyless public data and read-only database reads; no credential is needed or seen.
+ExecStart=/usr/bin/timeout 110s /usr/bin/nice -n 19 /usr/bin/ionice -c3 %h/kaiba/.venv/bin/python -m kaiba.market_intel.terminal_pulse run
+TimeoutStartSec=120
+MemoryMax=256M
+Nice=19
+IOSchedulingClass=idle
+NoNewPrivileges=true

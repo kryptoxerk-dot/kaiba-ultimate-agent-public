@@ -1,0 +1,175 @@
+{
+  "description": "A bundled pump.fun-style launch: one funder fans out to three sub-wallets that buy the mint in the create slot behind a Jito tip, plus one unrelated CEX-funded retail buyer a few slots later. The retail buyer must stay independent.",
+  "chain": "sol",
+  "hubs": [
+    {
+      "address": "CEXhotwa11etzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+      "kind": "cex",
+      "label": "Exchange hot wallet"
+    }
+  ],
+  "tokens": [
+    {
+      "address": "MemeMintzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+      "creator": "DevCreatorzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+      "symbol": "MEME"
+    }
+  ],
+  "transfers": [
+    {
+      "tx": "txFundRetai1zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+      "src": "CEXhotwa11etzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+      "dst": "Retai1Buyerzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+      "amount": "1500000000",
+      "ts_ms": 1759996400000,
+      "is_first_inbound": 1
+    },
+    {
+      "tx": "txFundSub1zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+      "src": "BundLerMainzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+      "dst": "Sub1zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+      "amount": "500000000",
+      "ts_ms": 1759999400000,
+      "is_first_inbound": 1
+    },
+    {
+      "tx": "txFundSub2zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+      "src": "BundLerMainzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+      "dst": "Sub2zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+      "amount": "500000000",
+      "ts_ms": 1759999401000,
+      "is_first_inbound": 1
+    },
+    {
+      "tx": "txFundSub3zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+      "src": "BundLerMainzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+      "dst": "Sub3zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+      "amount": "505000000",
+      "ts_ms": 1759999402000,
+      "is_first_inbound": 1
+    },
+    {
+      "tx": "txTipzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+      "src": "Sub1zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+      "dst": "96gYZGLnJYVFmbjzopPSU6QiEV5fGqZNyN9nmNhvrZU5",
+      "amount": "200000",
+      "ts_ms": 1760000000000,
+      "slot": 300000000,
+      "is_first_inbound": 0
+    }
+  ],
+  "swaps": [
+    {
+      "tx": "txCreateBuyzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+      "wallet": "DevCreatorzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+      "token": "MemeMintzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+      "side": "buy",
+      "slot": 300000000,
+      "ts_ms": 1760000000000,
+      "fee_payer": "DevCreatorzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+      "is_create_tx": 1,
+      "amount_native": "1000000000"
+    },
+    {
+      "tx": "txBuySub1zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+      "wallet": "Sub1zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+      "token": "MemeMintzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+      "side": "buy",
+      "slot": 300000000,
+      "ts_ms": 1760000000000,
+      "fee_payer": "Sub1zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+      "amount_native": "400000000"
+    },
+    {
+      "tx": "txBuySub2zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+      "wallet": "Sub2zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+      "token": "MemeMintzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+      "side": "buy",
+      "slot": 300000000,
+      "ts_ms": 1760000000000,
+      "fee_payer": "Sub2zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+      "amount_native": "400000000"
+    },
+    {
+      "tx": "txBuySub3zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+      "wallet": "Sub3zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+      "token": "MemeMintzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+      "side": "buy",
+      "slot": 300000000,
+      "ts_ms": 1760000000000,
+      "fee_payer": "Sub3zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+      "amount_native": "400000000"
+    },
+    {
+      "tx": "txBuyRetai1zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+      "wallet": "Retai1Buyerzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+      "token": "MemeMintzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+      "side": "buy",
+      "slot": 300000040,
+      "ts_ms": 1760000016000,
+      "fee_payer": "Retai1Buyerzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+      "amount_native": "900000000"
+    }
+  ],
+  "swap_meta": [
+    {
+      "tx": "txBuySub3zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+      "meta": {
+        "signers": [
+          "Sub3zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+          "BundLerMainzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"
+        ],
+        "alt_authority": "BundLerMainzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"
+      }
+    }
+  ],
+  "first_buyers": [
+    {
+      "token": "MemeMintzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+      "wallet": "DevCreatorzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+      "rank": 1,
+      "slot": 300000000,
+      "ts_ms": 1760000000000
+    },
+    {
+      "token": "MemeMintzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+      "wallet": "Sub1zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+      "rank": 2,
+      "slot": 300000000,
+      "ts_ms": 1760000000000
+    },
+    {
+      "token": "MemeMintzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+      "wallet": "Sub2zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+      "rank": 3,
+      "slot": 300000000,
+      "ts_ms": 1760000000000
+    },
+    {
+      "token": "MemeMintzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+      "wallet": "Sub3zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+      "rank": 4,
+      "slot": 300000000,
+      "ts_ms": 1760000000000
+    },
+    {
+      "token": "MemeMintzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+      "wallet": "Retai1Buyerzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+      "rank": 5,
+      "slot": 300000040,
+      "ts_ms": 1760000016000
+    }
+  ],
+  "expect": {
+    "bundler": "BundLerMainzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+    "sub_wallets": [
+      "Sub1zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+      "Sub2zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+      "Sub3zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"
+    ],
+    "retail": "Retai1Buyerzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+    "creator": "DevCreatorzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+    "token": "MemeMintzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+    "cex": "CEXhotwa11etzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"
+  }
+}

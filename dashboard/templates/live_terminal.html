@@ -1,0 +1,72 @@
+{% extends "term_layout.html" %}
+{% block title %}{% if selected %}{{ selected.tok.token.symbol or 'Token' }} · {% endif %}Kaiba Terminal{% endblock %}
+{% block main_class %}term{% endblock %}
+{% block main %}
+<div class="kx-term" data-term>
+
+  <section class="kx-panel kx-watch" aria-label="Alpha watchlist">
+    <div class="kx-ph">
+      <h3>Alpha</h3><span class="cnt" data-watch-count>{{ watch|length }}</span>
+      <div class="act"><span class="live" title="refreshes every 6 s">live</span><a href="/alpha?tab={{ tab }}{% if chain %}&chain={{ chain }}{% endif %}" title="every source, with health">all ›</a></div>
+    </div>
+    <nav class="kx-seg" aria-label="What to show">
+      {% set short_label = {'graduation': 'Grads', 'claim': 'Claims', 'governance': 'Gov'} %}
+      {% for slug, label, _k in filters %}<a title="{{ label }}" href="/terminal?tab={{ slug }}{% if chain %}&chain={{ chain }}{% endif %}{% if selected %}&t={{ selected.tok.chain }}:{{ selected.tok.address }}{% endif %}" class="{{ 'on' if slug == tab }}">{{ short_label.get(slug, label) }}</a>{% endfor %}
+    </nav>
+    <nav class="kx-seg" aria-label="Chain">
+      <a href="/terminal?tab={{ tab }}{% if selected %}&t={{ selected.tok.chain }}:{{ selected.tok.address }}{% endif %}" class="{{ 'on' if not chain }}">All chains</a>
+      {% for c, label in [('sol', 'Solana'), ('robinhood', 'Robinhood'), ('bsc', 'BNB')] %}<a href="/terminal?tab={{ tab }}&chain={{ c }}{% if selected %}&t={{ selected.tok.chain }}:{{ selected.tok.address }}{% endif %}" class="{{ 'on' if chain == c }}">{{ label }}</a>{% endfor %}
+    </nav>
+    <div class="kx-scroll" data-refresh="/terminal/watch?tab={{ tab }}{% if chain %}&chain={{ chain }}{% endif %}" data-every="6" data-watch>
+      {% include "partials/t_watch.html" %}
+    </div>
+    <div class="kx-legend" aria-label="Legend">
+      <span><span class="kd"><i class="k-entry"></i></span>bought / launch</span>
+      <span><span class="kd"><i class="k-signal"></i></span>signal / listing</span>
+      <span><span class="kd"><i class="k-graduation"></i></span>graduated / claim</span>
+      <span><span class="kd"><i class="k-trending"></i></span>trending</span>
+    </div>
+  </section>
+
+  <div class="kx-center">
+    <section class="kx-panel kx-tokp" id="token-panel" aria-live="polite">
+      {% if selected %}
+        {% with tok=selected.tok, manual_mode=selected.manual_mode, manual_live=selected.manual_live %}{% include "partials/t_token.html" %}{% endwith %}
+      {% else %}
+        {% include "partials/t_overview.html" %}
+      {% endif %}
+    </section>
+
+    <section class="kx-panel kx-book" aria-label="Book">
+      <nav class="kx-seg under" data-tabs="book">
+        <button type="button" class="on" data-tab="open">Positions <span class="n" data-book-n>{{ book.open|length }}</span></button>
+        <button type="button" data-tab="closed">Closed 24 h <span class="n">{{ book.recent|length }}</span></button>
+        <a href="/trades" style="margin-left:auto" title="every closed trade, with the scoreboard">All results ›</a>
+      </nav>
+      <div class="kx-scroll" data-refresh="/terminal/book" data-every="4" data-keep-tab="book">
+        {% include "partials/t_book.html" %}
+      </div>
+    </section>
+  </div>
+
+  <aside class="kx-insp">
+    <section class="kx-panel act-p" aria-label="Agent activity">
+      <div class="kx-ph">
+        <h3>Agent activity</h3>
+        <div class="act"><span class="live" title="refreshes every 6 s">live</span><a href="/agent" title="the operator agent: chat, Telegram, background jobs">agent ›</a></div>
+      </div>
+      <div class="kx-scroll" data-refresh="/terminal/activity" data-every="6">
+        {% include "partials/t_activity.html" %}
+      </div>
+    </section>
+
+    <section class="kx-panel" aria-label="Trade" data-ticket-slot>
+      {% if selected %}
+        {% with tok=selected.tok, manual_mode=selected.manual_mode, manual_live=selected.manual_live %}{% include "partials/t_ticket.html" %}{% endwith %}
+      {% else %}
+        {% include "partials/t_ticket.html" %}
+      {% endif %}
+    </section>
+  </aside>
+</div>
+{% endblock %}

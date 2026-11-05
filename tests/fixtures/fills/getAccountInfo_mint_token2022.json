@@ -1,0 +1,51 @@
+{
+ "jsonrpc": "2.0",
+ "result": {
+  "context": {
+   "apiVersion": "4.3.0-rc.0",
+   "slot": 448689142
+  },
+  "value": {
+   "data": {
+    "parsed": {
+     "info": {
+      "decimals": 6,
+      "extensions": [
+       {
+        "extension": "metadataPointer",
+        "state": {
+         "authority": null,
+         "metadataAddress": "3GzeyKuMi3QNuQbSWcxASLx3kxmgiYxxYZyFS2SXpump"
+        }
+       },
+       {
+        "extension": "tokenMetadata",
+        "state": {
+         "additionalMetadata": [],
+         "mint": "3GzeyKuMi3QNuQbSWcxASLx3kxmgiYxxYZyFS2SXpump",
+         "name": "LUNARIS RABBIT",
+         "symbol": "LUNARIS",
+         "updateAuthority": null,
+         "uri": "https://ipfs.io/ipfs/QmShob3Vw84DDiAxeF5F94brfY5hpC2psmSy7qoeBkFN5b"
+        }
+       }
+      ],
+      "freezeAuthority": null,
+      "isInitialized": true,
+      "mintAuthority": null,
+      "supply": "1000000000000000"
+     },
+     "type": "mint"
+    },
+    "program": "spl-token-2022",
+    "space": 406
+   },
+   "executable": false,
+   "lamports": 2712720,
+   "owner": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+   "rentEpoch": 18446744073709551615,
+   "space": 406
+  }
+ },
+ "id": "kaiba-getAccountInfo"
+}

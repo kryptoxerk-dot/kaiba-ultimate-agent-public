@@ -1,0 +1,27 @@
+<h4>Top graded wallets</h4>
+{% if watchlist %}
+<p class="nodata">
+  Watchlist: <strong>{{ watchlist.tracked }}</strong> tracked,
+  <strong>{{ watchlist.graded }}</strong> graded{% if watchlist.by_chain %} &middot;
+  {% for c in watchlist.by_chain %}{{ c.chain }} {{ c.n }}{% if not loop.last %}, {% endif %}{% endfor %}
+  {% endif %}
+</p>
+{% endif %}
+{% if wallets %}
+<div class="table">
+  <div class="table-row header"><span>Wallet</span><span>Grade</span><span>Score</span><span>Archetype</span></div>
+  {% for w in wallets %}
+  <div class="table-row">
+    <span class="token-name">
+      <strong>{{ w.name or w.address_short }}</strong>
+      <button class="addr" type="button" data-copy="{{ w.address }}" title="{{ w.address }}">{{ w.address_short }}<span class="copy-glyph" aria-hidden="true">⧉</span></button>
+    </span>
+    <span><span class="badge grade-{{ w.grade }}">{{ w.grade }}</span></span>
+    <span class="score">{{ w.score|num(1) }}</span>
+    <span class="queue">{{ w.archetype }}</span>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<p class="nodata">No wallet has been graded yet. A grade needs on-chain evidence, which an imported label does not supply &mdash; run <code>kaiba wallet grade</code> or let the ingest listeners collect trades first.</p>
+{% endif %}

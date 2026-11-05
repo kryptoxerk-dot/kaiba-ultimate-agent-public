@@ -1,0 +1,16 @@
+{
+  "source": "synthetic",
+  "kind": "mixed",
+  "note": "Layout-change simulations: every collector must return [] instead of raising.",
+  "html": "<!DOCTYPE html><html><body><div class='totally-new-layout'><article data-id='1'>Hyperliquid points</article></div></body></html>",
+  "xml": "<?xml version='1.0'?><rss><channel><item><title>truncated",
+  "json_object": {
+    "error": "upstream unavailable",
+    "status": 503
+  },
+  "json_wrong_shape": [
+    1,
+    2,
+    3
+  ]
+}

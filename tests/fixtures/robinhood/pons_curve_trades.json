@@ -1,0 +1,947 @@
+{
+ "_source": "box kaiba.db (read-only) 2026-10-23: swaps rows program='pons-curve' (CurveBuy/CurveSell words: buy amount_native = quoteIn, amount_token = tokensOut; sell amount_token = tokensIn, amount_native = quoteOut) and snipe_observations rows whose entry_tokens is an eth_simulateV1 of curve.buy(entry_quote_in) from a stand-in address, in the same batch as the curve's reserves",
+ "launch_config": {
+  "phantom_quote_wei": "1680000000000000000",
+  "launch_supply": "1000000000000000000000000000",
+  "graduation_threshold_wei": "4200000000000000000",
+  "reserved_tokens": "285714285714285714285714285",
+  "_note": "Every curve here is launch config 0 (tokens.meta_json launch_config_id 0): quoteReserve starts at the phantom 1.68 ETH, the token balance at launchSupply 1e27, reservedTokens 285,714,285.714... tokens (the same numbers as tests/test_evm_price_source.PONS_LIVE and the GOLDEN fills in tests/test_viability_evm.py)"
+ },
+ "curves": [
+  {
+   "label": "B",
+   "token": "0x5247d5579c2e2eb4c4053e893cb65ae45a89a85d",
+   "curve": "0x812acbd0176c4ac837c34655514e5581be08e840",
+   "launched_at_s": 1792716525,
+   "fee_bps": 100,
+   "creator_tax_bps": 500,
+   "trades": [
+    {
+     "block": 95538337,
+     "log_index": 4,
+     "ts_s": 1792716533,
+     "side": "buy",
+     "quote": "447750000000000",
+     "tokens": "250464037763967685988382",
+     "tx": "0x140e17d1f5bae185b52365528ddeb06496c5d0f98c08e923a251a238b330c301"
+    },
+    {
+     "block": 95538415,
+     "log_index": 27,
+     "ts_s": 1792716541,
+     "side": "sell",
+     "quote": "395631900000001",
+     "tokens": "250464037763967685988382",
+     "tx": "0x0380a076eb477e3050ceb430c25b06e398c0e1c26c9d29f6d3ad13f636dd938f"
+    },
+    {
+     "block": 95543397,
+     "log_index": 20,
+     "ts_s": 1792717061,
+     "side": "buy",
+     "quote": "50000000000000",
+     "tokens": "27975407830852351137810",
+     "tx": "0x74554310fae01485d8c6ff3eab5242373ce2ed4ec9de261765f014fe4851f6e4"
+    },
+    {
+     "block": 95553619,
+     "log_index": 18,
+     "ts_s": 1792718122,
+     "side": "buy",
+     "quote": "1000000000000000",
+     "tokens": "559179638579381636045222",
+     "tx": "0xa6f20cb90899692a3fac81d0030ae56057255f8b2d9c849664ca74de6c4175f0"
+    }
+   ],
+   "simulate": {
+    "decision_block": 95538292,
+    "quote_in": "16700000000000000",
+    "tokens": "9257544680715551943801313",
+    "after_trades": 0,
+    "basis": "eth_simulateV1"
+   }
+  },
+  {
+   "label": "D",
+   "token": "0x11df381080d1486c47e04c79cf5bc2546829bba5",
+   "curve": "0xc75b164fc86e4aae18a2fd85c999b8492e63ce41",
+   "launched_at_s": 1792717013,
+   "fee_bps": 100,
+   "creator_tax_bps": 100,
+   "trades": [
+    {
+     "block": 95542979,
+     "log_index": 7,
+     "ts_s": 1792717013,
+     "side": "buy",
+     "quote": "80000000000000000",
+     "tokens": "44585987261146496815286624",
+     "tx": "0x1572792c040cdd0047eb4faeccb3db65716591d5dcc5bbdd0af909571e84b1b1",
+     "snipe": "exempt"
+    },
+    {
+     "block": 95542999,
+     "log_index": 28,
+     "ts_s": 1792717015,
+     "side": "buy",
+     "quote": "2090104400714815",
+     "tokens": "1109482736146123793577655",
+     "tx": "0xb454b7977bf71a6441ccaafc462cb4bf47620ee209c844c3c774fbcdab806973",
+     "snipe": "rung"
+    },
+    {
+     "block": 95543222,
+     "log_index": 14,
+     "ts_s": 1792717043,
+     "side": "buy",
+     "quote": "2009767066022758",
+     "tokens": "1066475483438303492526175",
+     "tx": "0xfa9070a1c9e1e158e91b5bc96f2db3e870040585af187bac374469d521f6f2b8"
+    },
+    {
+     "block": 95543387,
+     "log_index": 2,
+     "ts_s": 1792717060,
+     "side": "sell",
+     "quote": "77175314805031016",
+     "tokens": "44585987261146490000000000",
+     "tx": "0x5c110d03835bbd7b2ae84e211ebbb578b5511b8f0f9a948c35dfb308272e1778"
+    },
+    {
+     "block": 95543449,
+     "log_index": 2,
+     "ts_s": 1792717066,
+     "side": "buy",
+     "quote": "362891492266433",
+     "tokens": "210721953296071160038472",
+     "tx": "0x6e0ceec1e636a8d06cd595242866e36060c9d9a79af1862a0340e52e7e80d646"
+    },
+    {
+     "block": 95543564,
+     "log_index": 19,
+     "ts_s": 1792717078,
+     "side": "sell",
+     "quote": "1762372595156569",
+     "tokens": "1066475483438303492526175",
+     "tx": "0x1dc03beaec803bfa57175ef7259942f2ca8b0fd9ca4380ca18d3e96687e2d00d"
+    },
+    {
+     "block": 95543644,
+     "log_index": 7,
+     "ts_s": 1792717086,
+     "side": "sell",
+     "quote": "347777104158999",
+     "tokens": "210721953296071160038472",
+     "tx": "0xffef511a3defd1825bb69a3f3f2a7f66f532081cf872b8f06b56f37a7f2648bf"
+    },
+    {
+     "block": 95544169,
+     "log_index": 6,
+     "ts_s": 1792717139,
+     "side": "sell",
+     "quote": "1828681267086725",
+     "tokens": "1109482736146123793577655",
+     "tx": "0x49f907f4e3ecb346496800a9b960f9d7c388e3f09a20a7feaee6c7bf52168775"
+    }
+   ],
+   "simulate": {
+    "decision_block": 95543032,
+    "quote_in": "16700000000000000",
+    "tokens": "8789991629680179241923077",
+    "after_trades": 2,
+    "basis": "eth_simulateV1"
+   }
+  },
+  {
+   "label": "E",
+   "token": "0xda76c7367762aba3abc507f1cfd381a5955e050a",
+   "curve": "0xe0865a217a8351dbe3140ebdc0c8fef2f3428171",
+   "launched_at_s": 1792722768,
+   "fee_bps": 100,
+   "creator_tax_bps": 200,
+   "trades": [
+    {
+     "block": 95598338,
+     "log_index": 9,
+     "ts_s": 1792722768,
+     "side": "buy",
+     "quote": "37769541471612924",
+     "tokens": "21341999999999993505524150",
+     "tx": "0x137d91713da190bed879387d355cd334b1f8fd50a6a394dceba3487aa4a64c7d",
+     "snipe": "exempt"
+    },
+    {
+     "block": 95598339,
+     "log_index": 2,
+     "ts_s": 1792722768,
+     "side": "buy",
+     "quote": "65677353914315518",
+     "tokens": "35019870150979102351303406",
+     "tx": "0xc589560d3cc7e8bc353c15a75d8137c61c47e75cbc0c67600f6bbdf809e448bd",
+     "snipe": "exempt"
+    },
+    {
+     "block": 95598339,
+     "log_index": 4,
+     "ts_s": 1792722768,
+     "side": "buy",
+     "quote": "58153205134996355",
+     "tokens": "28980129849020900730730443",
+     "tx": "0xc589560d3cc7e8bc353c15a75d8137c61c47e75cbc0c67600f6bbdf809e448bd",
+     "snipe": "exempt"
+    },
+    {
+     "block": 95598342,
+     "log_index": 20,
+     "ts_s": 1792722768,
+     "side": "buy",
+     "quote": "51299752171896875",
+     "tokens": "255388995573080360796516",
+     "tx": "0xba73ad12d905d558f16ebf75c656ab3af543ed5252452870fdc4f5768050c1ef",
+     "snipe": "rung"
+    },
+    {
+     "block": 95598342,
+     "log_index": 27,
+     "ts_s": 1792722768,
+     "side": "buy",
+     "quote": "59422790046085589",
+     "tokens": "295650236628328019419793",
+     "tx": "0xb986f2db983e98bde469c8baf8c00c84ac6fcd3fc791ab2da39cd9dafe5e6804",
+     "snipe": "rung"
+    },
+    {
+     "block": 95598342,
+     "log_index": 34,
+     "ts_s": 1792722768,
+     "side": "buy",
+     "quote": "63011658500238689",
+     "tokens": "313297397345212385572919",
+     "tx": "0xa478aafe5c9c9e907001edf24eab3d8d0ae0f373e2c72d7e1112ba43084180e9",
+     "snipe": "rung"
+    },
+    {
+     "block": 95598342,
+     "log_index": 41,
+     "ts_s": 1792722768,
+     "side": "buy",
+     "quote": "56029995595552349",
+     "tokens": "278403861706803359262447",
+     "tx": "0x0f4ef3817da5d9dd2e7354a2f7bb37697354923ff4e8c2cf857bd0d9cdec60a2",
+     "snipe": "rung"
+    },
+    {
+     "block": 95598342,
+     "log_index": 48,
+     "ts_s": 1792722768,
+     "side": "buy",
+     "quote": "59465728601071528",
+     "tokens": "295289951638059346875192",
+     "tx": "0x199e33c6e20a170e15f5d57c64722601d93949ee23605ee30fa7d097794b9400",
+     "snipe": "rung"
+    },
+    {
+     "block": 95598342,
+     "log_index": 55,
+     "ts_s": 1792722768,
+     "side": "buy",
+     "quote": "61408495341534897",
+     "tokens": "304736887800129598676457",
+     "tx": "0x03994aea1872859365446fcb493f2b8a7a843bd3c6efd1161dbfc9a6f1959806",
+     "snipe": "rung"
+    },
+    {
+     "block": 95598342,
+     "log_index": 62,
+     "ts_s": 1792722768,
+     "side": "buy",
+     "quote": "62618982587494866",
+     "tokens": "310534516052820287530177",
+     "tx": "0x88509e8c6311e10c10126a742b13e18ebb673b05cf565ba170b1001034ed51fa",
+     "snipe": "rung"
+    },
+    {
+     "block": 95598342,
+     "log_index": 69,
+     "ts_s": 1792722768,
+     "side": "buy",
+     "quote": "52042597156125211",
+     "tokens": "257924335786414764589173",
+     "tx": "0x10f965b09b57e88d51ddcd6f957f81619ae461d73e6b9c09d905dc5887546c2c",
+     "snipe": "rung"
+    },
+    {
+     "block": 95598344,
+     "log_index": 6,
+     "ts_s": 1792722769,
+     "side": "buy",
+     "quote": "50000000000000000",
+     "tokens": "21957459983136987901416873",
+     "tx": "0x6148e69e3c0e8faf03f47ff6e6b6231df794e4a9c7c247b0fec94199ceeaba68",
+     "snipe": "rung"
+    },
+    {
+     "block": 95598344,
+     "log_index": 9,
+     "ts_s": 1792722769,
+     "side": "buy",
+     "quote": "300000000000000000",
+     "tokens": "112350423865668193068934153",
+     "tx": "0x28346736a324f98530af62e707b1e24e444cc9dcc0d38269b70320d178cb955a",
+     "snipe": "rung"
+    },
+    {
+     "block": 95598344,
+     "log_index": 12,
+     "ts_s": 1792722769,
+     "side": "buy",
+     "quote": "50000000000000000",
+     "tokens": "16025302676312095839276886",
+     "tx": "0x94d5a4e6e5312417351a911de59ccb86fe19ed1fdda9662dc3cf134f3ac529e3",
+     "snipe": "rung"
+    },
+    {
+     "block": 95598344,
+     "log_index": 15,
+     "ts_s": 1792722769,
+     "side": "buy",
+     "quote": "70000000000000008",
+     "tokens": "21357459494730783211370551",
+     "tx": "0xd74da063c7782b6327cd9a1d830ccbd25e24b73f8f5a80ca54176ecae2f1c095",
+     "snipe": "rung"
+    },
+    {
+     "block": 95598344,
+     "log_index": 18,
+     "ts_s": 1792722769,
+     "side": "buy",
+     "quote": "70000000000000008",
+     "tokens": "20192900048884826306956617",
+     "tx": "0x9085ef8227fa2c39d43d478b7ee72e4c124fb050f895dcc2d9b9a457f3223b89",
+     "snipe": "rung"
+    },
+    {
+     "block": 95598344,
+     "log_index": 21,
+     "ts_s": 1792722769,
+     "side": "buy",
+     "quote": "3000000000000000",
+     "tokens": "840833410295164860969936",
+     "tx": "0x996ad2d3b8fc64d14090a35add31e5fd2dc8bce35fbe5b93c60f7947f7b4c56d",
+     "snipe": "rung"
+    },
+    {
+     "block": 95598344,
+     "log_index": 24,
+     "ts_s": 1792722769,
+     "side": "buy",
+     "quote": "60000000000000000",
+     "tokens": "16413917028698975713706531",
+     "tx": "0x4794f6956e260dd1d31b2ec364a650c9076d3607a06f58dff6d794323ee3bb53",
+     "snipe": "rung"
+    },
+    {
+     "block": 95598344,
+     "log_index": 27,
+     "ts_s": 1792722769,
+     "side": "buy",
+     "quote": "70000000000000008",
+     "tokens": "18227735376593782464872830",
+     "tx": "0x00a30f620194b25324a7d1324dca21e5d5f1c31f4d2afbe128389c092a629c49",
+     "snipe": "rung"
+    },
+    {
+     "block": 95598344,
+     "log_index": 30,
+     "ts_s": 1792722769,
+     "side": "buy",
+     "quote": "100000000000000000",
+     "tokens": "24458945579721829675648553",
+     "tx": "0xdaebf20ce508349c8d91bcc3cf46420d44bfe9b84a1750de5e219a87f05cd7c3",
+     "snipe": "rung"
+    },
+    {
+     "block": 95598344,
+     "log_index": 33,
+     "ts_s": 1792722769,
+     "side": "buy",
+     "quote": "39014963161571300",
+     "tokens": "9075471735196984939998123",
+     "tx": "0x6a874f9490eed06f5e2a10fa2174f08933e53ed44713e1d5ac2fa8be48e8b942",
+     "snipe": "rung"
+    },
+    {
+     "block": 95598344,
+     "log_index": 37,
+     "ts_s": 1792722769,
+     "side": "buy",
+     "quote": "20000000000000000",
+     "tokens": "4556289501685469807383904",
+     "tx": "0x7df8c7dbe028d5f809d3fe647803d4d8a7485f8d356ebf1fa3a88b9652a827f3",
+     "snipe": "rung"
+    },
+    {
+     "block": 95598346,
+     "log_index": 1,
+     "ts_s": 1792722769,
+     "side": "sell",
+     "quote": "91778287879471266",
+     "tokens": "24458945579721829675648553",
+     "tx": "0xbe92e4b0eec0163a44105dc8ad7353ebe3b8286f74bf443a741b8018ced18f38"
+    },
+    {
+     "block": 95598346,
+     "log_index": 12,
+     "ts_s": 1792722769,
+     "side": "buy",
+     "quote": "17810996636764185",
+     "tokens": "4311802025743859023335230",
+     "tx": "0x915e43c09be4a8b32e61ddec9d49f6018b8aaadded4cecef6d4ac0fec65d8535",
+     "snipe": "rung"
+    },
+    {
+     "block": 95598346,
+     "log_index": 17,
+     "ts_s": 1792722769,
+     "side": "sell",
+     "quote": "352169869989286425",
+     "tokens": "112350423865668193068934153",
+     "tx": "0xaa58808992c26fb8ec45bfe857e4fa8a30a7a23cace6ff817caa1bf6e7e36667"
+    },
+    {
+     "block": 95598346,
+     "log_index": 32,
+     "ts_s": 1792722769,
+     "side": "buy",
+     "quote": "22485851104656773",
+     "tokens": "7314647126972085544151830",
+     "tx": "0x4d37ccf57ffba22d2c5cba3423a8bc1862523fb103f41a3279c8dd7c957d9585",
+     "snipe": "rung"
+    },
+    {
+     "block": 95598347,
+     "log_index": 2,
+     "ts_s": 1792722769,
+     "side": "sell",
+     "quote": "8721814885459005",
+     "tokens": "3203618924209617481705582",
+     "tx": "0x15e29019a4bbca3aa3d51439569bed4655b7f37155aa511fd99f2b9798ea6f21"
+    },
+    {
+     "block": 95598352,
+     "log_index": 3,
+     "ts_s": 1792722769,
+     "side": "buy",
+     "quote": "122997600000000",
+     "tokens": "39963156996987624595787",
+     "tx": "0xa9c70874827f5aa2e2eafea05f384a94e22e2363957b7772cb885b638b2a9597",
+     "snipe": "rung"
+    },
+    {
+     "block": 95598378,
+     "log_index": 3,
+     "ts_s": 1792722772,
+     "side": "sell",
+     "quote": "40148200777789952",
+     "tokens": "15094843429270012151424602",
+     "tx": "0x8505734b29068e5ef8b764532597e83ce0f5a2e1c6e15ed8f7d63b2c0fa8967d"
+    },
+    {
+     "block": 95598378,
+     "log_index": 5,
+     "ts_s": 1792722772,
+     "side": "buy",
+     "quote": "40148200777789952",
+     "tokens": "14218787974468349680111111",
+     "tx": "0x8505734b29068e5ef8b764532597e83ce0f5a2e1c6e15ed8f7d63b2c0fa8967d"
+    },
+    {
+     "block": 95598378,
+     "log_index": 9,
+     "ts_s": 1792722772,
+     "side": "sell",
+     "quote": "75580651426123684",
+     "tokens": "28980129849020900730730443",
+     "tx": "0x12691ea949939a943c148b90a6e6c3c3b2b1e913cec46ca17901fa814c8fdc8d"
+    },
+    {
+     "block": 95598378,
+     "log_index": 11,
+     "ts_s": 1792722772,
+     "side": "buy",
+     "quote": "75580651426123684",
+     "tokens": "27325535543760271819374189",
+     "tx": "0x12691ea949939a943c148b90a6e6c3c3b2b1e913cec46ca17901fa814c8fdc8d"
+    },
+    {
+     "block": 95598383,
+     "log_index": 10,
+     "ts_s": 1792722772,
+     "side": "sell",
+     "quote": "52335319180321631",
+     "tokens": "19925026721709090199878804",
+     "tx": "0xca1e5cb8acd0190937d411d97925fe66a2a1115858df3fa68f9d5c6d0e1ef3ec"
+    },
+    {
+     "block": 95598383,
+     "log_index": 12,
+     "ts_s": 1792722772,
+     "side": "buy",
+     "quote": "52335319180321631",
+     "tokens": "18775173924301757643270067",
+     "tx": "0xca1e5cb8acd0190937d411d97925fe66a2a1115858df3fa68f9d5c6d0e1ef3ec"
+    },
+    {
+     "block": 95598405,
+     "log_index": 5,
+     "ts_s": 1792722775,
+     "side": "sell",
+     "quote": "52866662346054896",
+     "tokens": "20192900048884826306956617",
+     "tx": "0xd553e290485a74a1e99d6336d6bdf98b326899b1711db63f040f720c1f7e869f"
+    },
+    {
+     "block": 95598421,
+     "log_index": 4,
+     "ts_s": 1792722776,
+     "side": "buy",
+     "quote": "58650956370928506",
+     "tokens": "21054961459740258236570524",
+     "tx": "0xdf6e65ec430971521f7fc371d7cae869a0cf9655ef65a32b34153c2da67855ff"
+    },
+    {
+     "block": 95598421,
+     "log_index": 11,
+     "ts_s": 1792722776,
+     "side": "buy",
+     "quote": "56347190039916571",
+     "tokens": "19208739686051184205895935",
+     "tx": "0x608ea0a38e585e47c9282af0b3091f91f7486af8b790f459d3f435e38e1db99f"
+    },
+    {
+     "block": 95598421,
+     "log_index": 17,
+     "ts_s": 1792722776,
+     "side": "buy",
+     "quote": "63101722183773263",
+     "tokens": "20415833129172379671844407",
+     "tx": "0xe231ff9a8d895e3f0c2efb11f4c6f7289c5f349607d47d3afbf20140c70f568c"
+    },
+    {
+     "block": 95598421,
+     "log_index": 23,
+     "ts_s": 1792722776,
+     "side": "buy",
+     "quote": "58854846813508397",
+     "tokens": "18075928095657948652155182",
+     "tx": "0xfd341ac31e3dd87e4b166d0cb415016902e198e7856a9ed2225bbde26f276446"
+    },
+    {
+     "block": 95598421,
+     "log_index": 29,
+     "ts_s": 1792722776,
+     "side": "buy",
+     "quote": "66210618214511606",
+     "tokens": "19305662314774799973803818",
+     "tx": "0x2932f45aaf8a2f66fdd07b0a87376ba038ae8911f596b1d4b68c4c7104777ac0"
+    },
+    {
+     "block": 95598421,
+     "log_index": 35,
+     "ts_s": 1792722776,
+     "side": "buy",
+     "quote": "57315031933878284",
+     "tokens": "15895246515792238848077624",
+     "tx": "0xa26712d12fd8688cbb9cd89b487517980391033963eefc76a25f80a4db9d428c"
+    },
+    {
+     "block": 95598421,
+     "log_index": 41,
+     "ts_s": 1792722776,
+     "side": "buy",
+     "quote": "78203577616230933",
+     "tokens": "20560464589456263827075416",
+     "tx": "0x4e0e4a73c5f055b16809ebad19744b81c44b44fb443f1bbfa13ccd2783b0e90b"
+    },
+    {
+     "block": 95598421,
+     "log_index": 47,
+     "ts_s": 1792722776,
+     "side": "buy",
+     "quote": "56316056827252443",
+     "tokens": "14057930838872136787730716",
+     "tx": "0x0a411470f2b06582f312e08852b16af9f4d3ebf96a90503c283d4be1fa017140"
+    },
+    {
+     "block": 95598423,
+     "log_index": 2,
+     "ts_s": 1792722776,
+     "side": "buy",
+     "quote": "20000000000000000",
+     "tokens": "4850470057967503037340028",
+     "tx": "0x75a6db2157079deedc570167a8aed6fdecadbe533064f3ce7e487732e329c6af"
+    },
+    {
+     "block": 95598433,
+     "log_index": 7,
+     "ts_s": 1792722777,
+     "side": "sell",
+     "quote": "80635892845037113",
+     "tokens": "21310350455313338597367040",
+     "tx": "0xad898e4e9e013cd48f9e7f3fb2cd2b3e8d8125666306187d0d3fffdece8c60b7"
+    },
+    {
+     "block": 95598433,
+     "log_index": 15,
+     "ts_s": 1792722777,
+     "side": "sell",
+     "quote": "69414546213778515",
+     "tokens": "19504389922679512225315728",
+     "tx": "0xbb50e2aa6e48c7f4a2821bac0e834d59989a679f39edfa0eb2a5a3999aed7c6f"
+    },
+    {
+     "block": 95598433,
+     "log_index": 25,
+     "ts_s": 1792722777,
+     "side": "sell",
+     "quote": "69576410814877141",
+     "tokens": "20729130526517592057417326",
+     "tx": "0x1710912dd59733f1347a9e62ec1182adfd986346012ade9113f79fda7d022e95"
+    },
+    {
+     "block": 95598433,
+     "log_index": 33,
+     "ts_s": 1792722777,
+     "side": "sell",
+     "quote": "58287129339378128",
+     "tokens": "18354331957364752011417629",
+     "tx": "0xfffea6b9c4672c37994df582bf606d440a3a149b13fc194238036b7ba684b09f"
+    },
+    {
+     "block": 95598433,
+     "log_index": 44,
+     "ts_s": 1792722777,
+     "side": "sell",
+     "quote": "43566133631470108",
+     "tokens": "14353220790510196134605908",
+     "tx": "0xadc718d5e08fa6e2bd3591953c573ad20f9d4cbc8d7dca3614f8543fa41b8fc9"
+    },
+    {
+     "block": 95598433,
+     "log_index": 53,
+     "ts_s": 1792722777,
+     "side": "sell",
+     "quote": "47184709869343446",
+     "tokens": "16199983403592368446754081",
+     "tx": "0x3396e7a1617cf5cf4683ddafe65f7df4b70cc0224ddc991e687d312d6486131e"
+    },
+    {
+     "block": 95598433,
+     "log_index": 61,
+     "ts_s": 1792722777,
+     "side": "sell",
+     "quote": "54497011618881612",
+     "tokens": "19616196830827620261333995",
+     "tx": "0x2522eb0fa6f85a2a72d66fde9d03e2aabc0b0359dc9fd5a743b7039dc36c58f3"
+    },
+    {
+     "block": 95598433,
+     "log_index": 69,
+     "ts_s": 1792722777,
+     "side": "sell",
+     "quote": "54901049992325399",
+     "tokens": "20818388925242678591664589",
+     "tx": "0x87e61060f82dd0684ada6faf36fbe82f212ac5f3ab1fc1b119dd099a7c65193a"
+    },
+    {
+     "block": 95598434,
+     "log_index": 19,
+     "ts_s": 1792722778,
+     "side": "sell",
+     "quote": "45765597993968711",
+     "tokens": "18227735376593782464872830",
+     "tx": "0x67d1492f4f356efc2da5cc3d6b2b9f695d1a5984c31b3751450eae6f58b8d847"
+    },
+    {
+     "block": 95598434,
+     "log_index": 21,
+     "ts_s": 1792722778,
+     "side": "sell",
+     "quote": "11121672537994544",
+     "tokens": "4556289501685469807383904",
+     "tx": "0x10dae0039e85b75fd2ba73c412bdf96c71733c11dcc0c91acd0a7d2c3519a455"
+    },
+    {
+     "block": 95598434,
+     "log_index": 23,
+     "ts_s": 1792722778,
+     "side": "sell",
+     "quote": "51907952843008452",
+     "tokens": "21957459983136987901416873",
+     "tx": "0x705cf770f513f02a66435b4a468ecb194882132b12e2bbead803256e3f093872"
+    },
+    {
+     "block": 95598434,
+     "log_index": 25,
+     "ts_s": 1792722778,
+     "side": "sell",
+     "quote": "1933938750026234",
+     "tokens": "840833410295164860969936",
+     "tx": "0xd91e2fbac7be3b64826c67d5e76ea33d2e1d91895504d421a98d7f531641eee7"
+    },
+    {
+     "block": 95598434,
+     "log_index": 29,
+     "ts_s": 1792722778,
+     "side": "sell",
+     "quote": "20630653862543671",
+     "tokens": "9075471735196984939998123",
+     "tx": "0xade5f58457680ed4ed407bd59849bd30c21bd59ea664ea8f92b9e17e057e66d1"
+    },
+    {
+     "block": 95598434,
+     "log_index": 32,
+     "ts_s": 1792722778,
+     "side": "sell",
+     "quote": "36216481697865709",
+     "tokens": "16413917028698975713706531",
+     "tx": "0x9d7e43ae42b100f4e53d7218406f81594e7dd32081d75621431277cf36e0c916"
+    },
+    {
+     "block": 95598434,
+     "log_index": 34,
+     "ts_s": 1792722778,
+     "side": "sell",
+     "quote": "38492388204769863",
+     "tokens": "18153840570521165729664969",
+     "tx": "0x0b2e4a3cdebff085c5171e7fc707e38baec91e6d272dd395af8062663f7ba29d"
+    },
+    {
+     "block": 95598435,
+     "log_index": 7,
+     "ts_s": 1792722778,
+     "side": "sell",
+     "quote": "10019025171833272",
+     "tokens": "4850470057967503037340028",
+     "tx": "0xc3dc516b3e4327a55e61619c499738c6d51d597689906d90feecfaba15e17fff"
+    },
+    {
+     "block": 95598441,
+     "log_index": 16,
+     "ts_s": 1792722778,
+     "side": "sell",
+     "quote": "82093790225668",
+     "tokens": "39963156996987624595787",
+     "tx": "0x4ebaf0dc33ddd133317e7f8f86d9f85c6ebc8fcff63e5b7841a6a570a9b85ae0"
+    },
+    {
+     "block": 95598478,
+     "log_index": 33,
+     "ts_s": 1792722782,
+     "side": "sell",
+     "quote": "153656708975627031",
+     "tokens": "81661497442530372648279517",
+     "tx": "0x9c09f7d4d35f877f2e1b5cbe3ee9021088f3d57db56e77c267d7119972875c10"
+    },
+    {
+     "block": 95598514,
+     "log_index": 12,
+     "ts_s": 1792722786,
+     "side": "buy",
+     "quote": "53238741332419",
+     "tokens": "29061693865539530409970",
+     "tx": "0x4886b60fae3c7a954d543d9d97e997542cb2259b659c6eb55e7248a6da698e25"
+    },
+    {
+     "block": 95598708,
+     "log_index": 5,
+     "ts_s": 1792722805,
+     "side": "sell",
+     "quote": "50092331719674",
+     "tokens": "29061693865539530409970",
+     "tx": "0x61f7f95d46ab6142a7fb66a4146ffbdf1e64a1e9d1271cb779372fe63e450302"
+    },
+    {
+     "block": 95598953,
+     "log_index": 25,
+     "ts_s": 1792722830,
+     "side": "sell",
+     "quote": "12513416505497930",
+     "tokens": "7314647126972085544151830",
+     "tx": "0xc084673d9c6323dc7d12802cf745c76661cbd2451b4a50dcc672c53b268cde2d"
+    },
+    {
+     "block": 95598953,
+     "log_index": 57,
+     "ts_s": 1792722830,
+     "side": "sell",
+     "quote": "7289189450365495",
+     "tokens": "4311802025743859023335230",
+     "tx": "0x7cd6b8de4a3537aa30128458c5829742fda36c2625ed42057daec2b4c93af2af"
+    }
+   ],
+   "simulate": {
+    "decision_block": 95598374,
+    "quote_in": "16700000000000000",
+    "tokens": "5789398289400826049424012",
+    "after_trades": 32,
+    "basis": "eth_simulateV1"
+   }
+  },
+  {
+   "label": "A",
+   "token": "0xcd8eadc03680081d32f79503830898301a35282c",
+   "curve": "0x089beb431f366a0163ad6f796b38f2b7a1a91d3f",
+   "launched_at_s": 1792724324,
+   "fee_bps": 100,
+   "creator_tax_bps": 0,
+   "trades": [
+    {
+     "block": 95613308,
+     "log_index": 14,
+     "ts_s": 1792724324,
+     "side": "buy",
+     "quote": "95000000000000000",
+     "tokens": "53014289337955525492517121",
+     "tx": "0xf8b5c635c3b314e4e6ddb29bad5bb9238783f728ed8b06e33f28052dc74d9c2b",
+     "snipe": "exempt"
+    },
+    {
+     "block": 95613457,
+     "log_index": 6,
+     "ts_s": 1792724339,
+     "side": "buy",
+     "quote": "1991760243049799",
+     "tokens": "1051398558006611417924595",
+     "tx": "0x2a4c38f585fddafd348f9a8981e51eea7ea0e9f975878b7fab702c0c692e380e"
+    },
+    {
+     "block": 95614495,
+     "log_index": 4,
+     "ts_s": 1792724444,
+     "side": "sell",
+     "quote": "93311097631411603",
+     "tokens": "53014289337955525492517121",
+     "tx": "0x0614ab2ed4b967545332fc1de02662abd894e6fb8a2697d19bd01d466cbd5d44"
+    },
+    {
+     "block": 95614645,
+     "log_index": 7,
+     "ts_s": 1792724459,
+     "side": "sell",
+     "quote": "1750526582801506",
+     "tokens": "1051398558006611417924595",
+     "tx": "0x7b97e8dedc4213b43c2fd894f6203622ebda0bbd42efad95aeb107cc1af6b0a3"
+    },
+    {
+     "block": 95635839,
+     "log_index": 4,
+     "ts_s": 1792726657,
+     "side": "buy",
+     "quote": "990000000000000",
+     "tokens": "583052708357463600798693",
+     "tx": "0x65d370f874883afb30251e202561b47331b592eff75dfe9e1b636edf52453910"
+    },
+    {
+     "block": 95635887,
+     "log_index": 5,
+     "ts_s": 1792726662,
+     "side": "sell",
+     "quote": "970299000000000",
+     "tokens": "583052708357463600798693",
+     "tx": "0x9f909536b84524e70f2390ac59667b5e80e6d8165aa1aa411662ebcd0d791108"
+    }
+   ],
+   "simulate": {
+    "decision_block": 95613555,
+    "quote_in": "16700000000000000",
+    "tokens": "8724492891373964135644401",
+    "after_trades": 2,
+    "basis": "eth_simulateV1"
+   }
+  },
+  {
+   "label": "C",
+   "token": "0x330d62b9e704007b91c044b2dd0da46b50339255",
+   "curve": "0x5f07002530e35c83b188beb4c4a82e36d666fba3",
+   "launched_at_s": 1792725898,
+   "fee_bps": 100,
+   "creator_tax_bps": 200,
+   "trades": [
+    {
+     "block": 95628449,
+     "log_index": 2,
+     "ts_s": 1792725899,
+     "side": "buy",
+     "quote": "80000000000000000",
+     "tokens": "41454797746962324609050492",
+     "tx": "0x53cd8fab7f352be37283bdc1b3e8b0f7aed3a0d9d99bfb3e18692dbf87895c49",
+     "snipe": "rung"
+    },
+    {
+     "block": 95629050,
+     "log_index": 6,
+     "ts_s": 1792725960,
+     "side": "sell",
+     "quote": "35984015032651101",
+     "tokens": "20727398873481162304525246",
+     "tx": "0x5372debacf2bdd477cd56f84733ce8a6c73e7431bea4e0e837d46e2544485292"
+    },
+    {
+     "block": 95629646,
+     "log_index": 5,
+     "ts_s": 1792726021,
+     "side": "sell",
+     "quote": "34492304967348900",
+     "tokens": "20727398873481162304525246",
+     "tx": "0x90c9b08ce463df7d7a68101ad130b6bb2b9547940eaa6d084aaf51a4a2242a0f"
+    },
+    {
+     "block": 95629891,
+     "log_index": 1,
+     "ts_s": 1792726051,
+     "side": "buy",
+     "quote": "4200487379789831",
+     "tokens": "2419413644886164532689282",
+     "tx": "0x22d06f2a1de018bef981686fcd1f73d63e9c6003449894dad4b72affaa13c596"
+    },
+    {
+     "block": 95630006,
+     "log_index": 71,
+     "ts_s": 1792726062,
+     "side": "sell",
+     "quote": "1319409354999914",
+     "tokens": "806390567840558638745337",
+     "tx": "0x762fcb71eaf98052725bdc4e5584ed895e8ae669a7817ba0a296bd0de254ab81"
+    },
+    {
+     "block": 95630057,
+     "log_index": 21,
+     "ts_s": 1792726068,
+     "side": "sell",
+     "quote": "878466684496665",
+     "tokens": "537620591579300444451516",
+     "tx": "0xfe40b406b297ba3cc47821406ecf81d707bf305237d5769c4520f25f45d7ace3"
+    },
+    {
+     "block": 95630114,
+     "log_index": 152,
+     "ts_s": 1792726073,
+     "side": "sell",
+     "quote": "1754362536147674",
+     "tokens": "1075402485466305449492429",
+     "tx": "0x184c21dc5b4c6eebfd0e83133b4c72a0fc415dc1dda6b1c04e2c0f8203a5f90c"
+    }
+   ],
+   "simulate": {
+    "decision_block": 95628476,
+    "quote_in": "16700000000000000",
+    "tokens": "8778262622598775650722072",
+    "after_trades": 1,
+    "basis": "eth_simulateV1"
+   }
+  }
+ ],
+ "_snipe_note": "trades[].snipe is how a buy inside the 3 s snipe window was taxed, as the replay finds it: 'rung' (the measured rung, capped at 9,900 bps of takes in total) or 'exempt' (0: the launch transaction's own allowlisted buys). Exactly one of the two reproduces each such buy.",
+ "_simulate_note": "simulate.after_trades: how many of trades[] the eth_simulateV1 quote's state had seen. It equals the state at decision_block for A-D; for E four more trades had landed by the block the simulation ran on (the request used 'latest')."
+}

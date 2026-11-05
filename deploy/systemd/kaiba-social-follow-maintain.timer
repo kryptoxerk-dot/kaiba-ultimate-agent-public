@@ -1,0 +1,11 @@
+[Unit]
+Description=Kaiba shared-budget follow discovery, newest page per source
+
+[Timer]
+OnBootSec=30
+OnUnitInactiveSec=120
+AccuracySec=1
+Unit=kaiba-social-follow-maintain.service
+
+[Install]
+WantedBy=timers.target

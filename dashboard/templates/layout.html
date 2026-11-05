@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block body %}
+<div class="shell">
+
+  <aside class="rail">
+    <div class="brand">
+      <span class="brand-mark">◎</span>
+      <span class="brand-word">KAIBA</span>
+    </div>
+    <nav aria-label="Pages">
+      {% for href, label, glyph in pages %}
+      <a class="nav-item page-link{% if href == page %} active{% endif %}" href="{{ href }}"
+         {% if href == page %}aria-current="page"{% endif %}>
+        <span aria-hidden="true">{{ glyph }}</span><b>{{ label }}</b>
+      </a>
+      {% endfor %}
+    </nav>
+    <div class="rail-bottom">
+      <i class="mode-dot mode-{{ mode or 'unknown' }}"></i>
+      <span>{{ (mode or 'unknown')|upper }}</span>
+      {% if auth_on %}
+      <form method="post" action="/logout"><button class="text-button" type="submit">sign out</button></form>
+      {% endif %}
+    </div>
+  </aside>
+
+  <main class="main">
+    {% block content %}{% endblock %}
+    <footer class="foot">
+      <span>Kaiba operator console</span>
+      <span>{{ NO_WITHDRAW_COPY }}</span>
+    </footer>
+  </main>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="/static/console.js" defer></script>
+{% endblock %}

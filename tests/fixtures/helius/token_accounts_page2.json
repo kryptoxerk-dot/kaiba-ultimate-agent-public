@@ -1,0 +1,20 @@
+{
+  "jsonrpc": "2.0",
+  "id": "kaiba-getTokenAccounts",
+  "result": {
+    "total": 3,
+    "limit": 2,
+    "page": 2,
+    "cursor": null,
+    "token_accounts": [
+      {
+        "address": "3emsAVdmGKERbHjmGfQ6oZ1e35dkf5z6QYAmAwG85hDo",
+        "mint": "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263",
+        "owner": "HN7cABqLq46Es1jh92dQQisAq662SmxELLLsHHe4YWrH",
+        "amount": 900000000,
+        "delegated_amount": 0,
+        "frozen": false
+      }
+    ]
+  }
+}

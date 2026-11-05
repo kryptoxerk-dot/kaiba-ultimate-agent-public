@@ -1,0 +1,106 @@
+[Unit]
+# The operator console: thought stream, signal tape, positions, risk dials, kill switch.
+# Binds loopback only. Caddy terminates TLS in front of it (deploy/Caddyfile).
+Description=Kaiba operator dashboard (FastAPI + SSE, loopback only)
+Documentation=file:///opt/kaiba/current/docs/runbooks/deploy.md
+After=network.target
+PartOf=kaiba.target
+StartLimitIntervalSec=300
+StartLimitBurst=10
+
+[Service]
+Type=exec
+# Runs as kaiba-core by default: same identity that owns the state it renders.
+# If you expose the dashboard beyond Tailscale/loopback, run bootstrap.sh with
+# --separate-dash and apply deploy/systemd/dropins/dashboard-separate-user.conf, which
+# switches this unit to the kaiba-dash identity.
+User=kaiba-core
+Group=kaiba-core
+SupplementaryGroups=kaiba kaiba-state kaiba-reports
+WorkingDirectory=/opt/kaiba/current
+
+EnvironmentFile=/etc/kaiba/dashboard.env
+Environment=HOME=/var/lib/kaiba/dash
+Environment=KAIBA_CONFIG_DIR=/etc/kaiba
+Environment=KAIBA_DATA_DIR=/var/lib/kaiba
+Environment=KAIBA_DB_PATH=/var/lib/kaiba/db/kaiba.db
+Environment=KAIBA_RISK_PATH=/etc/kaiba/config/risk.yaml
+Environment=KAIBA_DASHBOARD_HOST=127.0.0.1
+Environment=KAIBA_DASHBOARD_PORT=8788
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PYTHONUNBUFFERED=1
+
+# The console needs its own password and nothing else. Every provider, model, wallet and
+# operator credential is stripped: the web surface is the most exposed process here, so
+# it must not be able to leak a key even if it is fully compromised.
+UnsetEnvironment=GMGN_API_KEY GMGN_PRIVATE_KEY KAIBA_SIGNER_PASSPHRASE KAIBA_SIGNER_KEYSTORE
+UnsetEnvironment=SOLANA_PRIVATE_KEY EVM_PRIVATE_KEY
+UnsetEnvironment=HELIUS_API_KEY HELIUS_WEBHOOK_SECRET SOLANA_TRACKER_API_KEY BIRDEYE_API_KEY
+UnsetEnvironment=PUMPPORTAL_API_KEY JUPITER_API_KEY BITQUERY_TOKEN ALCHEMY_API_KEY
+UnsetEnvironment=ALCHEMY_WEBHOOK_SIGNING_KEY ETHERSCAN_API_KEY BLOCKSCOUT_API_KEY
+UnsetEnvironment=GOPLUS_APP_KEY GOPLUS_APP_SECRET RUGCHECK_JWT COINGECKO_API_KEY
+UnsetEnvironment=NANSEN_API_KEY CIELO_API_KEY MOBULA_API_KEY CODEX_IO_API_KEY
+UnsetEnvironment=TWITTERSCORE_API_KEY CRYPTOPANIC_API_KEY NEWSAPI_KEY
+UnsetEnvironment=ANTHROPIC_API_KEY XAI_API_KEY OPENROUTER_API_KEY
+UnsetEnvironment=TELEGRAM_BOT_TOKEN TG_API_ID TG_API_HASH
+UnsetEnvironment=LANGFUSE_PUBLIC_KEY LANGFUSE_SECRET_KEY AGE_IDENTITY_FILE RCLONE_CONFIG_PASS
+UnsetEnvironment=PYTHONHOME PYTHONPATH PYTHONSTARTUP PYTHONINSPECT PYTHONOPTIMIZE
+
+ExecStart=/opt/kaiba/venv/bin/python -I -B -m uvicorn dashboard.app:app \
+    --host 127.0.0.1 --port 8788 --proxy-headers --forwarded-allow-ips 127.0.0.1 \
+    --no-server-header --timeout-graceful-shutdown 10
+Restart=always
+RestartSec=5
+TimeoutStopSec=20
+KillMode=mixed
+
+# ---- hardening baseline (identical across every kaiba unit) -------------------------
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+PrivateMounts=yes
+ProtectHostname=yes
+ProtectClock=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectProc=invisible
+ProcSubset=pid
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RemoveIPC=yes
+KeyringMode=private
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+CapabilityBoundingSet=
+AmbientCapabilities=
+UMask=0077
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+# The console talks to nothing but the loopback proxy. It has no business making an
+# outbound request to a provider or to the internet.
+IPAddressDeny=any
+IPAddressAllow=localhost
+
+# ---- explicit write surface ---------------------------------------------------------
+# Writable: the database (it emits events and records control intents) and risk.yaml
+# (the bounded risk dials). save_risk() re-reads `bounds` from disk on every write, so a
+# dial cannot widen the envelope.
+ReadWritePaths=/var/lib/kaiba/db /var/lib/kaiba/dash /var/lib/kaiba/logs /etc/kaiba/config
+ReadOnlyPaths=/opt/kaiba/current /opt/kaiba/venv /etc/kaiba/policy /var/lib/kaiba/reports
+InaccessiblePaths=/etc/kaiba/signer /var/lib/kaiba/signer /var/lib/kaiba/backups
+InaccessiblePaths=/var/lib/kaiba/hermes /etc/kaiba/core.env /etc/kaiba/hermes.env /etc/kaiba/signer.env
+
+MemoryMax=384M
+CPUQuota=75%
+TasksMax=64
+
+[Install]
+WantedBy=multi-user.target

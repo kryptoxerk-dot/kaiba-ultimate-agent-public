@@ -1,0 +1,4 @@
+{
+  "note": "An empty /insiders/graph body, which is what RugCheck returns for every fresh pump.fun mint we fetched (tests/fixtures/rugcheck/live/graph_fresh_mint_empty.json). It is UNKNOWN, not a measured zero: 'not analysed yet' and 'analysed, nothing found' look identical. Until 2026-10-21 this note said the opposite, and the merge recorded cluster_pct = 0 here, which counted 12 points of concentration coverage that nobody had established.",
+  "body": []
+}

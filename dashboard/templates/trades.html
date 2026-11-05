@@ -1,0 +1,242 @@
+{% extends "layout.html" %}
+{% block title %}Kaiba · Trades{% endblock %}
+{% block content %}
+<header class="topbar">
+  <div>
+    <p class="eyebrow cyan">LIVE AND PAPER</p>
+    <h1>Trades</h1>
+  </div>
+  <form class="filters" method="get" action="/trades">
+    <label>results window
+      <select name="days">
+        {% for d in (3, 7, 12, 30) %}<option value="{{ d }}"{% if filters.days == d %} selected{% endif %}>{{ d }} days</option>{% endfor %}
+      </select>
+    </label>
+    <label>paper list
+      <select name="paper_days">
+        {% for d in (1, 2, 3, 7, 12) %}<option value="{{ d }}"{% if filters.paper_days == d %} selected{% endif %}>{{ d }} day{{ '' if d == 1 else 's' }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>lane <input name="lane" value="{{ filters.lane or '' }}" placeholder="all" size="12" pattern="[a-z0-9-]*"></label>
+    <label>chain
+      <select name="chain">
+        <option value="">all</option>
+        {% for c in ("sol", "bsc", "robinhood") %}<option value="{{ c }}"{% if filters.chain == c %} selected{% endif %}>{{ c }}</option>{% endfor %}
+      </select>
+    </label>
+    <button class="button" type="submit">apply</button>
+  </form>
+</header>
+
+<p class="banner warn" role="status">
+  <b>Paper prices are not market prices yet.</b> Paper fills and marks are DexScreener quotes, which lag
+  the real pool by about 45 s and show the old bonding-curve price just after a migration. Priced from the
+  pool itself, every lane loses: a 60 s exit after migration is about &minus;16% per trade (n=89, 2026-10-18
+  research). Treat every paper and exit-twin "pass" below as unproven until paper is priced from the pool.
+</p>
+
+<p class="banner flat" role="note">
+  Returns are realized, after costs, per position. Means cap each trade at +300% (the paper
+  report's rule), and paper results leave out exactly what the daily report leaves out: trades opened
+  before the honest cutoff, trades off sol whose entry was not priced from the pool or curve, and the
+  trades distorted by the 10-18 placeholder native price. Paper trades are simulated fills: a paper
+  win is a reason to test live, not money.
+</p>
+
+<section class="metric-strip">
+  <div class="metric">
+    <span>Live realized ({{ summary.days }} d)</span>
+    {% if summary.live_realized %}
+      {% for r in summary.live_realized %}
+      <strong class="{% if r.native is not none and r.native < 0 %}neg{% elif r.native %}pos{% endif %}">{{ r.native|num(4) }} {{ r.symbol }}</strong>
+      {% endfor %}
+    {% else %}<strong class="nodata">no live closes</strong>{% endif %}
+    <small>sum of realized PnL on closed live positions</small>
+  </div>
+  <div class="metric">
+    <span>Open positions</span>
+    <strong>{{ open_positions|selectattr("mode", "equalto", "live")|list|length }} live · {{ open_positions|selectattr("mode", "equalto", "shadow")|list|length }} paper</strong>
+    <small>live rows include positions whose wallet balance is already zero</small>
+  </div>
+  <div class="metric">
+    <span>Paper trades left out</span>
+    <strong>{{ summary.excluded_total }}</strong>
+    <small>closes the daily report does not count: pre-cutoff, not pool-priced, placeholder-price, written-off or unpriced</small>
+  </div>
+  <div class="metric">
+    <span>Exit twins</span>
+    {% set passes = twin.rows|selectattr("verdict", "equalto", "PASS")|list %}
+    <strong class="{% if passes %}pos{% endif %}">{{ passes|length }} passing</strong>
+    <small>{% if twin.available %}updated {{ twin.at_ms|when }} UTC{% else %}{{ twin.reason }}{% endif %}</small>
+  </div>
+</section>
+
+<div class="grid-pages">
+
+<section class="panel panel-wide">
+  <div class="panel-head">
+    <div><h3>Paper scoreboard</h3><small>the daily report's pass line, computed now: n ≥ 40, both halves positive, 90% lower bound above zero{% if scoreboard.honest_since_ms %} · only trades opened since {{ scoreboard.honest_since_ms|when }} UTC, when sol paper started pricing from the chain and paying live costs; {{ scoreboard.before_honest or 0 }} earlier left out{% endif %}</small></div>
+    <a class="text-button" href="/api/paper/scoreboard" target="_blank" rel="noopener">json</a>
+  </div>
+  {% if scoreboard.available and scoreboard.rows %}
+  <div class="tablewrap"><table class="grid-table">
+    <thead><tr><th>Lane / chain</th><th>Verdict</th><th class="r">n</th><th class="r">Mean</th><th class="r">Older half</th><th class="r">Newer half</th><th class="r">Low 90%</th><th class="r">Left out</th></tr></thead>
+    <tbody>
+    {% for r in scoreboard.rows %}
+      <tr>
+        <td><b>{{ r.lane }}</b> <small class="chip">{{ r.chain }}</small></td>
+        <td><span class="verdict v-{{ r.verdict|lower }}">{{ r.verdict }}</span><small class="why">{{ r.why }}</small></td>
+        <td class="r">{{ r.n }}</td>
+        <td class="r {% if r.mean is not none and r.mean < 0 %}neg{% elif r.mean %}pos{% endif %}">{{ r.mean|pct }}</td>
+        <td class="r">{{ r.mean_old|pct }}</td>
+        <td class="r">{{ r.mean_new|pct }}</td>
+        <td class="r">{{ r.lower|pct }}</td>
+        <td class="r">{{ r.excluded + r.placeholder_excluded }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}
+  <p class="nodata">{{ scoreboard.reason or ("No closed paper trades since " ~ (scoreboard.honest_since_ms|when) ~ " UTC yet." if scoreboard.honest_since_ms else "No closed paper trades in the window yet.") }}</p>
+  {% endif %}
+</section>
+
+<section class="panel panel-wide">
+  <div class="panel-head">
+    <div><h3>Exit twins</h3><small>each closed paper trade replayed with one earlier exit, same costs; and again at +1% cost per leg</small></div>
+    <a class="text-button" href="/api/twin-exits" target="_blank" rel="noopener">json</a>
+  </div>
+  {% if twin.available and twin.rows %}
+  <div class="tablewrap"><table class="grid-table">
+    <thead><tr><th>Lane / chain</th><th>Exit</th><th>Verdict</th><th class="r">Pairs</th><th class="r">With this exit</th><th class="r">Current exit</th><th class="r">Paired gain</th><th class="r">Low 90%</th><th>Cost stress</th></tr></thead>
+    <tbody>
+    {% for r in twin.rows %}
+      <tr>
+        <td><b>{{ r.lane }}</b> <small class="chip">{{ r.chain }}</small></td>
+        <td>{{ r.challenger }}</td>
+        <td><span class="verdict v-{{ (r.verdict or '')|lower }}">{{ r.verdict }}</span></td>
+        <td class="r">{{ r.pairs }}</td>
+        <td class="r {% if r.challenger_mean is not none and r.challenger_mean < 0 %}neg{% elif r.challenger_mean %}pos{% endif %}">{{ r.challenger_mean|pct }}</td>
+        <td class="r">{{ r.incumbent_model_mean|pct }}</td>
+        <td class="r">{{ r.paired_diff_mean|pct }}</td>
+        <td class="r">{{ r.paired_diff_lower90|pct }}</td>
+        <td>{% if r.stress_bps %}{% if r.survives_stress %}<span class="pos">holds</span>{% else %}<span class="neg">fails</span>{% endif %} {{ r.challenger_stress_mean|pct }}{% else %}—{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  <p class="footnote">{{ twin.positions }} closed paper positions in the study, {{ twin.without_tape }} without enough recorded quotes to replay.</p>
+  {% else %}
+  <p class="nodata">{{ twin.reason or "No twin-exit rows yet." }}</p>
+  {% endif %}
+</section>
+
+{% if trials %}
+<section class="panel panel-wide">
+  <div class="panel-head">
+    <div><h3>Exit trial</h3><small>randomized on paper: half of new positions exit at a fixed time, half keep today's exit; pass = n &ge; 40 per arm, the timed arm's 90% lower bound above zero AND above today's exit</small></div>
+  </div>
+  <div class="tablewrap"><table class="grid-table">
+    <thead><tr><th>Lane / chain</th><th>Exit</th><th>Verdict</th><th class="r">Timed arm</th><th class="r">Low 90%</th><th class="r">Today's exit</th><th class="r">Difference</th><th class="r">Low 90%</th></tr></thead>
+    <tbody>
+    {% for r in trials %}
+      <tr>
+        <td><b>{{ r.lane }}</b> <small class="chip">{{ r.chain }}</small><small class="why">since {{ r.since_ms|when }} UTC</small></td>
+        <td>{{ r.hold_s }}s</td>
+        <td><span class="verdict v-{{ r.verdict|lower }}">{{ r.verdict }}</span></td>
+        <td class="r {% if r.mean_treat is not none and r.mean_treat < 0 %}neg{% elif r.mean_treat %}pos{% endif %}">{{ r.mean_treat|pct }} <small>n={{ r.n_treat }}</small></td>
+        <td class="r">{{ r.treat_low90|pct }}</td>
+        <td class="r">{{ r.mean_control|pct }} <small>n={{ r.n_control }}</small></td>
+        <td class="r">{{ r.diff|pct }}</td>
+        <td class="r">{{ r.diff_low90|pct }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+{% endif %}
+
+<section class="panel panel-wide">
+  <div class="panel-head">
+    <div><h3>Results by lane, last {{ summary.days }} days</h3><small>closed positions, live and paper</small></div>
+    <a class="text-button" href="/api/trades?days={{ summary.days }}" target="_blank" rel="noopener">json</a>
+  </div>
+  {% if summary.rows %}
+  <div class="tablewrap"><table class="grid-table">
+    <thead><tr><th>Mode</th><th>Lane / chain</th><th class="r">Trades</th><th class="r">Mean</th><th class="r">Median</th><th class="r">Win rate</th><th class="r">Left out</th></tr></thead>
+    <tbody>
+    {% for r in summary.rows %}
+      <tr>
+        <td><span class="badge badge-{{ 'live' if r.mode == 'live' else 'shadow' }}">{{ 'live' if r.mode == 'live' else 'paper' }}</span></td>
+        <td><b>{{ r.lane }}</b> <small class="chip">{{ r.chain }}</small></td>
+        <td class="r">{{ r.n }}</td>
+        <td class="r {% if r.mean is not none and r.mean < 0 %}neg{% elif r.mean %}pos{% endif %}">{{ r.mean|pct }}</td>
+        <td class="r">{{ r.median|pct }}</td>
+        <td class="r">{% if r.win_rate is not none %}{{ (100 * r.win_rate)|round|int }}%{% else %}—{% endif %}</td>
+        <td class="r">{{ r.excluded }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}
+  <p class="nodata">No closed positions in the last {{ summary.days }} days.</p>
+  {% endif %}
+</section>
+
+<section class="panel panel-wide">
+  <div class="panel-head">
+    <div><h3>Open positions</h3><small>live and paper, newest first</small></div>
+    <a class="text-button" href="/api/positions" target="_blank" rel="noopener">json</a>
+  </div>
+  {% if open_positions %}
+  <div class="tablewrap"><table class="grid-table">
+    <thead><tr><th>Mode</th><th>Token</th><th>Lane / chain</th><th>Opened</th><th class="r">Cost</th><th>Protection</th></tr></thead>
+    <tbody>
+    {% for p in open_positions %}
+      <tr>
+        <td><span class="badge badge-{{ 'live' if p.mode == 'live' else 'shadow' }}">{{ 'live' if p.mode == 'live' else 'paper' }}</span></td>
+        <td><b>{{ p.symbol or '' }}</b> <button class="addr" type="button" data-copy="{{ p.token }}" title="{{ p.token }}">{{ p.token_short }}<span class="copy-glyph" aria-hidden="true">⧉</span></button></td>
+        <td>{{ p.lane }} <small class="chip">{{ p.chain }}</small></td>
+        <td>{{ p.opened_ms|when }}</td>
+        <td class="r">{{ p.cost_native|num(4) }} {{ p.symbol_native }}</td>
+        <td>{% if p.protected %}<span class="guard good"><i></i>protected</span>{% else %}<span class="guard block"><i></i>none</span>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}
+  <p class="nodata">No open positions.</p>
+  {% endif %}
+</section>
+
+<section class="panel panel-wide">
+  <div class="panel-head">
+    <div><h3>Live trades, last 30 days</h3><small>real fills on the agent's wallets</small></div>
+  </div>
+  {% if live %}
+  {% with rows=live %}{% include "partials/trade_rows.html" %}{% endwith %}
+  {% else %}
+  <p class="nodata">No live trade closed in the last 30 days. Every lane is on paper while the profit search runs.</p>
+  {% endif %}
+</section>
+
+<section class="panel panel-wide">
+  <div class="panel-head">
+    <div><h3>Paper trades, last {{ filters.paper_days }} day{{ '' if filters.paper_days == 1 else 's' }}{% if filters.lane %} · {{ filters.lane }}{% endif %}{% if filters.chain %} · {{ filters.chain }}{% endif %}</h3><small>simulated fills at recorded quotes, newest first (200 max)</small></div>
+  </div>
+  {% if paper %}
+  {% with rows=paper %}{% include "partials/trade_rows.html" %}{% endwith %}
+  {% else %}
+  <p class="nodata">No paper trade closed in this window.</p>
+  {% endif %}
+</section>
+
+<section class="panel panel-wide">
+  <div class="panel-head">
+    <div><h3>Latest daily paper report</h3><small>{% if report.available %}as sent to Telegram, {{ report.updated_ms|when }} UTC{% else %}{{ report.reason }}{% endif %}</small></div>
+  </div>
+  {% if report.available %}<pre class="report">{{ report.text }}</pre>{% endif %}
+</section>
+
+</div>
+{% endblock %}

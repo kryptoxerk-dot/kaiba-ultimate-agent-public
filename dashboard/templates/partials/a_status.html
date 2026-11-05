@@ -1,0 +1,18 @@
+<div class="ag-status">
+  {% for g in status.gateways %}
+  <span class="flag {{ 'ok' if g.state == 'active' else 'bad' }}" title="{{ g.unit }}">{{ g.name }} · {{ g.state }}</span>
+  {% endfor %}
+  {% if status.usage and status.usage.windows %}
+    {% for w in status.usage.windows %}{% if w is mapping %}
+    <span class="flag sig" title="{{ w.get('label') or w.get('name') or 'window' }}">
+      {{ w.get('label') or w.get('name') or 'usage' }}:
+      {% set used = w.get('used_percent') if w.get('used_percent') is not none else w.get('utilization') %}
+      {% if used is not none %}<b class="mono">{{ '%.0f'|format(used|float * (100 if used|float <= 1 else 1)) }}%</b>{% else %}—{% endif %}
+      {% if w.get('resets_at') %}<small>resets {{ w.get('resets_at')|string|truncate(16, True, '') }}</small>{% endif %}
+    </span>
+    {% endif %}{% endfor %}
+  {% elif status.usage and status.usage.unavailable_reason %}
+    <span class="flag unk" title="{{ status.usage.unavailable_reason }}">usage unavailable</span>
+  {% endif %}
+  {% if not status.available %}<span class="flag bad">{{ status.reason }}</span>{% endif %}
+</div>

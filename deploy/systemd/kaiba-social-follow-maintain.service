@@ -1,0 +1,13 @@
+[Unit]
+Description=Kaiba budgeted following snapshot and project verification
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/kaiba
+ExecStart=/usr/bin/timeout 90 %h/kaiba/.venv/bin/python -m kaiba.hunters.social_follow maintain
+Nice=19
+IOSchedulingClass=idle
+MemoryMax=160M
+TimeoutStartSec=95
+NoNewPrivileges=true
+UMask=0077

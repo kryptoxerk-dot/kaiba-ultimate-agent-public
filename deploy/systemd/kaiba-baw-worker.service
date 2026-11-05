@@ -1,0 +1,36 @@
+[Unit]
+Description=Kaiba Binance Wallet connection and NFT preview worker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=kaiba-baw
+Group=kaiba-baw
+WorkingDirectory=/opt/kaiba-baw/current
+ExecStart=/usr/bin/python3 -m kaiba.hunters.baw_mint_worker serve --settings /etc/kaiba-baw/worker.json
+Environment=PYTHONDONTWRITEBYTECODE=1
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/kaiba-baw/.config/kaiba/baw/session
+ReadWritePaths=/var/lib/kaiba-baw/.config/kaiba/baw/state
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+CapabilityBoundingSet=
+AmbientCapabilities=
+MemoryMax=192M
+CPUQuota=15%
+Nice=19
+IOSchedulingClass=idle
+Restart=on-failure
+RestartSec=15
+TimeoutStopSec=15
+
+[Install]
+WantedBy=multi-user.target

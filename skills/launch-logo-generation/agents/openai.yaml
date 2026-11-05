@@ -1,0 +1,3 @@
+interface:
+  display_name: "Launch Logos"
+  short_description: "Generate and prepare logos for tweet token launches"

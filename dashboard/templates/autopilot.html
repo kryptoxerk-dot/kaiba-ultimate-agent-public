@@ -1,0 +1,76 @@
+{% extends "term_layout.html" %}
+{% block title %}Autopilot · Kaiba{% endblock %}
+{% block main %}
+<div class="kx-page"><div class="kx-wrap">
+  <header class="kx-hero">
+    <div class="ttl">
+      <p class="eyebrow">Autopilot</p>
+      <h1>Lanes that trade on their own</h1>
+      <p>Each lane turns signals into entries through every gate (kill switch, pause, budgets, dossier freshness, the risk gate, the size ladder), and protection exits them. <b>Paper</b> (shadow) makes real decisions with simulated fills at on-chain prices and live costs. <b>Live</b> spends money: arming a lane needs its name typed back, and nothing here can raise the envelope's ceiling.</p>
+    </div>
+    {% if lanes.available %}
+    <div class="act">
+      {% if lanes.entries_paused or lanes.reduce_only %}
+      <button class="kb mint" type="button" data-post="/control/resume" data-msg="Resume entries?">Resume entries</button>
+      {% else %}
+      <button class="kb" type="button" data-post="/control/pause" data-msg="Pause every new entry? Exits keep running.">Pause entries</button>
+      {% endif %}
+      <button class="kb danger" type="button" data-post="/control/kill" data-msg="KILL SWITCH: every lane goes OFF until you clear it. Continue?">Kill switch</button>
+    </div>
+    {% endif %}
+  </header>
+
+  {% if lanes.available %}
+  <div class="pills">
+    <span class="pill">global mode <b class="mono">{{ lanes.global_mode }}</b></span>
+    <span class="pill" title="the operator's envelope; set in risk.yaml bounds, never from this page">ceiling <b class="mono">{{ lanes.max_lane_mode }}</b></span>
+    <span class="pill">max size <b class="mono">{{ lanes.max_size_pct }}%</b> of bankroll</span>
+    {% if lanes.kill_switch %}<span class="pill bad">KILL SWITCH ON</span>{% endif %}
+    {% if lanes.entries_paused %}<span class="pill warn">entries paused</span>{% endif %}
+    {% if lanes.reduce_only %}<span class="pill warn">reduce-only</span>{% endif %}
+    <span class="pill unk">paper counted since {{ lanes.honest_since_ms|when if lanes.honest_since_ms else '—' }} UTC</span>
+  </div>
+
+  <section class="kx-panel">
+    <div style="overflow-x:auto">
+    <table class="kx-t">
+      <thead><tr><th>Lane</th><th>Mode</th><th>Chains</th><th class="r">Size band</th><th class="r">Open</th><th>Last 24 h</th><th>Paper verdict <small>(n ≥ 40, both halves &gt; 0, 90% lower bound &gt; 0)</small></th><th>Set mode</th></tr></thead>
+      <tbody>
+      {% for l in lanes.lanes %}
+      <tr class="{{ 'is-live' if (l.effective or l.mode) in ('live', 'canary') }}">
+        <td><b>{{ l.lane }}</b></td>
+        <td><span class="md-pill m-{{ l.effective or l.mode }}">{{ 'paper' if l.mode == 'shadow' else l.mode }}</span>{% if l.effective and l.effective != l.mode %}<span class="sub" title="clamped by the global mode, the envelope or the kill switch">effective {{ l.effective }}</span>{% endif %}</td>
+        <td><div class="pills">{% for c in l.chains %}<span class="chip c-{{ c }}">{{ c }}</span>{% endfor %}</div></td>
+        <td class="r mono">{{ l.size_min }}–{{ l.size_max }}%</td>
+        <td class="r mono">{% set sh = l.open.get('shadow', 0) %}{{ sh }}{% if l.cap %}<span class="faint">/{{ l.cap }}</span>{% endif %}{% if l.open.get('live') %} <span class="live-txt">+{{ l.open.get('live') }} live</span>{% endif %}{% if l.cap and sh >= l.cap %}<span class="sub warn-txt">at the paper cap</span>{% endif %}</td>
+        <td class="mono">{% for a, n in l.activity.items() %}<span class="sub">{{ a }} {{ n }}</span>{% else %}<span class="faint">—</span>{% endfor %}</td>
+        <td>{% for v in l.verdicts %}<div style="margin:2px 0"><span class="verdict v-{{ v.verdict|lower }}">{{ v.verdict }}</span> <span class="muted">{{ v.chain }} · n {{ v.n }}{% if v.mean is not none %} · </span><span class="mono {{ 'pos' if v.mean > 0 else 'neg' }}">{{ v.mean|ret }}{% endif %}</span></div>{% else %}<span class="faint">no paper closes yet</span>{% endfor %}</td>
+        <td>
+          <form data-lane-mode style="display:flex;gap:6px;align-items:center;margin:0">
+            <input type="hidden" name="lane" value="{{ l.lane }}">
+            <select name="mode" aria-label="mode for {{ l.lane }}">
+              {% for m in ['off', 'shadow', 'canary', 'live'] %}<option value="{{ m }}" {{ 'selected' if m == l.mode }}>{{ 'paper' if m == 'shadow' else m }}</option>{% endfor %}
+            </select>
+            <input name="confirm" placeholder="ARM {{ l.lane }}" autocomplete="off" class="ap-confirm" hidden style="width:150px">
+            <button class="kb xs" type="submit">Apply</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </section>
+  {% else %}
+  <p class="note">The risk file is unreadable, so the lanes cannot be shown.</p>
+  {% endif %}
+
+  <section class="kx-panel kx-book">
+    <nav class="kx-seg under" data-tabs="book">
+      <button type="button" class="on" data-tab="open">Positions <span class="n">{{ book.open|length }}</span></button>
+      <button type="button" data-tab="closed">Closed 24 h <span class="n">{{ book.recent|length }}</span></button>
+    </nav>
+    <div data-refresh="/terminal/book" data-every="5" data-keep-tab="book" style="overflow-x:auto">{% include "partials/t_book.html" %}</div>
+  </section>
+</div></div>
+{% endblock %}

@@ -1,0 +1,12 @@
+[Unit]
+Description=Run Kaiba paper learning automatically on new evidence
+
+[Timer]
+OnBootSec=2min
+OnUnitInactiveSec=15s
+AccuracySec=5s
+Persistent=true
+Unit=kaiba-autolearn.service
+
+[Install]
+WantedBy=timers.target

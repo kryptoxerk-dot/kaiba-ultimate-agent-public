@@ -1,0 +1,13 @@
+[Unit]
+Description=Observe market prices needed by Kaiba paper candidates
+
+[Timer]
+OnActiveSec=2min
+OnBootSec=2min
+OnUnitInactiveSec=10s
+AccuracySec=2s
+Persistent=true
+Unit=kaiba-autolearn-quotes.service
+
+[Install]
+WantedBy=timers.target

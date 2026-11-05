@@ -1,0 +1,46 @@
+{# The centre panel before a token is picked: how the agent is doing, honestly counted. #}
+{% set sb = scoreboard %}{% set tot = sb.total if sb and sb.total else none %}
+<header class="ovh">
+  <div class="ttl">
+    <h2>How the agent is doing</h2>
+    <p>Paper results since {{ sb.honest_since_ms|when if sb and sb.honest_since_ms else '—' }} UTC, when paper started pricing from the chain and paying live costs. Pick a token on the left for its full intelligence.</p>
+  </div>
+  <div class="kv">
+    <div><span>Paper trades</span><b>{{ tot.n if tot else '—' }}</b></div>
+    <div><span>Win rate</span><b>{{ ('%.0f%%'|format(100 * tot.wins / tot.n)) if tot and tot.n else '—' }}</b></div>
+    <div><span>Mean per trade</span><b class="{{ 'pos' if tot and tot.mean and tot.mean > 0 else 'neg' if tot and tot.mean and tot.mean < 0 }}">{{ tot.mean|ret if tot and tot.mean is not none else '—' }}</b></div>
+    <div title="the sum of per-trade returns at a flat stake: +100% means one stake earned"><span>Sum, flat stake</span><b class="{{ 'pos' if tot and tot.sum_pct > 0 else 'neg' if tot and tot.sum_pct < 0 }}">{{ ('%+.0f%%'|format(tot.sum_pct)) if tot else '—' }}</b></div>
+  </div>
+</header>
+<div class="kx-chart">
+  <div class="ctl"><span class="lbl">Paper equity <small>/ % of one stake</small></span>
+    {% if sb and sb.curve and sb.curve.points %}{% for r, label in [('21600000', '6h'), ('86400000', '24h'), ('0', 'All')] %}<button type="button" data-range="{{ r }}" class="{{ 'on' if r == '0' }}">{{ label }}</button>{% endfor %}{% endif %}
+    <span class="src">{% if sb and sb.curve %}{{ sb.curve.points|length }} closes · flat stake, the scoreboard's own rows{% endif %}</span></div>
+  {% if sb and sb.curve and sb.curve.points|length >= 2 %}
+  <canvas data-series="{{ sb.curve|series }}" data-zero="1" aria-label="paper equity curve"></canvas>
+  {% else %}
+  <div class="nochart">{{ sb.reason if sb and sb.reason else 'Not enough closed paper trades since the honest cutoff to draw a line yet.' }}</div>
+  {% endif %}
+</div>
+<div class="tabs-body">
+  <div class="tpane">
+    <div class="sec">
+      <h4>Lanes <small>pass line: n ≥ 40, both halves positive, 90% lower bound above zero</small><a href="/autopilot" style="margin-left:auto;font-weight:400">Autopilot ›</a></h4>
+      <div class="lanes-mini">
+        {% for l in lanes.lanes if l.mode != 'off' %}
+        <a class="lane-card" href="/autopilot" style="color:inherit;text-decoration:none">
+          <div class="top"><b>{{ l.lane }}</b><span class="md-pill m-{{ l.effective or l.mode }}">{{ 'paper' if (l.effective or l.mode) == 'shadow' else (l.effective or l.mode) }}</span></div>
+          <div class="v">
+            {% for v in l.verdicts %}<div><span class="verdict v-{{ v.verdict|lower }}">{{ v.verdict }}</span> {{ v.chain }} · n {{ v.n }}{% if v.mean is not none %} · <span class="{{ 'pos' if v.mean > 0 else 'neg' }}">{{ v.mean|ret }}</span>{% endif %}</div>
+            {% else %}no paper closes since the cutoff{% endfor %}
+            {% if l.activity %}<div>24 h: {% for a, n in l.activity.items() %}{{ a }} {{ n }}{{ ' · ' if not loop.last }}{% endfor %}</div>{% endif %}
+          </div>
+        </a>
+        {% endfor %}
+      </div>
+    </div>
+    <div class="sec">
+      <div class="note"><b>What the record says.</b> On our own data, and in an independent audit of every pump.fun trade, following Solana memecoins loses after costs. Live trading stays off until a lane passes its pre-declared line above. The numbers here count only what the chain would have paid.</div>
+    </div>
+  </div>
+</div>

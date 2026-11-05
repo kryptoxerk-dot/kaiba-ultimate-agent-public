@@ -1,0 +1,352 @@
+{
+ "note": "LIVE capture, keyless public API, 2026-10-21, a pump.fun mint taken from RugCheck's /stats/new_tokens seconds after creation. The graph is [] and the report says graphInsidersDetected=0; the graph was [] again on a re-fetch about six minutes later. All 7 fresh mints fetched the same way looked like this. An empty graph cannot be told apart from 'not analysed yet', so it is UNKNOWN, not a measured zero.",
+ "mint": "H1dYaZErMWQWT81vC3tgrLLrNQTD7biRDoQhKLwmpump",
+ "created_utc": "2026-10-21T00:11:39.662453545Z",
+ "source": {
+  "graph": "https://api.rugcheck.xyz/v1/tokens/H1dYaZErMWQWT81vC3tgrLLrNQTD7biRDoQhKLwmpump/insiders/graph",
+  "report": "https://api.rugcheck.xyz/v1/tokens/H1dYaZErMWQWT81vC3tgrLLrNQTD7biRDoQhKLwmpump/report"
+ },
+ "captured_utc": {
+  "graph": "2026-10-21T00:12:04Z",
+  "report": "2026-10-21T00:12:06Z",
+  "graph_refetch": "2026-10-21T00:17:50Z"
+ },
+ "graph": [],
+ "graph_refetch": [],
+ "report": {
+  "mint": "H1dYaZErMWQWT81vC3tgrLLrNQTD7biRDoQhKLwmpump",
+  "tokenProgram": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+  "creator": "BJ7ShyLqYGYHZY2bmhSND9YgQDcp9UZmht9YWLcgh1EP",
+  "creatorBalance": 0,
+  "token": {
+   "mintAuthority": null,
+   "supply": 1000000000000000,
+   "decimals": 6,
+   "isInitialized": true,
+   "freezeAuthority": null
+  },
+  "token_extensions": {
+   "nonTransferable": false,
+   "transferFeeConfig": null,
+   "defaultAccountState": null,
+   "permanentDelegate": null,
+   "metadataPointer": {
+    "authority": null,
+    "metadataAddress": "H1dYaZErMWQWT81vC3tgrLLrNQTD7biRDoQhKLwmpump"
+   },
+   "groupPointer": null,
+   "groupMemberPointer": null,
+   "tokenMetadata": {
+    "authority": null,
+    "mint": "H1dYaZErMWQWT81vC3tgrLLrNQTD7biRDoQhKLwmpump",
+    "name": "Rainbow Cat",
+    "symbol": "RAINBOWCAT",
+    "uri": "https://metadata.j7tracker.io/m/sjEaIwczqe",
+    "additionalMetadata": {}
+   },
+   "mintCloseAuthority": null,
+   "confidentialTransferMint": null,
+   "interestBearingConfig": null,
+   "transferHook": null,
+   "confidentialTransferFeeConfig": null,
+   "tokenGroup": null,
+   "tokenGroupMember": null,
+   "scaledUiAmountConfig": null,
+   "pausableConfig": null
+  },
+  "tokenMeta": {
+   "name": "Rainbow Cat",
+   "symbol": "RAINBOWCAT",
+   "uri": "https://metadata.j7tracker.io/m/sjEaIwczqe",
+   "mutable": false,
+   "updateAuthority": "11111111111111111111111111111111"
+  },
+  "topHolders": [
+   {
+    "address": "fncqu5zvMVpgyCLkAZi2Ubf81pQcDdU7ZzET9BabBth",
+    "amount": 878049775858074,
+    "decimals": 6,
+    "pct": 87.80497758580739,
+    "uiAmount": 878049775.858074,
+    "uiAmountString": "878049775.858074",
+    "owner": "4Xt3mNRNYUjY4bqw9RsoFm5edP3J8GrE7k7NdKM6E5Wi",
+    "insider": false
+   },
+   {
+    "address": "Y31iRpnx4kygqMy8Q3wSqNbZ7prBfsBcSwfXHUqDm5S",
+    "amount": 27451152275523,
+    "decimals": 6,
+    "pct": 2.7451152275523,
+    "uiAmount": 27451152.275523,
+    "uiAmountString": "27451152.275523",
+    "owner": "CjFAhqmGeLwhduxJ1h8p3FuiK191aJTXJWH272BsG7DC",
+    "insider": false
+   },
+   {
+    "address": "AVJL831VRphjtdZbW8oc3Fm6t2GSu7pU9ZTVfZjwcP54",
+    "amount": 26044538653601,
+    "decimals": 6,
+    "pct": 2.6044538653601,
+    "uiAmount": 26044538.653601,
+    "uiAmountString": "26044538.653601",
+    "owner": "H5bEwfGmGjQ6jceEkA2S64345NUSHVCrgKNDGtn3Ae7R",
+    "insider": false
+   },
+   {
+    "address": "HfvCZVaD6pSUDxybgoDvMkk7GqGqxgroBiimmN4YMiTi",
+    "amount": 19392441105302,
+    "decimals": 6,
+    "pct": 1.9392441105302,
+    "uiAmount": 19392441.105302,
+    "uiAmountString": "19392441.105302",
+    "owner": "69z4qTgQ5DBRTJvnQzx2h8jZhNsv5UgADotEwwKUm2JS",
+    "insider": false
+   },
+   {
+    "address": "63Hg98ymeouHbqRoixHnbjw7WjF64ke7UfZBYf22p392",
+    "amount": 9425915536983,
+    "decimals": 6,
+    "pct": 0.9425915536982999,
+    "uiAmount": 9425915.536983,
+    "uiAmountString": "9425915.536983",
+    "owner": "41cbZRazBYmAX3HGcG3f7ZiUw83nrbuCH7x8huLb8Nzn",
+    "insider": false
+   },
+   {
+    "address": "3a4oxLS5UWZRmdfZSBF2Y4s4Y2igGUQEfYF2iNy97zs4",
+    "amount": 8960287623343,
+    "decimals": 6,
+    "pct": 0.8960287623343,
+    "uiAmount": 8960287.623343,
+    "uiAmountString": "8960287.623343",
+    "owner": "DbWsihGrTkngSnHfX3byVNAciQpuThLBE6Rr8KURAEHm",
+    "insider": false
+   },
+   {
+    "address": "57hbkhqRjB8gLECBwHNWNnCBsfudd8zYsf6pGkTYn2iV",
+    "amount": 6608202439676,
+    "decimals": 6,
+    "pct": 0.6608202439676,
+    "uiAmount": 6608202.439676,
+    "uiAmountString": "6608202.439676",
+    "owner": "GvuuRXkcNAP6LmgiRvMcpAvxPkuj3wgzuCLZupzkRkPj",
+    "insider": false
+   },
+   {
+    "address": "5XrQEuVx1FbkiyXHubvigmtXnmV8CmRvPv8aWWcnX5A",
+    "amount": 6444541364105,
+    "decimals": 6,
+    "pct": 0.6444541364105,
+    "uiAmount": 6444541.364105,
+    "uiAmountString": "6444541.364105",
+    "owner": "2yEDCctKx2kArGHtwnBPQC97F8PsM7bWGfguhwuJErvK",
+    "insider": false
+   },
+   {
+    "address": "F4dBneEEmp9ATmWCDVTtdCmLoEe4K4p72ReqYko6HHY9",
+    "amount": 5109329367761,
+    "decimals": 6,
+    "pct": 0.5109329367761,
+    "uiAmount": 5109329.367761,
+    "uiAmountString": "5109329.367761",
+    "owner": "8sAdYXPFb1HUT5pbw7ueWjsQmweq946ztYSZDPJBfP39",
+    "insider": false
+   },
+   {
+    "address": "EDtCFQF9zaL1wG4J12hqtnZEog8wC2ERNWHmf727WZwQ",
+    "amount": 4751691270782,
+    "decimals": 6,
+    "pct": 0.47516912707819997,
+    "uiAmount": 4751691.270782,
+    "uiAmountString": "4751691.270782",
+    "owner": "kQdJVZvix2BPCz2i46ErUPk2a74Uf37QZL5jsRdAD8y",
+    "insider": false
+   },
+   {
+    "address": "DuqyxhbnkPxrj1Nbfi1hZjTshwRXbDEUTnAFucRwHh3T",
+    "amount": 3350008203663,
+    "decimals": 6,
+    "pct": 0.33500082036629997,
+    "uiAmount": 3350008.203663,
+    "uiAmountString": "3350008.203663",
+    "owner": "Dfwopv6u5E24Y22BPDRQThHPAseYrU3qn9y3TcsEXYys",
+    "insider": false
+   },
+   {
+    "address": "4UQ535mH7QqyQHtTDuuw9vUHy7fn6HYvwj18M5HjN63G",
+    "amount": 2969773644142,
+    "decimals": 6,
+    "pct": 0.2969773644142,
+    "uiAmount": 2969773.644142,
+    "uiAmountString": "2969773.644142",
+    "owner": "13QU1e1fdP8NXLUbcfumLiW4aUABZ9zYuQN7wd2YFRbn",
+    "insider": false
+   },
+   {
+    "address": "2esyeVNrhBigUh3Bt5kdnvSnNrtuX79jpE5VpNxdpgeQ",
+    "amount": 1442342657045,
+    "decimals": 6,
+    "pct": 0.14423426570450001,
+    "uiAmount": 1442342.657045,
+    "uiAmountString": "1442342.657045",
+    "owner": "4Hr3j2CqaVYU6XNCjApAdBsphKTGEkdYZKtze8x1vUox",
+    "insider": false
+   },
+   {
+    "address": "FZczSEdddMMHyoQh4fHhwgAGKzVptbcBdQ7tDdpbMbuB",
+    "amount": 0,
+    "decimals": 6,
+    "pct": 0,
+    "uiAmount": 0,
+    "uiAmountString": "0",
+    "owner": "3zNWpeRBZY7c5eS5fYboheQP5juPqD525qixxbjiVhEQ",
+    "insider": false
+   },
+   {
+    "address": "HP4GrGgz7y4dhoCD6uTNDktAEraerSsG6RaASmibZe4V",
+    "amount": 0,
+    "decimals": 6,
+    "pct": 0,
+    "uiAmount": 0,
+    "uiAmountString": "0",
+    "owner": "FpoEMjsCtX6ufVVSbEvVKo6fi49q7ggFZYLRHCtPPZXM",
+    "insider": false
+   }
+  ],
+  "freezeAuthority": null,
+  "mintAuthority": null,
+  "risks": [],
+  "score": 1,
+  "score_normalised": 1,
+  "fileMeta": {
+   "description": "",
+   "name": "Rainbow Cat",
+   "symbol": "RAINBOWCAT",
+   "image": "https://metadata.j7tracker.io/m/sjEaIwczqe-img"
+  },
+  "lockerOwners": {},
+  "lockers": {},
+  "lockerScanStatus": "none",
+  "markets": [
+   {
+    "pubkey": "4Xt3mNRNYUjY4bqw9RsoFm5edP3J8GrE7k7NdKM6E5Wi",
+    "marketType": "pump_fun",
+    "mintA": "H1dYaZErMWQWT81vC3tgrLLrNQTD7biRDoQhKLwmpump",
+    "mintB": "So11111111111111111111111111111111111111112",
+    "mintLP": "11111111111111111111111111111111",
+    "liquidityA": "EwUMiKsdHiSBf6cknzFCrx5njYpFhKczyX11diAdfu97",
+    "liquidityB": "4Xt3mNRNYUjY4bqw9RsoFm5edP3J8GrE7k7NdKM6E5Wi",
+    "mintAAccount": {
+     "mintAuthority": null,
+     "supply": 1000000000000000,
+     "decimals": 6,
+     "isInitialized": true,
+     "freezeAuthority": null
+    },
+    "mintBAccount": {
+     "mintAuthority": null,
+     "supply": 0,
+     "decimals": 9,
+     "isInitialized": false,
+     "freezeAuthority": null
+    },
+    "mintLPAccount": {
+     "mintAuthority": null,
+     "supply": 0,
+     "decimals": 0,
+     "isInitialized": false,
+     "freezeAuthority": null
+    },
+    "liquidityAAccount": {
+     "mint": "H1dYaZErMWQWT81vC3tgrLLrNQTD7biRDoQhKLwmpump",
+     "owner": "4Xt3mNRNYUjY4bqw9RsoFm5edP3J8GrE7k7NdKM6E5Wi",
+     "amount": 671149775858074,
+     "delegate": null,
+     "state": 0,
+     "delegatedAmount": 0,
+     "closeAuthority": null
+    },
+    "liquidityBAccount": {
+     "mint": "So11111111111111111111111111111111111111112",
+     "owner": "4Xt3mNRNYUjY4bqw9RsoFm5edP3J8GrE7k7NdKM6E5Wi",
+     "amount": 10347344928,
+     "delegate": null,
+     "state": 0,
+     "delegatedAmount": 0,
+     "closeAuthority": null
+    },
+    "lp": {
+     "baseMint": "H1dYaZErMWQWT81vC3tgrLLrNQTD7biRDoQhKLwmpump",
+     "quoteMint": "So11111111111111111111111111111111111111112",
+     "lpMint": "11111111111111111111111111111111",
+     "quotePrice": 106.44692522245863,
+     "basePrice": 0,
+     "base": 671149775.858074,
+     "quote": 10.347344928,
+     "reserveSupply": 10347344928,
+     "currentSupply": 0,
+     "quoteUSD": 1101.4430518018025,
+     "baseUSD": 0,
+     "pctReserve": 0,
+     "pctSupply": 0,
+     "holders": null,
+     "totalTokensUnlocked": 0,
+     "tokenSupply": 0,
+     "lpLocked": 10347344928,
+     "lpUnlocked": 0,
+     "lpLockedPct": 100,
+     "lpLockedUSD": 1101.4430518018025,
+     "lpMaxSupply": 0,
+     "lpCurrentSupply": 0,
+     "lpTotalSupply": 10347344928
+    }
+   }
+  ],
+  "totalMarketLiquidity": 1101.4430518018025,
+  "totalStableLiquidity": 1101.4430518018025,
+  "totalLPProviders": 0,
+  "totalHolders": 15,
+  "price": 0,
+  "rugged": false,
+  "tokenType": "",
+  "transferFee": {
+   "pct": 0,
+   "maxAmount": 0,
+   "authority": "11111111111111111111111111111111"
+  },
+  "knownAccounts": {
+   "2nZ3CmHAAK9q9CG51F2NAa2VccKc6fxzVumeCp4rM7Sb": {
+    "name": "Printr Stake Pool",
+    "type": "LOCKER"
+   },
+   "4Xt3mNRNYUjY4bqw9RsoFm5edP3J8GrE7k7NdKM6E5Wi": {
+    "name": "Pump Fun",
+    "type": "AMM"
+   },
+   "BJ7ShyLqYGYHZY2bmhSND9YgQDcp9UZmht9YWLcgh1EP": {
+    "name": "Creator",
+    "type": "CREATOR"
+   },
+   "EwUMiKsdHiSBf6cknzFCrx5njYpFhKczyX11diAdfu97": {
+    "name": "Pump Fun",
+    "type": "AMM"
+   }
+  },
+  "events": [],
+  "verification": null,
+  "validation": {
+   "validated": false
+  },
+  "graphInsidersDetected": 0,
+  "insiderNetworks": null,
+  "detectedAt": "2026-10-21T00:11:39.662453545Z",
+  "creatorTokens": null,
+  "launchpad": {
+   "name": "Pump.Fun",
+   "logo": "https://api.rugcheck.xyz/public/logos/pump_fun.png",
+   "url": "https://x.com/pumpfun",
+   "platform": "pump_fun"
+  },
+  "deployPlatform": "unknown"
+ }
+}

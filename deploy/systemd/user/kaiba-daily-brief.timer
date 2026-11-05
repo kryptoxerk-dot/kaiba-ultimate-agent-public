@@ -1,0 +1,12 @@
+[Unit]
+Description=Compile Kaiba macro briefing daily at 07:00 Asia/Jakarta
+
+[Timer]
+# 00:00 UTC is 07:00 WIB throughout the year.
+OnCalendar=*-*-* 00:00:00 UTC
+Persistent=true
+AccuracySec=1min
+Unit=kaiba-daily-brief.service
+
+[Install]
+WantedBy=timers.target

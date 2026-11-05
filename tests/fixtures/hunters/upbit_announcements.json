@@ -1,0 +1,22 @@
+{
+  "source": "https://api-manager.upbit.com/api/v1/announcements",
+  "kind": "json",
+  "body": {
+    "success": true,
+    "data": {
+      "notices": [
+        {
+          "id": 4823,
+          "title": "Market Support for Jupiter (JUP) (KRW Market) 거래 지원 개시",
+          "listed_at": "2026-09-19T09:00:00+09:00"
+        },
+        {
+          "id": 4824,
+          "title": "[안내] 시스템 점검",
+          "listed_at": "2026-09-18T01:00:00+09:00"
+        }
+      ]
+    }
+  },
+  "note": "Hand-built to match the documented/observed layout of the source, NOT a live capture. Shapes follow docs/research/06-hunters-airdrops-nft.md. Regenerate by hand if a provider's real layout is captured later."
+}

@@ -1,0 +1,16 @@
+{
+  "signature": "4fXn8SMKSz5CRbSMWYGgJGxmLyAPaYiMgiP78NCeogM7UyYAkrEb2JQZX1KCvcHfzn1HbYPjAcoWbnZ91tj9rMtW",
+  "mint": "5uiWN8tHqR4ykLDt88UR8htfcG6YK7fqcadfKBgDEPMh",
+  "traderPublicKey": "3Cj4zJ9xdSY8Pc7e4owpSFPUSwGMthgPt5h5G12fy72J",
+  "txType": "buy",
+  "tokenAmount": 12500000.0,
+  "solAmount": 0.45,
+  "newTokenBalance": 12500000.0,
+  "bondingCurveKey": "5uEtuXD3vNYDVkBbfTca2P7mWiTy3vqRm9MFem8HfM1o",
+  "vTokensInBondingCurve": 999764150.94,
+  "vSolInBondingCurve": 32.25,
+  "marketCapSol": 32.25,
+  "pool": "pump",
+  "slot": 312884950,
+  "timestamp": 1758355230
+}

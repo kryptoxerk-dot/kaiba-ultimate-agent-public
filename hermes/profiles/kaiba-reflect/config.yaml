@@ -1,0 +1,99 @@
+# Hermes profile: kaiba-reflect (nightly, cron only)
+# Codex coordination edit (P7-1n, 2026-09-21): the narrow fallback-readiness slice pins
+# the Codex fallback's effort; Claude retains the primary-provider and reflection design.
+#
+# The one profile that runs on Opus: judging a week of trades badly is expensive, and it
+# runs once a night rather than every five minutes.
+
+model:
+  provider: anthropic
+  default: claude-opus-5
+
+fallback_providers:
+  - provider: openai-codex
+    model: gpt-6-astra
+
+agent:
+  # `max`, the top of Hermes' scale (none/minimal/low/medium/high/xhigh/max),
+  # confirmed against the installed source rather than assumed -- writing an
+  # unrecognised value silently falls back to a lower tier. Operator's choice
+  # 2026-09-21: Opus 5 at max effort as the standing default.
+  reasoning_effort: max
+  # Keep Claude's reflection default at max while making the Codex fallback deterministic.
+  reasoning_overrides:
+    gpt-6-astra: high
+  max_turns: 32
+
+auxiliary:
+  compression:
+    provider: anthropic
+    model: claude-haiku-4-5
+
+toolsets:
+  enabled:
+    - kaiba
+    - file
+    - code_execution
+    - skills
+    - skill_management     # lessons that recur become skills
+    - memory
+    - terminal             # runs the repo's own test suite before proposing a code change
+  disabled:
+    - web
+    - browser
+    - x_search
+    - cronjob
+    - messaging
+    - image_gen
+
+mcp_servers:
+  kaiba:
+    command: "{{PYTHON}}"
+    # The production profile reaches the core through the stdio-to-Unix-socket shim.
+    args: ["-m", "kaiba.mcp.socket_bridge", "client"]
+    cwd: "{{KAIBA_ROOT}}"
+    env:
+      KAIBA_ENV: "prod"
+      KAIBA_MCP_SOCKET: "/run/kaiba/mcp/kaiba.sock"
+    timeout: 30
+    # Must be a MAPPING, not a bool. Hermes does `config.get("sampling", {})` then
+    # `.get("enabled", True)` on the result (tools/mcp_tool_server_run.py:270), so a bare
+    # `false` raises AttributeError inside an async task that nothing awaits -- the MCP
+    # connection then fails and retries roughly every 60s, forever, filling the journal.
+    # Found 2026-09-21 from the gateway log on the VPS.
+    sampling:
+      enabled: false
+
+skills:
+  external_dirs:
+    - "{{KAIBA_ROOT}}/skills"
+    # GMGN's own skill pack, installed by `npx skills add GMGNAI/gmgn-skills` into
+    # .agents/skills. Referenced in place rather than copied into skills/ so that
+    # re-running the installer updates them without a merge, and so ours and theirs stay
+    # visibly separate -- theirs are vendored and we do not edit them.
+    #
+    # Two of the fourteen (gmgn-swap, gmgn-token-buy) are FINANCIAL EXECUTION skills that
+    # call GMGN directly. That bypasses the whole execution stack: RiskGate.check_entry,
+    # the viability sizing band, the paper broker, shadow mode, the limiter and the signer
+    # policy. They cannot act today because GMGN_PRIVATE_KEY is unset. When it is set,
+    # route real trades through kaiba's executor instead, so they inherit the gates and
+    # land in the same `trades` table every measurement reads.
+    - "{{KAIBA_ROOT}}/.agents/skills"
+
+memory:
+  enabled: true
+  memory_char_limit: 2600
+
+delegation:
+  max_children: 2
+  max_depth: 1
+  child_timeout_s: 300
+
+cron:
+  max_parallel_jobs: 1
+  output_retention: 72
+  model: claude-opus-5
+  model_provider: anthropic
+
+gateway:
+  platforms: {}

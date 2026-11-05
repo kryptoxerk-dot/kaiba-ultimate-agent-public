@@ -1,0 +1,13 @@
+{
+  "args": [
+    "token",
+    "info",
+    "--chain",
+    "sol",
+    "--address",
+    "not-an-address"
+  ],
+  "returncode": 1,
+  "stdout": "",
+  "stderr": "[gmgn-cli] Invalid --address address for chain \"sol\": \"not-an-address\"\n"
+}

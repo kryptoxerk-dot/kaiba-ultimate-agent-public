@@ -1,0 +1,83 @@
+{
+ "_recorded": "2026-10-21 graph.codex.io, free plan, via the box; key never in the request body. rankings createdAt DESC, liquidity gt 5000, limit 3.",
+ "data": {
+  "filterTokens": {
+   "count": 3,
+   "page": 0,
+   "results": [
+    {
+     "token": {
+      "address": "0xdb9264a5a1f9fd98a6dce9a01fa123bce3b3802f",
+      "networkId": 8453,
+      "name": "Kimchi Coin",
+      "symbol": "KIMCHI",
+      "decimals": 18,
+      "createdAt": 1792572311,
+      "creatorAddress": "0x4868a048ca63098c67ba87d4fe20b1985d7bc689"
+     },
+     "priceUSD": "3.37918794296e-5",
+     "liquidity": "33472",
+     "volume24": "890",
+     "holders": 24,
+     "marketCap": "33792",
+     "createdAt": 1792572331,
+     "trendingScore": 0.742211885432362,
+     "txnCount24": 45,
+     "buyCount24": 28,
+     "sellCount24": 17,
+     "change24": "0.021926786229329382"
+    },
+    {
+     "token": {
+      "address": "0x14d02cfac05539636831b362446e157c7fd3b408",
+      "networkId": 8453,
+      "name": "openhuman",
+      "symbol": "openhuman",
+      "decimals": 18,
+      "createdAt": 1792571427,
+      "creatorAddress": "0x5647cf8559ede5f8d9a8bb85829b4b40dfda8562"
+     },
+     "priceUSD": "9.15576554847e-6",
+     "liquidity": "42687",
+     "volume24": "5838",
+     "holders": 12,
+     "marketCap": "49441",
+     "createdAt": 1792571439,
+     "trendingScore": 0.7591316191391214,
+     "txnCount24": 27,
+     "buyCount24": 27,
+     "sellCount24": 0,
+     "change24": "0.34575187479648894"
+    },
+    {
+     "token": {
+      "address": "0x48d95f7a292ea87d8c01c9ea813a4308d90da71b",
+      "networkId": 8453,
+      "name": "Noah",
+      "symbol": "Noah",
+      "decimals": 18,
+      "createdAt": 1792569805,
+      "creatorAddress": "0xdd8a7ef3a12182d8a0f2c7cdddf9d5a4632d2a23"
+     },
+     "priceUSD": "9.9986e-3",
+     "liquidity": "29996",
+     "volume24": "0",
+     "holders": 241,
+     "marketCap": "99986",
+     "createdAt": 1792570315,
+     "trendingScore": 1.792570315e-05,
+     "txnCount24": 0,
+     "buyCount24": 0,
+     "sellCount24": 0,
+     "change24": "0"
+    }
+   ]
+  },
+  "usageData": {
+   "total": {
+    "computeUnits": "5012000",
+    "count": "0"
+   }
+  }
+ }
+}

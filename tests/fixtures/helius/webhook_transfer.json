@@ -1,0 +1,33 @@
+[
+  {
+    "signature": "2qE5uKpz8hZ1mFtVnQ4sJ6cX9dR3wY7bN1gT5kM8pL2vA4zC6xW9eS3rU7iO1pD5fG8hJ2kL4mN6qR9t",
+    "type": "TRANSFER",
+    "source": "SYSTEM_PROGRAM",
+    "slot": 312845200,
+    "timestamp": 1758300200,
+    "fee": 5000,
+    "feePayer": "GDfnEsia2WLAW5t8yx2X5j2mkfA74i5kwGdDuZHt7XmG",
+    "description": "GDfnEsia2WLAW5t8yx2X5j2mkfA74i5kwGdDuZHt7XmG transferred 2 SOL to 5tzFkiKscXHK5ZXCGbXZxdw7gTjjD1mBwuoFbhUvuAi9",
+    "nativeTransfers": [
+      {
+        "fromUserAccount": "GDfnEsia2WLAW5t8yx2X5j2mkfA74i5kwGdDuZHt7XmG",
+        "toUserAccount": "5tzFkiKscXHK5ZXCGbXZxdw7gTjjD1mBwuoFbhUvuAi9",
+        "amount": 2000000000
+      }
+    ],
+    "tokenTransfers": [],
+    "accountData": []
+  },
+  {
+    "signature": "5aB9cD2eF4gH6jK8mN1pQ3rS5tU7vW9xY2zA4bC6dE8fG1hJ3kL5mN7pQ9rS2tU4vW6xY8zA1bC3dE5f",
+    "type": "NFT_MINT",
+    "source": "CANDY_MACHINE_V3",
+    "slot": 312845201,
+    "timestamp": 1758300201,
+    "feePayer": "GDfnEsia2WLAW5t8yx2X5j2mkfA74i5kwGdDuZHt7XmG",
+    "description": "ignored: not a SWAP or TRANSFER",
+    "nativeTransfers": [],
+    "tokenTransfers": [],
+    "accountData": []
+  }
+]

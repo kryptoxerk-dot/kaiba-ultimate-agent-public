@@ -1,0 +1,33 @@
+{
+  "source": "https://api-mainnet.magiceden.dev/v2/launchpad/collections",
+  "kind": "json",
+  "body": [
+    {
+      "symbol": "monad_apes",
+      "name": "Monad Apes",
+      "description": "Apes on Monad",
+      "price": 2.5,
+      "size": 5000,
+      "launchDatetime": "2026-09-25T16:00:00.000Z",
+      "chain": "monad",
+      "featured": true
+    },
+    {
+      "symbol": "sol_cats",
+      "name": "Sol Cats",
+      "description": "Cats on Solana",
+      "price": 0.5,
+      "size": 3333,
+      "launchDatetime": "2026-09-21T15:00:00.000Z",
+      "chain": "solana",
+      "featured": false
+    },
+    {
+      "symbol": "",
+      "name": "",
+      "price": 1
+    },
+    "garbage"
+  ],
+  "note": "Hand-built to match the documented/observed layout of the source, NOT a live capture. Shapes follow docs/research/06-hunters-airdrops-nft.md. Regenerate by hand if a provider's real layout is captured later."
+}

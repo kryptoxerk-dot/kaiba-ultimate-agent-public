@@ -1,0 +1,6 @@
+{
+  "source": "https://feed.bithumb.com/notice",
+  "kind": "xml",
+  "body": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<rss version=\"2.0\"><channel>\n  <item>\n    <title>주피터(JUP) 원화 마켓 추가</title>\n    <link>https://feed.bithumb.com/notice/1234</link>\n    <pubDate>Sat, 19 Sep 2026 06:00:00 +0900</pubDate>\n  </item>\n  <item>\n    <title>시스템 점검 안내</title>\n    <link>https://feed.bithumb.com/notice/1235</link>\n    <pubDate>Fri, 18 Sep 2026 06:00:00 +0900</pubDate>\n  </item>\n</channel></rss>\n",
+  "note": "Hand-built to match the documented/observed layout of the source, NOT a live capture. Shapes follow docs/research/06-hunters-airdrops-nft.md. Regenerate by hand if a provider's real layout is captured later."
+}

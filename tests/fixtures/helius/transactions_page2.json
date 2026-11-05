@@ -1,0 +1,22 @@
+{
+  "jsonrpc": "2.0",
+  "id": "kaiba-getTransactionsForAddress",
+  "result": {
+    "data": [
+      {
+        "transaction": {
+          "signatures": [
+            "5nP2qR4sT6uV8wX1yZ3aB5cD7eF9gH2jK4mN6pQ8rS1tU3vW5xY7zA9bC2dE4fG6hJ8kL1mN3pQ5rS7t"
+          ],
+          "message": {"header": {"numRequiredSignatures": 1}, "accountKeys": ["5tzFkiKscXHK5ZXCGbXZxdw7gTjjD1mBwuoFbhUvuAi9"]}
+        },
+        "meta": {"err": null, "fee": 5000},
+        "version": 0,
+        "slot": 448601000,
+        "transactionIndex": 3,
+        "blockTime": 1789871000
+      }
+    ],
+    "paginationToken": null
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "version": "source34-fixtures/1",
+  "sources": {
+    "kaiba/learning/allocation_runtime.py": "bdc5825a6c3d73868fe2e1c56b3fe47807069a30e5f8461f453882ba20a9c250",
+    "kaiba/learning/autolearn.py": "816aec537a554ce9155c05ddaa0b1ac52b35159495eb1a3baa230cbe59de25c6"
+  }
+}

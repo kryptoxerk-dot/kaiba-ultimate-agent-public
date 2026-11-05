@@ -1,0 +1,32 @@
+[Unit]
+Description=Kaiba agent console (FastAPI + SSE) -- the NEW agent, not the legacy monitor on 8788
+After=default.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/kaiba
+Environment=KAIBA_ENV=prod
+Environment=PYTHONUNBUFFERED=1
+Environment=KAIBA_DASHBOARD_HOST=127.0.0.1
+Environment=KAIBA_DASHBOARD_PORT=8794
+EnvironmentFile=%h/.config/kaiba/dashboard.env
+
+# The web surface is the most exposed process here, and it runs as the user that holds the
+# keys. dashboard/broker.py starts it inside the wall in dashboard/wall.py: Landlock and seccomp
+# rules it cannot lift, proved at every start, or it refuses to serve. It cannot read a key file,
+# start a program, open a connection or signal another process. What it needs from outside goes
+# through the broker as named operations. docs/runbooks/console-wall.md has the details.
+# Do not add InaccessiblePaths= or PrivateTmp= here: in a user unit on this box they do nothing
+# and report nothing, which is how the previous wall never existed.
+# There is no withdraw route in the app by construction -- tests/test_dashboard.py
+# asserts over app.routes that no path or handler name contains the word.
+UnsetEnvironment=GMGN_API_KEY GMGN_PRIVATE_KEY TELEGRAM_BOT_TOKEN ANTHROPIC_API_KEY
+
+ExecStart=%h/kaiba/.venv/bin/python -m dashboard.broker --host 127.0.0.1 --port 8794
+Restart=always
+RestartSec=5
+NoNewPrivileges=yes
+MemoryMax=384M
+
+[Install]
+WantedBy=default.target

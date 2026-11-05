@@ -1,0 +1,16 @@
+{
+ "_recorded": "2026-10-21 graph.codex.io free plan. tokenTopTraders on the free plan (verbatim).",
+ "errors": [
+  {
+   "message": "Not authorized: please upgrade your plan",
+   "extensions": {
+    "code": "NOT_AUTHORIZED",
+    "serviceName": "tokens"
+   },
+   "path": [
+    "top"
+   ]
+  }
+ ],
+ "data": null
+}

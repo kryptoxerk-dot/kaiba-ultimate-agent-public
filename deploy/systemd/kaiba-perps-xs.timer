@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily 00:30 UTC run of the weekly cross-sectional perps paper books (forms on Mondays)
+
+[Timer]
+OnCalendar=*-*-* 00:30:00 UTC
+Persistent=true
+AccuracySec=1min
+Unit=kaiba-perps-xs.service
+
+[Install]
+WantedBy=timers.target

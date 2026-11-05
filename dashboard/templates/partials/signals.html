@@ -1,0 +1,22 @@
+<div class="panel-head">
+  <div><h3>Signal tape</h3><small>lane · token · strength · independent entities</small></div>
+  <a class="text-button" href="/api/signals" target="_blank" rel="noopener">json</a>
+</div>
+{% if signals %}
+<div class="table tape">
+  <div class="table-row header"><span>Lane</span><span>Token</span><span>Strength</span><span>Entities</span></div>
+  {% for s in signals %}
+  <div class="table-row">
+    <span class="lane">{{ s.lane }}</span>
+    <span class="token-name">
+      <strong>{{ s.symbol or s.token_short }}</strong>
+      <button class="addr" type="button" data-copy="{{ s.token }}" title="{{ s.token }}">{{ s.token_short }}<span class="copy-glyph" aria-hidden="true">⧉</span></button>
+    </span>
+    <span class="score">{{ s.strength|num(2) }}</span>
+    <span class="queue">{{ s.entity_count }}e / {{ s.wallet_count }}w</span>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<p class="nodata">No signals recorded yet. The signal engine lands in Phase 3.</p>
+{% endif %}

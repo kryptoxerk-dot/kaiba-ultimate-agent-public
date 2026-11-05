@@ -1,0 +1,13 @@
+[Unit]
+Description=Offer a separate wallet-review opportunity within the existing interval
+
+[Timer]
+OnActiveSec=2min
+OnBootSec=2min
+OnUnitInactiveSec=60s
+AccuracySec=5s
+Persistent=true
+Unit=kaiba-wallet-maintenance.service
+
+[Install]
+WantedBy=timers.target

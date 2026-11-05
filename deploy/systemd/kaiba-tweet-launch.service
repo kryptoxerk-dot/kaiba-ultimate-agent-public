@@ -1,0 +1,20 @@
+[Unit]
+Description=Kaiba tweet launcher (X stream -> launch plans; shadow-records unless config/tweet_launch.yaml is armed)
+After=default.target kaiba-engine.service
+
+[Service]
+Type=simple
+WorkingDirectory=%h/kaiba
+EnvironmentFile=-%h/.config/kaiba/.env
+Environment=KAIBA_ENV=prod
+Environment=PYTHONUNBUFFERED=1
+# Same as kaiba-engine: gmgn-cli refuses --yes without it. Inert while the launcher is shadow.
+Environment=GMGN_ALLOW_AUTOMATED_TRADES=1
+ExecStart=%h/kaiba/.venv/bin/python -m kaiba.execution.tweet_launch run
+Restart=always
+# twitterapi.io allows one socket per key and asks for 90 s between connections.
+RestartSec=90
+MemoryMax=400M
+
+[Install]
+WantedBy=default.target

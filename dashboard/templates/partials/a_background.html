@@ -1,0 +1,19 @@
+{% if not background.available %}
+<p class="nodata pad">{{ background.reason }}</p>
+{% elif not background.runs %}
+<p class="nodata pad">No background jobs ran in the last 24 hours.</p>
+{% else %}
+<p class="muted">{{ background.total }} jobs in 24 h · ${{ '%.2f'|format(background.cost_usd) }} estimated</p>
+<div class="ag-runs">
+  {% for r in background.runs %}
+  <details class="ag-run">
+    <summary>
+      <b>{{ r.title or 'job' }}</b>
+      <span class="muted">{{ r.active_ms|ago }} ago · {{ r.messages or 0 }} msgs · {{ r.tool_calls or 0 }} tools{% if r.cost_usd %} · ${{ '%.2f'|format(r.cost_usd|float) }}{% endif %}{% if r.end_reason %} · {{ r.end_reason }}{% endif %}</span>
+    </summary>
+    {% if r.tools_used %}<div class="flags">{% for t in r.tools_used[:14] %}<span class="flag sig">{{ t }}</span>{% endfor %}</div>{% endif %}
+    {% if r.final and r.final.html %}<div class="md">{{ r.final.html|safe }}</div>{% else %}<p class="nodata">no written output</p>{% endif %}
+  </details>
+  {% endfor %}
+</div>
+{% endif %}

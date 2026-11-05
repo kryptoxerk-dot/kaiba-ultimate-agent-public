@@ -1,0 +1,195 @@
+# Kaiba dashboard — TLS front end.
+#
+# Everything here is driven by environment variables so no host, IP or address is baked
+# into the repository. Caddy expands {$VAR} at config-load time, so these must be present
+# in the caddy service's environment (systemctl edit caddy, or /etc/default/caddy):
+#
+#   KAIBA_DASHBOARD_HOSTNAME   the public name, e.g. kaiba.example.com or a sslip.io name
+#   KAIBA_ACME_EMAIL           contact address for Let's Encrypt
+#   KAIBA_DASHBOARD_UPSTREAM   defaults to 127.0.0.1:8788
+#   KAIBA_TRUSTED_CIDRS        optional: extra client ranges allowed to reach /control/*
+#
+# Install:  deploy/install.sh --with-caddy   (or copy to /etc/caddy/Caddyfile by hand)
+# Validate: caddy validate --config /etc/caddy/Caddyfile
+#
+# PREREQUISITE: the rate_limit directive below comes from the caddy-ratelimit plugin,
+# which is NOT in the stock Caddy build. Either build it in —
+#   xcaddy build --with github.com/mholt/caddy-ratelimit
+# — or comment out the two marked blocks and the `order` line. Without the plugin Caddy
+# refuses to load this file with "unrecognized directive: rate_limit".
+
+{
+	email {$KAIBA_ACME_EMAIL}
+
+	# Do not advertise the server. One less thing for a scanner to fingerprint.
+	servers {
+		trusted_proxies static private_ranges
+	}
+
+	# Required by the caddy-ratelimit plugin: it has no default position in the
+	# directive order. Remove this line together with the rate_limit blocks if you are
+	# running a stock Caddy binary.
+	order rate_limit before basic_auth
+}
+
+{$KAIBA_DASHBOARD_HOSTNAME} {
+	log {
+		output file /var/log/caddy/kaiba-dashboard.log {
+			roll_size 20MiB
+			roll_keep 10
+		}
+		# The dashboard uses a session cookie; never write it to disk.
+		format filter {
+			wrap json
+			fields {
+				request>headers>Cookie delete
+				request>headers>Authorization delete
+				request>headers>X-Csrf-Token delete
+			}
+		}
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+		Cross-Origin-Opener-Policy "same-origin"
+		Cross-Origin-Resource-Policy "same-origin"
+		Permissions-Policy "accelerometer=(), camera=(), geolocation=(), gyroscope=(), microphone=(), payment=(), usb=()"
+		# The console is server-rendered HTMX with inline handlers; 'unsafe-inline' is
+		# required for style and script until the templates move to nonces. No remote
+		# origin is allowed, so an injected <script src> cannot phone home.
+		Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; font-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+		-Server
+	}
+
+	# ---------------------------------------------------------------- allow list
+	#
+	# Closed by default. Every path the console actually serves is named here and
+	# nothing else reaches the upstream. `dashboard/app.py` serves exactly:
+	#   /healthz  /login  /logout  /  /partials/{name}  /api/*  /events/stream
+	#   /control/*  /static/*
+	@allowed path / /healthz /login /logout /api/* /events/stream /partials/* /static/* /control/*
+	handle @allowed {
+		# ------------------------------------------------------ control surface
+		# pause / resume / reduce-only / kill / close-position / risk-dial.
+		# These change what the agent may do with money, so they are rate limited
+		# even though they are already behind the session cookie and a CSRF token.
+		# A stolen cookie should not be able to flap the kill switch 100x/second.
+		#
+		# [PLUGIN] remove this whole handle block if you are on a stock Caddy build:
+		# the paths still work, they are simply not rate limited.
+		handle /control/* {
+			rate_limit {
+				zone kaiba_control {
+					key {remote_host}
+					events 20
+					window 1m
+				}
+				log_key
+			}
+			reverse_proxy {$KAIBA_DASHBOARD_UPSTREAM:127.0.0.1:8788} {
+				header_up X-Real-IP {remote_host}
+				transport http {
+					dial_timeout 2s
+					response_header_timeout 15s
+				}
+			}
+		}
+
+		# ------------------------------------------------------ login throttle
+		# [PLUGIN] same caveat as above.
+		handle /login {
+			rate_limit {
+				zone kaiba_login {
+					key {remote_host}
+					events 10
+					window 5m
+				}
+			}
+			reverse_proxy {$KAIBA_DASHBOARD_UPSTREAM:127.0.0.1:8788}
+		}
+
+		# ------------------------------------------------------ SSE
+		# The event stream must not be buffered or compressed: flush_interval -1
+		# disables response buffering, and the stream is excluded from `encode`
+		# below by living in its own handle.
+		handle /events/stream {
+			reverse_proxy {$KAIBA_DASHBOARD_UPSTREAM:127.0.0.1:8788} {
+				flush_interval -1
+				transport http {
+					dial_timeout 2s
+					# An SSE connection is long-lived by definition. No read timeout.
+					response_header_timeout 15s
+				}
+			}
+		}
+
+		# ------------------------------------------------------ everything else
+		handle {
+			encode zstd gzip
+			reverse_proxy {$KAIBA_DASHBOARD_UPSTREAM:127.0.0.1:8788} {
+				header_up X-Real-IP {remote_host}
+				transport http {
+					dial_timeout 2s
+					response_header_timeout 30s
+				}
+			}
+		}
+	}
+
+	# Anything not on the list gets a flat 404. Not 403: an unauthenticated scanner
+	# should not learn that a path exists but is forbidden.
+	handle {
+		respond 404
+	}
+
+	# Cap every request body. The console takes small forms only.
+	request_body {
+		max_size 64KB
+	}
+}
+
+# ---------------------------------------------------------------------------------
+# Webhook receiver — COMMENTED OUT until Phase 1 lands the Alchemy inbox.
+#
+# Uncomment inside the site block above (not as a separate site — a second site block
+# would mean a second certificate and a second name to defend). The path is a secret in
+# itself: generate it once, keep it in ALCHEMY_WEBHOOK_PATH, never log it.
+#
+# The 1 MiB cap is the point of this block: Alchemy address-activity batches are small,
+# and an unbounded body on an unauthenticated endpoint is how you get memory-exhausted
+# by anyone who learns the URL.
+#
+#	handle /hooks/alchemy/{$ALCHEMY_WEBHOOK_PATH} {
+#		@not_post not method POST
+#		respond @not_post 405
+#		# Refuse anything we would have to buffer or decompress before we can verify
+#		# the HMAC. Content-Encoding and Transfer-Encoding are both ways to make a
+#		# 1 MiB cap meaningless.
+#		@encoded header Content-Encoding *
+#		respond @encoded 415
+#		@chunked header Transfer-Encoding *
+#		respond @chunked 415
+#		request_body {
+#			max_size 1MB
+#		}
+#		rate_limit {
+#			zone kaiba_webhook {
+#				key {remote_host}
+#				events 240
+#				window 1m
+#			}
+#		}
+#		reverse_proxy {$KAIBA_WEBHOOK_UPSTREAM:127.0.0.1:8794} {
+#			transport http {
+#				dial_timeout 2s
+#				response_header_timeout 12s
+#			}
+#		}
+#	}
+#
+# The receiver itself must still verify the X-Alchemy-Signature HMAC with
+# ALCHEMY_WEBHOOK_SIGNING_KEY before it trusts a single byte. Caddy narrows the blast
+# radius; it does not authenticate anyone.

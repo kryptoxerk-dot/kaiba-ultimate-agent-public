@@ -1,0 +1,23 @@
+{
+  "_note": "pump.fun curve at 46% progress moving 7.5 SOL/min with a 12% bundler share and two graded wallets on the tape.",
+  "chain": "sol",
+  "token": "PumPCurveTokenAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+  "scores": [
+    {"address": "curveWa11etAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA1", "grade": "B", "score": 70.0, "archetype": "early_buyer"},
+    {"address": "curveWa11etBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB2", "grade": "A", "score": 85.0, "archetype": "sniper"}
+  ],
+  "buys": [
+    {"wallet": "curveWa11etAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA1", "side": "buy", "age_s": 20, "usd_value": "300", "amount_native": 1500000000, "price_usd": "0.00002", "tx": "tx-cv-a"},
+    {"wallet": "curveWa11etBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB2", "side": "buy", "age_s": 12, "usd_value": "500", "amount_native": 2500000000, "price_usd": "0.000021", "tx": "tx-cv-b"}
+  ],
+  "curve": {"progress_pct": "46", "sol_in_curve": "39.1", "sol_per_min": "7.5"},
+  "dossier": {
+    "built_age_s": 4,
+    "grade": "B",
+    "price_usd": "0.000021",
+    "liquidity_usd": "15000",
+    "bundler_pct": "12",
+    "graded_wallets": ["curveWa11etAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA1", "curveWa11etBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB2"]
+  },
+  "token_meta": {"symbol": "CURVE", "decimals": 6, "created_age_s": 420, "launchpad": "pump.fun"}
+}

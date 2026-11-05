@@ -1,0 +1,23 @@
+<div class="panel-head">
+  <div><h3>Decisions</h3><small>including skips — a skip is evidence too</small></div>
+  <a class="text-button" href="/api/decisions" target="_blank" rel="noopener">json</a>
+</div>
+{% if decisions %}
+<div class="timeline">
+  {% for d in decisions %}
+  <div>
+    <b>{{ d.ts_ms|ts }}</b>
+    <div>
+      <strong class="act act-{{ d.action }}">{{ d.action }}</strong>
+      <span class="lane">{{ d.lane }}</span>
+      <button class="addr" type="button" data-copy="{{ d.token }}" title="{{ d.token }}">{{ d.token_short }}<span class="copy-glyph" aria-hidden="true">⧉</span></button>
+      {% if d.thesis %}<span class="muted">{{ d.thesis }}</span>{% endif %}
+      {% if d.blockers %}<span class="warn">blockers: {{ d.blockers|join(', ') }}</span>{% endif %}
+    </div>
+    <em>{% if d.confidence is not none %}{{ d.confidence|num(2) }}{% else %}—{% endif %}</em>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<p class="nodata">No decisions recorded yet.</p>
+{% endif %}

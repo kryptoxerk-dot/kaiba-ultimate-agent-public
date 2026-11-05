@@ -1,0 +1,7 @@
+{
+  "sources": {
+    "kaiba/learning/allocation_runtime.py": "8a975dc9789dfb824a809e8216a71b0d4f651b4c54d7e6bc03ecb2c9db125afa",
+    "kaiba/learning/transaction_receipts.py": "7f2f67c9266fde66b7bdcf214c4c79d70d37b0fd43f245a97eb2b396dfee51b4"
+  },
+  "version": "source30-fixtures/1"
+}

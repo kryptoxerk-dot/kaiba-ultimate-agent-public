@@ -1,0 +1,168 @@
+{% extends "term_layout.html" %}
+{% block title %}Alpha · Kaiba{% endblock %}
+{% block main %}
+<div class="kx-page"><div class="kx-wrap">
+  <header class="kx-hero">
+    <div class="ttl">
+      <p class="eyebrow">Early alpha</p>
+      <h1>Everything the agent hears first</h1>
+      <p>Launches triage promoted, graduations, lane signals and entries, trending and smart-money feeds, exchange listings, claim and airdrop certificate subdomains (they show up 3–4 days before a claim opens), and governance spaces and repos. Every event, newest first. Click a token to open it in the terminal.</p>
+    </div>
+  </header>
+  {% set g = grok or {} %}{% set gi = g.intake or {} %}
+  <section class="kx-panel" style="margin-bottom:14px" aria-label="Grok research pipeline">
+    <div class="kx-ph lab-ph">
+      <h3>Grok research pipeline</h3>
+      {% set dv = gi.delivery or 'unavailable' %}
+      <span class="pill {{ 'ok' if dv == 'recent_receipt' else 'warn' if dv == 'stale' else 'bad' if dv == 'intake_unavailable' else 'unk' }}" title="Codex's signed intake: last delivery {{ (gi.last_delivery_ms|ago ~ ' ago') if gi.last_delivery_ms else 'never' }}">intake: {{ dv|replace('_', ' ') }}</span>
+      {% set pl = (gi.pending or [])|length %}{% set lp = (g.last_run or {}).get('pending') %}
+      {% if lp is not none %}<span class="pill" title="unreviewed, unleased revisions the processor counted at its last run (the intake's own list shows at most 20)">{{ lp }} pending at last run</span>
+      {% else %}<span class="pill" title="unreviewed, unleased revisions waiting in the intake; its list is capped at 20">{{ ('≥' if pl >= 20 else '') ~ pl }} pending</span>{% endif %}
+      {% if g.last_run %}<span class="pill unk" title="kaiba-ops job grok_alpha_process, every 5 min">processed {{ g.last_run.started_ms|ago }} ago · {{ g.last_run.processed or 0 }} new · {{ g.last_run.submitted or 0 }} decided</span>{% else %}<span class="pill unk">processor has not run</span>{% endif %}
+      <div class="act"><small>research is not authorization; tokens go through the MANUAL lane's gates and mode</small></div>
+    </div>
+    {% if not g.available %}
+    <p class="empty">Pipeline unavailable: {{ g.reason or 'no pipeline store yet' }}.</p>
+    {% elif not g.rows %}
+    <p class="empty">No Grok research processed yet{% if dv == 'no_receipt' %}: the intake has never received a delivery (Grok's signed transport is still being connected){% endif %}.</p>
+    {% else %}
+    <div style="overflow-x:auto">
+    <table class="kx-t">
+      <thead><tr><th>Received</th><th>Card</th><th>Source</th><th>Route / next</th><th>Blockers</th><th>Decision</th><th class="r" title="known parts of one round trip (paper broker's own model); price impact, per-leg gas and any unknown tax are NOT in it">Known cost</th><th>Outcome</th></tr></thead>
+      <tbody>
+      {% for r in g.rows %}{% set idn = r.identity or {} %}{% set d = r.decision or {} %}
+      <tr>
+        <td class="mono muted">{{ r.received_ms|ago }}</td>
+        <td><span class="chip">{{ r.track }}</span> <b>{{ r.project|truncate(28, True, '…') }}</b>{% if r.chain and r.token %}<span class="sub mono"><a href="/t/{{ r.chain }}/{{ r.token }}">{{ r.chain }}:{{ r.token|short(4, 4) }}</a></span>{% elif idn.observed_network and r.token %}<span class="sub mono">{{ idn.observed_network }}:{{ r.token|short(4, 4) }}</span>{% elif idn.unknowns %}<span class="sub">{{ idn.unknowns[:2]|join(', ')|replace('_', ' ') }}</span>{% endif %}{% set nf = r.network_facts %}{% if nf %}{% set nff = nf.facts or {} %}<span class="sub" title="latest-state chain read with its own receipts; not a price, liquidity, holder, safety or trading signal">facts ({{ nf.state }}): {{ nff.symbol or 'symbol ?' }} · {{ nff.decimals if nff.decimals is not none else '?' }} decimals{% if (nf.unknowns or [])|length %} · {{ (nf.unknowns or [])|length }} unknown{% endif %}</span>{% set nm = r.network_market %}{% if nm and nm.state != 'refused' %}{% set sp = nm.selected_price_pair or {} %}<span class="sub" title="DexScreener, vendor-reported, update time unknown; not a fillable quote or executable depth">market ({{ nm.state }}): {{ ('$' ~ sp.requested_token_price_usd[:12]) if sp.requested_token_price_usd else 'price unknown' }}{{ (' · liq $' ~ sp.pool_liquidity_usd.split('.')[0]) if sp.pool_liquidity_usd else '' }}{{ (' · ' ~ nm.accepted_pair_count ~ ' pools') if nm.accepted_pair_count is not none else '' }}</span>{% elif nm %}<span class="sub">market not read: {{ (nm.reasons or [])|join(', ')|replace('_', ' ') }}</span>{% endif %}{% elif r.network_facts_state == 'refused' %}<span class="sub" title="the card's own environment did not prove this network's mainnet; nothing was read">facts not read: {{ (r.network_facts_reasons or [])[:2]|join(', ')|replace('_', ' ') }}</span>{% endif %}</td>
+        <td>{% for p in (idn.posts or [])[:2] %}<a href="{{ p.url }}" target="_blank" rel="noopener noreferrer">@{{ p.author }} ↗</a>{% if not loop.last %}<br>{% endif %}{% else %}<span class="faint">—</span>{% endfor %}<span class="sub" title="post age when Kaiba received the card; the processor never verifies the post's claim">{{ ((r.source_age_at_receipt_s / 3600)|round(1) ~ ' h old at receipt') if r.source_age_at_receipt_s is not none else 'post time unknown' }} · claim unverified</span></td>
+        <td><b>{{ r.route|replace('_', ' ') }}</b><span class="sub">{{ r.next_action|replace('_', ' ') }}</span></td>
+        <td class="muted">{{ (r.blockers or [])[:3]|join(', ') or '—' }}{% if (r.blockers or [])|length > 3 %} +{{ (r.blockers|length) - 3 }}{% endif %}</td>
+        <td>{% if r.decision_id %}<span class="md-pill m-{{ r.mode or 'shadow' }}">{{ 'paper' if r.mode == 'shadow' else r.mode }}</span> {{ d.action or '' }}{% else %}<span class="faint">none</span>{% endif %}</td>
+        <td class="r mono">{% if r.est_round_trip_bps is not none %}≥{{ '%.2f%%'|format(r.est_round_trip_bps / 100) }}<span class="sub">+ {{ (r.cost_unknowns or ['unknown'])|join(', ')|replace('_', ' ') }}</span>{% else %}—{% endif %}</td>
+        <td class="mono">{% if r.realized_pct is not none %}<span class="{{ 'pos' if r.realized_pct > 0 else 'neg' }}">{{ r.realized_pct|ret }}</span><span class="sub">{{ r.exit_reason or 'open' }}</span>{% elif r.order_state %}{{ r.order_state }}{% else %}<span class="faint">—</span>{% endif %}</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% endif %}
+  </section>
+  {% set bw = baw or {} %}{% set be = bw.envelope or {} %}{% set bc = bw.connection or {} %}
+  <section class="kx-panel" style="margin-bottom:14px" aria-label="BAW mint readiness">
+    <div class="kx-ph lab-ph">
+      <h3>BAW mint readiness</h3>
+      <span class="pill {{ 'warn' if bw.stage == 'preview_capable' else 'bad' if bw.stage == 'worker_unavailable' else 'unk' }}" title="read from the local worker's /status, cached 30 s; never refreshed from this page">{{ (bw.stage or 'unknown')|replace('_', ' ') }}</span>
+      <span class="pill bad" title="no armed execution adapter; owner deferred wallet pairing">execution: off</span>
+      {% if bw.available %}<span class="pill unk">envelope ${{ be.per_mint_usd if be.per_mint_usd is not none else '?' }}/mint · ${{ be.daily_usd if be.daily_usd is not none else '?' }}/day · spent ${{ be.spent_usd if be.spent_usd is not none else '?' }} ({{ be.scope or 'scope unknown' }})</span>{% endif %}
+      <div class="act"><small>{{ ('worker connection check ' ~ (bc.checked_ms|ago) ~ ' ago') if bc.checked_ms else 'connection never checked' }}</small></div>
+    </div>
+    <div class="tpane">
+      {% if not bw.available %}
+      <p class="empty">Worker status unavailable: {{ (bw.reason or 'unknown')|replace('_', ' ') }}.</p>
+      {% else %}
+      <div class="pills" style="margin-bottom:8px">
+        {% set ws = {'connected': ('ok', 'wallet paired'), 'unpaired': ('unk', 'wallet not paired'), 'unavailable': ('warn', 'wallet check unavailable'), 'not_checked': ('unk', 'wallet status unknown')}.get(bc.state, ('unk', 'wallet status unknown')) %}
+        <span class="pill {{ ws[0] }}" title="from the worker's own connection check, never assumed">{{ ws[1] }}</span>
+        {% set dm = bc.dev_mode or {} %}
+        {% if dm.enabled is sameas false %}{% set ds = ('unk', 'developer mode off') %}
+        {% elif dm.enabled is sameas true and dm.active is sameas true %}{% set ds = ('ok', 'developer mode active') %}
+        {% elif dm.enabled is sameas true and dm.expires_ms is not none %}{% set ds = ('warn', 'developer mode expired') %}
+        {% else %}{% set ds = ('unk', 'developer mode status unknown') %}{% endif %}
+        <span class="pill {{ ds[0] }}">{{ ds[1] }}</span>
+        {% for c, v in (bc.chains or {}).items() %}<span class="chip">{{ c }}: {{ 'supported' if v.supported is sameas true else 'unsupported' if v.supported is sameas false else 'support unknown' }}{{ ', wallet' if v.wallet_present is sameas true else ', no wallet' if v.wallet_present is sameas false else ', wallet unknown' }}</span>{% endfor %}
+        {% for s, n in (bw.candidates or {}).items() %}<span class="pill unk">{{ s|replace('_', ' ') }} {{ n }}</span>{% endfor %}
+      </div>
+      {% endif %}
+      {% set lp = bw.last_preview %}{% if lp %}{% set ev = lp.evidence or {} %}
+      <p class="muted lab-note"><b>Last preview</b> {{ (lp.observed_ms|ago ~ ' ago') if lp.observed_ms else '(time unknown)' }}: {% if lp.evidence_available %}simulation {{ ev.provider_simulation or 'unknown' }} · asset effects verified: {{ 'yes' if ev.complete_asset_effects_verified else 'no' }} · fee ceiling verified: {{ 'yes' if ev.locked_fee_ceiling_verified else 'no' }} · evidence {{ (ev.raw_sha256 or '')[:12] }}{% else %}evidence unavailable ({{ (lp.evidence_blockers or ['unknown'])|join(', ')|replace('_', ' ') }}){% endif %}. Not an authorization.</p>
+      {% endif %}
+      <p class="muted lab-note"><b>Blockers:</b> {{ (bw.blockers or ['unknown'])|join(', ')|replace('_', ' ') }}.</p>
+      <details><summary class="muted">What the pinned Binance CLI 1.12.0 cannot bind ({{ (bw.cli_limits or [])|length }})</summary>
+        <ul class="muted lab-note">{% for l in bw.cli_limits or [] %}<li>{{ l }}</li>{% endfor %}</ul>
+      </details>
+    </div>
+  </section>
+  {% set nw = networks or {} %}
+  <section class="kx-panel" style="margin-bottom:14px" aria-label="Observed networks">
+    <div class="kx-ph lab-ph">
+      <h3>Observed networks</h3>
+      <span class="pill bad" title="no GMGN chain, signer-policy entry, lane or risk budget">execution: unsupported</span>
+      <div class="act"><small>chain identity checked every 15 min · token and account facts on request · no trading</small></div>
+    </div>
+    <div class="tpane">
+      {% for n in nw.networks or [] %}{% set ni = n.identity or {} %}
+      <p class="lab-note"><b>{{ n.name }}</b> · chain id {{ n.chain_id if n.chain_id is not none else 'unverified' }} · {{ (n.stage or 'stage unknown')|replace('_', ' ') }}
+        <span class="pill {{ 'ok' if ni.state == 'verified' else 'warn' if ni.state in ('stale', 'unavailable') else 'unk' }}" title="the job network_probe's last eth_chainId + latest header; a verified identity is not a trading capability">identity: {{ (ni.state or 'unknown')|replace('_', ' ') }}</span>
+        {% if ni.block_number is not none and ni.probed_ms %}<small class="muted">block {{ ni.block_number }}, probed {{ ni.probed_ms|ago }} ago</small>{% endif %}
+      </p>
+      <div class="pills" style="margin-bottom:6px">{% for k, c in (n.capabilities or {}).items() %}{% set cs = c.state or 'unknown' %}<span class="chip" title="{{ c.why }}">{{ k|replace('_', ' ') }}: {{ cs|replace('_', ' ') }}</span>{% endfor %}</div>
+      <details><summary class="muted">What Kaiba can and cannot do on {{ n.name }}</summary>
+        <ul class="muted lab-note">{% for k, c in (n.capabilities or {}).items() %}<li><b>{{ k|replace('_', ' ') }}</b>: {{ (c.state or 'unknown')|replace('_', ' ') }} — {{ c.why or 'no detail' }}</li>{% endfor %}</ul>
+      </details>
+      {% if ni.blockers %}<p class="muted lab-note">Identity blockers: {{ ni.blockers|join(', ')|replace('_', ' ') }}.</p>{% endif %}
+      {% else %}
+      <p class="empty">Network status unavailable.</p>
+      {% endfor %}
+      <p class="muted lab-note">{{ nw.note or '' }}</p>
+    </div>
+  </section>
+  <div class="kx-grid2">
+    <section class="kx-panel tall">
+      <nav class="kx-seg" style="padding-top:12px">
+        {% for slug, label, _k in filters %}<a href="/alpha?tab={{ slug }}{% if chain %}&chain={{ chain }}{% endif %}" class="{{ 'on' if slug == tab }}">{{ label }}</a>{% endfor %}
+      </nav>
+      <nav class="kx-seg">
+        <a href="/alpha?tab={{ tab }}" class="{{ 'on' if not chain }}">All chains</a>
+        {% for c, label in [('sol', 'Solana'), ('robinhood', 'Robinhood'), ('bsc', 'BNB')] %}<a href="/alpha?tab={{ tab }}&chain={{ c }}" class="{{ 'on' if chain == c }}">{{ label }}</a>{% endfor %}
+      </nav>
+      <div class="kx-scroll" data-refresh="/terminal/stream?tab={{ tab }}&n=150{% if chain %}&chain={{ chain }}{% endif %}" data-every="8">
+        {% include "partials/t_stream.html" %}
+      </div>
+    </section>
+    <div style="display:flex;flex-direction:column;gap:14px;min-width:0">
+      <section class="kx-panel">
+        <div class="kx-ph"><h3>Newest launches</h3><span class="cnt">{{ launches|length }}</span><div class="act"><small>grade · triage · age</small></div></div>
+        {% if launches %}
+        <div class="kx-scroll" style="max-height:420px">
+        <table class="kx-t">
+          <tbody>{% for l in launches %}
+            <tr>
+              <td><div class="tok"><span class="med sm c-{{ l.chain }}">{{ ((l.symbol or l.address)|string)[:1]|upper }}</span><a href="/t/{{ l.chain }}/{{ l.address }}"><b>{{ l.symbol or (l.address|short) }}</b></a></div></td>
+              <td class="muted">{{ l.launchpad or '' }}</td>
+              <td>{% if l.grade and l.grade != 'UNSCORED' %}<span class="grade g-{{ l.grade }}">{{ l.grade }}</span>{% endif %}</td>
+              <td>{% if l.verdict %}<span class="pill {{ 'ok' if l.verdict == 'promote' else 'bad' if l.verdict == 'reject' else 'unk' }}">{{ l.verdict }}</span>{% endif %}</td>
+              <td class="r mono muted">{{ l.created_ms|ago }}</td>
+            </tr>{% endfor %}
+          </tbody>
+        </table>
+        </div>
+        {% else %}<p class="empty">No launches in the last 6 hours.</p>{% endif %}
+      </section>
+      <section class="kx-panel">
+        <div class="kx-ph"><h3>Source health</h3><div class="act"><small>is each feed actually reporting?</small></div></div>
+        <div class="kx-scroll" style="max-height:420px">
+        <table class="kx-t">
+          <tbody>{% for h in health %}
+            {% if h.row == 'watcher' %}
+            <tr title="{{ h.last_error }}">
+              <td><b>{{ h.source }}</b><span class="sub">{{ h.kind }}</span></td>
+              <td>{% if h.last_poll_ms and h.last_poll_ms < (ticker.at_ms - 172800000) %}<span class="pill unk" title="not polled since {{ h.last_poll_ms|when }} UTC; {{ h.last_error }}">retired</span>{% elif h.fail_streak and h.fail_streak > 0 %}<span class="pill bad">failing ×{{ h.fail_streak }}</span>{% elif h.last_ok_ms %}<span class="pill ok">ok</span>{% else %}<span class="pill unk">never ok</span>{% endif %}</td>
+              <td class="r mono">{{ h.total_new or 0 }}<span class="sub">found</span></td>
+              <td class="r mono muted">{{ h.last_ok_ms|ago if h.last_ok_ms else '—' }}</td>
+            </tr>
+            {% else %}
+            <tr>
+              <td><b>{{ h.feed }}</b><span class="sub">{{ h.chain }}</span></td>
+              <td><span class="pill ok">feed</span></td>
+              <td class="r mono">{{ h.n }}<span class="sub">new / 24 h</span></td>
+              <td class="r mono muted">{{ h.last_ms|ago }}</td>
+            </tr>
+            {% endif %}{% endfor %}
+          </tbody>
+        </table>
+        </div>
+      </section>
+    </div>
+  </div>
+</div></div>
+{% endblock %}

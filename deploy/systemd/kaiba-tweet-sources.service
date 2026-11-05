@@ -1,0 +1,18 @@
+[Unit]
+Description=Kaiba tweet sources (which X post each new launch was made from; record only)
+After=default.target kaiba-ingest.service
+
+[Service]
+Type=simple
+WorkingDirectory=%h/kaiba
+EnvironmentFile=-%h/.config/kaiba/.env
+Environment=KAIBA_ENV=prod
+Environment=PYTHONUNBUFFERED=1
+ExecStart=%h/kaiba/.venv/bin/python -m kaiba.ingest.tweet_sources run --interval-s 20
+Restart=always
+RestartSec=30
+MemoryMax=300M
+Nice=10
+
+[Install]
+WantedBy=default.target

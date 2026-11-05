@@ -1,0 +1,11 @@
+[Unit]
+Description=Refresh the dashboard's market intel every 2 minutes (each collector runs only when due)
+
+[Timer]
+OnBootSec=3min
+OnUnitInactiveSec=2min
+AccuracySec=10s
+Unit=kaiba-market-intel.service
+
+[Install]
+WantedBy=timers.target

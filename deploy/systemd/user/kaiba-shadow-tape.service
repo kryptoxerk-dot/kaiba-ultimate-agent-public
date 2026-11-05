@@ -1,0 +1,21 @@
+[Unit]
+Description=Kaiba shadow quote tape: keep protection's per-tick quotes for paired exit research (read-only, no provider calls)
+
+[Service]
+Type=simple
+WorkingDirectory=%h/kaiba
+Environment=PYTHONUNBUFFERED=1
+Environment=KAIBA_DATA_DIR=%h/kaiba/data
+Environment=KAIBA_DB_PATH=%h/kaiba/data/kaiba.db
+ExecStart=/usr/bin/nice -n 19 /usr/bin/ionice -c3 %h/kaiba/.venv/bin/python -m kaiba.learning.shadow_tape run
+Restart=always
+RestartSec=10
+MemoryMax=150M
+Nice=19
+IOSchedulingClass=idle
+NoNewPrivileges=true
+PrivateTmp=true
+RestrictAddressFamilies=AF_UNIX
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,101 @@
+{
+  "source": "Helius enhanced webhook delivery (NFT_MINT / CANDY_MACHINE_UPDATE)",
+  "kind": "json",
+  "body": [
+    {
+      "type": "NFT_MINT",
+      "source": "CANDY_MACHINE_V3",
+      "signature": "3KpQ1sigAAA",
+      "timestamp": 1758290400,
+      "slot": 298000123,
+      "description": "Someone minted Sol Cats #12 for 0.5 SOL",
+      "events": {
+        "nft": {
+          "type": "NFT_MINT",
+          "amount": 500000000,
+          "buyer": "BuyerWa11etAddress1111111111111111111111111",
+          "nfts": [
+            {
+              "mint": "MintAddr1111111111111111111111111111111111",
+              "name": "Sol Cats #12",
+              "symbol": "SOLCAT",
+              "tokenStandard": "NonFungible"
+            }
+          ]
+        }
+      },
+      "accountData": [
+        {
+          "account": "CandyMach1ne111111111111111111111111111111"
+        }
+      ],
+      "instructions": [
+        {
+          "programId": "CMACYFENjoBMHzapRXyo1JZkVS6EtaDDzkjMrmQLvr4J",
+          "accounts": [
+            "CandyMach1ne111111111111111111111111111111",
+            "CandyGuard11111111111111111111111111111111"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "NFT_MINT",
+      "source": "CANDY_MACHINE_V3",
+      "signature": "3KpQ1sigBBB",
+      "timestamp": 1758290460,
+      "slot": 298000260,
+      "description": "Someone minted Sol Cats #13 for 0.5 SOL",
+      "events": {
+        "nft": {
+          "type": "NFT_MINT",
+          "amount": 500000000,
+          "nfts": [
+            {
+              "mint": "MintAddr2222222222222222222222222222222222",
+              "name": "Sol Cats #13",
+              "symbol": "SOLCAT"
+            }
+          ]
+        }
+      },
+      "instructions": [
+        {
+          "programId": "CMACYFENjoBMHzapRXyo1JZkVS6EtaDDzkjMrmQLvr4J",
+          "accounts": [
+            "CandyMach1ne111111111111111111111111111111"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "CANDY_MACHINE_UPDATE",
+      "source": "CANDY_MACHINE_V3",
+      "signature": "3KpQ1sigCCC",
+      "timestamp": 1758290500,
+      "slot": 298000400,
+      "description": "Candy machine updated",
+      "accountData": [
+        {
+          "account": "CandyMach1ne222222222222222222222222222222"
+        }
+      ],
+      "instructions": [
+        {
+          "programId": "CMAGAKJ67e9hRZgfC5SFTbZH8MgEmtqazKXjmkaJjWTJ",
+          "accounts": [
+            "CandyMach1ne222222222222222222222222222222"
+          ]
+        }
+      ]
+    },
+    {
+      "type": "TRANSFER",
+      "signature": "3KpQ1sigDDD",
+      "timestamp": 1758290600,
+      "slot": 298000500,
+      "description": "wallet transferred 1 SOL"
+    }
+  ],
+  "note": "Hand-built to match the documented/observed layout of the source, NOT a live capture. Shapes follow docs/research/06-hunters-airdrops-nft.md. Regenerate by hand if a provider's real layout is captured later."
+}

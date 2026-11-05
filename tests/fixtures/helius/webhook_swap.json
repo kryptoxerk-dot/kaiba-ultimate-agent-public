@@ -1,0 +1,32 @@
+[
+  {
+    "signature": "3vZ67CGoRYkuT76TtpP2VrtTPBfnvRfGq9d8szVxEX1QXBpC1gLgKt8Yb1xLcJ7pKqBnhFMdCfmHqZLp4Ekxv1Aa",
+    "type": "SWAP",
+    "source": "PUMP_FUN",
+    "slot": 312845100,
+    "timestamp": 1758300100,
+    "fee": 5000,
+    "feePayer": "5tzFkiKscXHK5ZXCGbXZxdw7gTjjD1mBwuoFbhUvuAi9",
+    "description": "5tzFkiKscXHK5ZXCGbXZxdw7gTjjD1mBwuoFbhUvuAi9 swapped 1.5 SOL for 42000000 BONK",
+    "nativeTransfers": [
+      {
+        "fromUserAccount": "5tzFkiKscXHK5ZXCGbXZxdw7gTjjD1mBwuoFbhUvuAi9",
+        "toUserAccount": "8BnEgHoWFysVcuFFX7QztDmzuH8r5ZFvyP3sYwn1XTh6",
+        "amount": 1500000000
+      }
+    ],
+    "tokenTransfers": [
+      {
+        "fromUserAccount": "8BnEgHoWFysVcuFFX7QztDmzuH8r5ZFvyP3sYwn1XTh6",
+        "toUserAccount": "5tzFkiKscXHK5ZXCGbXZxdw7gTjjD1mBwuoFbhUvuAi9",
+        "mint": "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263",
+        "tokenAmount": 42000000,
+        "tokenStandard": "Fungible"
+      }
+    ],
+    "accountData": [
+      {"account": "5tzFkiKscXHK5ZXCGbXZxdw7gTjjD1mBwuoFbhUvuAi9", "nativeBalanceChange": -1505000},
+      {"account": "8BnEgHoWFysVcuFFX7QztDmzuH8r5ZFvyP3sYwn1XTh6", "nativeBalanceChange": 1500000}
+    ]
+  }
+]

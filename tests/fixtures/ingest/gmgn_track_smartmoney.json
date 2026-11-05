@@ -1,0 +1,51 @@
+{
+  "code": 0,
+  "msg": "success",
+  "data": {
+    "list": [
+      {
+        "tx_hash": "3hVVv1TVMjfkX8tVrJrPgFZha5Hx8jHYEVGEUMfEFvC17fambG8Mv29Po13jf3HYzRe3gLrhnY4n336n8fDBYubn",
+        "timestamp": 1758355240,
+        "chain": "sol",
+        "wallet_address": "3Cj4zJ9xdSY8Pc7e4owpSFPUSwGMthgPt5h5G12fy72J",
+        "wallet_name": "smart_degen_014",
+        "wallet_tags": ["smart_degen", "renowned"],
+        "token_address": "Gp32UJ3xavL1sHSH9QKRygZPiQXhcoxazE4G48fu4QcA",
+        "token_symbol": "TRENCH",
+        "event_type": "buy",
+        "token_amount": "18420000000000",
+        "native_amount": "2500000000",
+        "price_usd": "0.00002741",
+        "volume_usd": "504.82",
+        "pool": "pump.fun",
+        "slot": 312885011
+      },
+      {
+        "tx_hash": "2fTUrK8Zhxmr611Z8YjAt1ZzEoSMRqNJPZLHQ1GFZJKyzdKAXjoEZgoxeC4qA4N89AugoYiPnt5Dv3mmEkwEWZdX",
+        "timestamp": 1758355305,
+        "chain": "sol",
+        "wallet_address": "C6XtMxmpw4ZykQ67EZJ5s2BG9dymb5bP98GzC9EZL5Vp",
+        "wallet_name": "smart_degen_207",
+        "wallet_tags": ["smart_degen"],
+        "token_address": "Gp32UJ3xavL1sHSH9QKRygZPiQXhcoxazE4G48fu4QcA",
+        "token_symbol": "TRENCH",
+        "event_type": "sell",
+        "token_amount": "9210000000000",
+        "native_amount": "1610000000",
+        "price_usd": "0.00003102",
+        "volume_usd": "285.61",
+        "pool": "pumpswap",
+        "slot": 312885160
+      },
+      {
+        "tx_hash": "",
+        "timestamp": 1758355310,
+        "chain": "sol",
+        "wallet_address": "C6XtMxmpw4ZykQ67EZJ5s2BG9dymb5bP98GzC9EZL5Vp",
+        "token_address": "Gp32UJ3xavL1sHSH9QKRygZPiQXhcoxazE4G48fu4QcA",
+        "event_type": "buy",
+        "note": "row with no tx hash must be dropped, not written as a null-keyed swap"
+      }
+    ]
+  }
+}

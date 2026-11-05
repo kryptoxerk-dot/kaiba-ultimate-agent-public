@@ -1,0 +1,14 @@
+{
+  "note": "Hand-built to the documented /report/summary shape. Not a live capture. Named risks only, which is the only thing a summary is allowed to establish.",
+  "body": {
+    "tokenProgram": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+    "tokenType": "spl-token-2022",
+    "risks": [
+      {"name": "Mint Authority still enabled", "value": "", "description": "tokens can be minted", "score": 30000, "level": "danger"},
+      {"name": "Freeze Authority still enabled", "value": "", "description": "accounts can be frozen", "score": 25000, "level": "danger"},
+      {"name": "Mutable metadata", "value": "", "description": "token metadata can be changed", "score": 100, "level": "warn"}
+    ],
+    "score": 42000,
+    "score_normalised": 91
+  }
+}

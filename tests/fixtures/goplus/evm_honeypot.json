@@ -1,0 +1,42 @@
+{
+  "note": "Hand-built to the documented EVM shape. Not a live capture. A textbook honeypot: sells revert, the source is unverified, the tax is owner-modifiable and the creator has shipped honeypots before.",
+  "body": {
+    "code": 1,
+    "message": "OK",
+    "result": {
+      "0x2222222222222222222222222222222222222222": {
+        "token_name": "Trap",
+        "token_symbol": "TRAP",
+        "is_open_source": "0",
+        "is_mintable": "1",
+        "can_take_back_ownership": "1",
+        "owner_change_balance": "0",
+        "buy_tax": "0.05",
+        "sell_tax": "0.99",
+        "cannot_sell_all": "1",
+        "slippage_modifiable": "1",
+        "personal_slippage_modifiable": "0",
+        "is_honeypot": "1",
+        "transfer_pausable": "1",
+        "is_in_dex": "1",
+        "is_airdrop_scam": "0",
+        "fake_token": "0",
+        "honeypot_with_same_creator": "3",
+        "holder_count": "37",
+        "total_supply": "1000000000",
+        "creator_address": "0x8888888888888888888888888888888888888888",
+        "creator_percent": "0.35",
+        "lp_holders": [
+          {"address": "0xbbb0000000000000000000000000000000000001", "balance": "10", "percent": "1.0", "is_locked": 0, "tag": ""}
+        ],
+        "holders": [
+          {"address": "0xccc0000000000000000000000000000000000001", "balance": "600000000", "percent": "0.60", "is_locked": 0, "tag": ""},
+          {"address": "0xccc0000000000000000000000000000000000002", "balance": "200000000", "percent": "0.20", "is_locked": 0, "tag": ""}
+        ],
+        "dex": [
+          {"name": "UniswapV2", "liquidity": "1500", "pair": "0xpair000000000000000000000000000000000002"}
+        ]
+      }
+    }
+  }
+}

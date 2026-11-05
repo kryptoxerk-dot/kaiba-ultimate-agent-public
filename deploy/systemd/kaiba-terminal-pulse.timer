@@ -1,0 +1,11 @@
+[Unit]
+Description=Refresh the terminal pulse every 15 minutes (DefiLlama at most once an hour per chain)
+
+[Timer]
+OnBootSec=4min
+OnUnitInactiveSec=15min
+AccuracySec=30s
+Unit=kaiba-terminal-pulse.service
+
+[Install]
+WantedBy=timers.target

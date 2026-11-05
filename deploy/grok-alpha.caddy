@@ -1,0 +1,12 @@
+# Scoped research ingress; existing console authentication remains unchanged.
+handle_path /grok-alpha/* {
+    request_body {
+        max_size 256KB
+    }
+    reverse_proxy 127.0.0.1:17876 {
+        transport http {
+            read_timeout 12s
+            write_timeout 12s
+        }
+    }
+}

@@ -1,0 +1,23 @@
+[Unit]
+Description=Kaiba daily macro brief (existing public intelligence caches only)
+After=default.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/kaiba
+Environment=PYTHONUNBUFFERED=1
+# Optional non-secret path to an existing Aegis cache mirror. No credential file.
+EnvironmentFile=-%h/.config/kaiba/daily-brief.env
+ExecStart=%h/kaiba/.venv/bin/python -m deploy.unified_daily_brief
+Nice=19
+IOSchedulingClass=idle
+TimeoutStartSec=60
+MemoryMax=192M
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateNetwork=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=%h/kaiba/data/briefings
+InaccessiblePaths=-%h/.config/gmgn -%h/.hermes -%h/.config/kaiba/.env
+UnsetEnvironment=GMGN_API_KEY GMGN_PRIVATE_KEY TELEGRAM_BOT_TOKEN ANTHROPIC_API_KEY OPENAI_API_KEY

@@ -1,0 +1,14 @@
+{% extends "term_layout.html" %}
+{% block title %}LP desk · Kaiba{% endblock %}
+{% block main %}
+<div class="kx-page"><div class="kx-wrap">
+  <header class="kx-hero">
+    <div class="ttl">
+      <p class="eyebrow">LP desk</p>
+      <h1>Meteora LP bot</h1>
+      <p>Three paper tracks test different ways of providing liquidity on real pools, after every cost. A track must pass its own line, set before its first trade, before real money is considered.</p>
+    </div>
+  </header>
+  <div class="lp-stack" data-refresh="/lp/body" data-every="30">{% include "partials/lp_body.html" %}</div>
+</div></div>
+{% endblock %}

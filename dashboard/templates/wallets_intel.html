@@ -1,0 +1,172 @@
+{% extends "term_layout.html" %}
+{% block title %}Wallets · Kaiba{% endblock %}
+{% block main %}
+<div class="kx-page"><div class="kx-wrap">
+  <header class="kx-hero">
+    <div class="ttl">
+      <p class="eyebrow">Wallet intelligence</p>
+      <h1>Wallets, ready to import into GMGN</h1>
+      <p>Every list below downloads in GMGN's own follow-list format (address, name, alerts on), split at 2,000 wallets because GMGN silently cuts a longer import. Our own and the agent's wallets are removed from every list before it is served. Each card says what the record shows about that kind of wallet.</p>
+    </div>
+  </header>
+
+  <div class="howto">
+    <div><b class="n">1</b><span><b>Download JSON</b> (or <b>Copy JSON</b>) for a list below.</span></div>
+    <div><b class="n">2</b><span>In GMGN open <b>Wallet tracker → Import</b>, then upload or paste it. Use the <code>address:name</code> text if a form asks for lines.</span></div>
+    <div><b class="n">3</b><span>Names start with <b>Kaiba</b>, then the role and grade, so you can filter or remove them as a group in GMGN.</span></div>
+  </div>
+
+  <section class="kx-panel" aria-label="Best wallets">
+    <div class="kx-ph">
+      <span class="med sm" style="--ring: var(--k-blue)">1</span>
+      <h3>Best wallets · Solana</h3>
+      {% if best.available %}
+      <span class="pill {{ 'warn' if best.stale else 'ok' }}">updated {{ (best.at * 1000)|ago }} ago</span>
+      <span class="pill">{{ best.eligible }} ranked of {{ best.tracked }}</span>
+      <span class="pill {{ 'ok' if best.good else 'unk' }}">{{ best.good or 0 }} made a copier money</span>
+      {% set proof = best.forward.proof %}
+      <span class="pill {{ 'ok' if proof.pass else 'unk' }}">{{ 'Proven' if proof.pass else 'Not proven' }}</span>
+      {% else %}<span class="pill unk">not built yet</span>{% endif %}
+    </div>
+    {% if not best.available %}
+    <p class="lp-blurb">{{ best.reason|capitalize }}.</p>
+    {% else %}
+    <p class="lp-blurb">Ranked on what a copier would have made over the last {{ best.window_days }} days, 60 seconds late and after 5.5% costs, not on what the wallet made for itself. Updated daily. A list to watch, not a buy signal: no lane trades from it, and in our test last week's best did not stay best.</p>
+    <div class="lp-table">
+      <table class="kx-t">
+        <thead><tr><th>#</th><th>Wallet</th><th>Tier</th><th class="r">Trades</th><th class="r">Copier mean</th><th class="r">Median</th><th class="r">Won</th><th class="r">At their price</th><th class="r">Last trade</th></tr></thead>
+        <tbody>
+        {% for w in best.top %}
+        <tr>
+          <td class="mono">{{ w.rank }}</td>
+          <td><a class="mono" href="/w/sol/{{ w.wallet }}">{{ w.wallet|short }}</a>{% if w.new %} <span class="pill sig">new</span>{% endif %}</td>
+          <td>{{ w.tier or '—' }}</td>
+          <td class="r mono">{{ w.n }}</td>
+          <td class="r mono {{ 'pos' if w.mean > 0 else 'neg' if w.mean < 0 }}">{{ w.mean|ret }}</td>
+          <td class="r mono">{{ w.median|ret }}</td>
+          <td class="r mono">{{ '%.0f'|format(w.win * 100) }}%</td>
+          <td class="r mono muted">{{ w.leader_mean|ret }}</td>
+          <td class="r mono muted">{{ (w.last_trade * 1000)|ago }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="9" class="muted">No wallet has 5 finished trades in the window yet.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="lp-table">
+      <table class="kx-t">
+        <thead><tr><th>Does the list hold up? <span class="sub">trades after each list was frozen</span></th><th class="r">Trades</th><th class="r">Copier mean</th><th class="r">Median</th><th class="r">Won</th><th class="r">At their price</th></tr></thead>
+        <tbody>
+        {% for name, label in [('top_1', 'Best 1'), ('top_2', 'Best 2'), ('top_5', 'Best 5'), ('top_10', 'Best 10'), ('confluence', '2 or more of the best on one token'), ('good', 'Only wallets a copier made money on'), ('good_confluence', '2 or more of those on one token'), ('all_tracked', 'All tracked')] %}
+        {% set a = best.forward.arms.get(name) or {'n': 0} %}
+        <tr>
+          <td>{{ label }}{% if name == 'top_5' %} <span class="pill sig">proof line</span>{% endif %}</td>
+          <td class="r mono">{{ a.n }}</td>
+          <td class="r mono {{ 'pos' if a.get('mean') and a.get('mean') > 0 else 'neg' if a.get('mean') and a.get('mean') < 0 }}">{{ a.get('mean')|ret }}</td>
+          <td class="r mono">{{ a.get('median')|ret }}</td>
+          <td class="r mono">{% if a.get('win') is not none %}{{ '%.0f'|format(a.get('win') * 100) }}%{% else %}—{% endif %}</td>
+          <td class="r mono muted">{{ a.get('leader_mean')|ret }}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="lp-note">Proven needs {{ proof.need_n }} trades over {{ proof.need_days }} days on the best 5, with a positive mean in both halves. So far {{ proof.n }} trades over {{ proof.days }} days, from {{ best.lists }} daily list{{ '' if best.lists == 1 else 's' }}. Prices are estimates from 5-minute candles.</p>
+    <p class="lp-note">Telegram alerts use only the wallets a copier made money on: one in the top 3 buying alone, or 2 or more of them on one token within 30 minutes. Import those wallets into GMGN's wallet tracker to read these wallets within seconds: <a href="/wallets/gmgn/graded-best-sol.json">Download for GMGN</a>.</p>
+    {% endif %}
+  </section>
+
+  <section class="kx-panel ga" data-gmgn-account aria-label="GMGN account">
+    <div class="kx-ph">
+      <span class="med sm" style="--ring: var(--k-mint)">G</span>
+      <h3>GMGN account</h3>
+      <span class="pill unk" data-ga-status>not checked</span>
+      <div class="act">
+        <small data-ga-when></small>
+        <button class="kb sm" type="button" data-ga-check title="one read-only GMGN portfolio info call; at most one every 30 seconds">Check now</button>
+      </div>
+    </div>
+    <div class="kx-body">
+      <p class="muted" data-ga-note>Which wallets the agent's GMGN API key is bound to, read on the server with GMGN's portfolio info. Read-only: it grants no trading permission, takes no address or credential from this page, and checks only when you press the button.</p>
+      <div class="ga-wallets" data-ga-wallets></div>
+    </div>
+  </section>
+
+  {% if not lists.available %}
+  <p class="note">{{ lists.reason }}</p>
+  {% else %}
+  {% for kind, heading, blurb in [('graded', 'Graded by the wallet model', 'A and B grades, best first. Names read "Kaiba <role> <grade><score>".'), ('tracked', "The agent's watchlist", 'The wallets the agent follows for its own signals, active only.'), ('hunt', 'Wallet hunts', 'Snipers and early buyers of runners, from the scheduled hunt; names carry role and seed token.')] %}
+  {% set group = lists.lists|selectattr('kind', 'equalto', kind)|list %}
+  {% if group %}
+  <section>
+    <h2 style="font-size:14.5px;margin:6px 0 4px">{{ heading }}</h2>
+    <p class="muted" style="margin-bottom:10px">{{ blurb }}</p>
+    <div class="wl-grid">
+      {% for x in group %}
+      <article class="wl{{ ' off' if not x.available or not x.count }}">
+        <div class="top">
+          <span class="med c-{{ x.chain or 'none' }}"><svg class="i"><use href="#i-wallet"/></svg></span>
+          <div style="min-width:0"><h3>{{ x.title }}</h3><small>{{ x.source }}</small></div>
+          <div class="n"><b>{{ '{:,}'.format(x.count) }}</b><small>wallets{% if x.excluded %} · {{ x.excluded }} ours removed{% endif %}</small></div>
+        </div>
+        {% if x.evidence %}<p class="ev-note">{{ x.evidence }}</p>{% endif %}
+        {% if x.available and x.count %}
+        <div class="prev">
+          {% for r in x.preview %}<div><a class="mono" href="/w/{{ x.chain or 'sol' }}/{{ r.address }}">{{ r.address|short(5, 5) }}</a><span>{{ r.name }}</span></div>{% endfor %}
+        </div>
+        {% for part in range(1, x.parts + 1) %}
+        <div class="btns">
+          {% if x.parts > 1 %}<span class="muted" style="align-self:center;min-width:64px">part {{ part }}/{{ x.parts }}</span>{% endif %}
+          <a class="kb sm primary" href="/wallets/gmgn/{{ x.id }}.json{% if x.parts > 1 %}?part={{ part }}{% endif %}" download><svg class="i s"><use href="#i-down"/></svg>Download JSON</a>
+          <button class="kb sm ghost" type="button" data-copy-url="/wallets/gmgn/{{ x.id }}.json?part={{ part }}" data-copy-label="{{ x.title }}"><svg class="i s"><use href="#i-copy"/></svg>Copy JSON</button>
+          <a class="kb sm ghost" href="/wallets/gmgn/{{ x.id }}.txt{% if x.parts > 1 %}?part={{ part }}{% endif %}" download title="one address:name per line">address:name</a>
+        </div>
+        {% endfor %}
+        {% elif not x.available %}
+        <p class="muted">{{ x.reason }}</p>
+        {% else %}
+        <p class="muted">Empty right now.</p>
+        {% endif %}
+      </article>
+      {% endfor %}
+    </div>
+  </section>
+  {% endif %}
+  {% endfor %}
+  <p class="muted">Lists refresh every 15 minutes (built {{ lists.at_ms|ago }} ago). {{ '{:,}'.format(lists.excluded_size or 0) }} addresses of ours (owned, agent, trusted copy, blacklist, owner-sourced) are filtered out of all of them.</p>
+  {% endif %}
+
+  <section class="kx-panel">
+    <div class="kx-ph">
+      <h3>Top graded wallets</h3><span class="cnt">{{ wallets|length }}</span>
+      <div class="act">
+        <nav class="kx-seg" style="padding:0">
+          <a href="/intel/wallets" class="{{ 'on' if not chain }}">All</a>
+          {% for c, label in [('sol', 'Solana'), ('robinhood', 'Robinhood'), ('bsc', 'BNB')] %}<a href="/intel/wallets?chain={{ c }}" class="{{ 'on' if chain == c }}">{{ label }}</a>{% endfor %}
+        </nav>
+      </div>
+    </div>
+    {% if wallets %}
+    <div style="overflow-x:auto">
+    <table class="kx-t">
+      <thead><tr><th>Wallet</th><th>Grade</th><th class="r">Score</th><th>Role</th><th class="r">Win rate</th><th class="r">Closed trades</th><th class="r">Realized</th><th class="r">Scored</th><th></th></tr></thead>
+      <tbody>{% for r in wallets %}
+        <tr>
+          <td><div class="tok"><span class="med sm c-{{ r.chain }}">{{ {'sol': 'S', 'robinhood': 'R', 'bsc': 'B'}.get(r.chain, '?') }}</span><a class="mono" href="/w/{{ r.chain }}/{{ r.address }}">{{ r.address|short(5, 5) }}</a></div></td>
+          <td><span class="grade g-{{ r.grade }}">{{ r.grade }}</span></td>
+          <td class="r mono">{{ '%.1f'|format(r.score) if r.score is not none else '—' }}</td>
+          <td>{{ (r.archetype or '—')|replace('_', ' ') }}</td>
+          <td class="r mono">{{ ('%.0f%%'|format(r.win_rate * 100)) if r.win_rate is not none else '—' }}</td>
+          <td class="r mono">{{ r.closed_trades or '—' }}</td>
+          <td class="r mono {{ 'pos' if r.realized_pnl_usd and r.realized_pnl_usd > 0 else 'neg' if r.realized_pnl_usd and r.realized_pnl_usd < 0 }}">{{ r.realized_pnl_usd|usd }}</td>
+          <td class="r mono">{{ r.scored_at_ms|ago }}</td>
+          <td class="r"><div class="acts"><button class="kb xs ghost" type="button" data-copy="{{ r.address }}">Copy</button>{% if r.chain in ('sol', 'bsc') %}<a class="kb xs ghost" href="https://gmgn.ai/{{ r.chain }}/address/{{ r.address }}" target="_blank" rel="noopener noreferrer">GMGN ↗</a>{% endif %}</div></td>
+        </tr>{% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% else %}<p class="empty">No A or B grades{% if chain %} on {{ chain }}{% endif %}.</p>{% endif %}
+  </section>
+</div></div>
+{% endblock %}

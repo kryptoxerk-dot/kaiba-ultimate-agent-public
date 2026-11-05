@@ -1,0 +1,70 @@
+{% extends "layout.html" %}
+{% block title %}Kaiba · Agent chat{% endblock %}
+{% block content %}
+<header class="topbar">
+  <div>
+    <p class="eyebrow cyan">KAIBA OPERATOR AGENT</p>
+    <h1>Agent chat</h1>
+  </div>
+  <nav class="threads" aria-label="Conversation threads">
+    {% for t in threads %}
+    <a class="chip-link{% if t == thread %} current{% endif %}" href="/chat?thread={{ t }}">{{ t }}</a>
+    {% endfor %}
+    <form class="new-thread" method="get" action="/chat">
+      <input name="thread" placeholder="new thread" size="12" pattern="[a-z0-9][a-z0-9-]{0,31}" title="lowercase letters, digits, dashes">
+      <button class="text-button" type="submit">open</button>
+    </form>
+  </nav>
+</header>
+
+<p class="banner flat" role="note">
+  This is the same agent as the Telegram bot: same instructions, same Kaiba tools, same rules
+  (it never sells on its own, and nothing here can move funds). Each thread is its own
+  conversation, and the agent remembers earlier messages in a thread. A reply usually takes
+  10 to 60 seconds, longer when it uses tools. Commands that need an approval are refused here,
+  never auto-approved.
+</p>
+{% if not available %}
+<p class="banner warn" role="status"><b>The agent is not reachable from this machine.</b> {{ why }}</p>
+{% endif %}
+
+<section class="panel chat-panel" id="chat" data-thread="{{ thread }}"
+         data-running="{{ running.turn_id if running and running.thread == thread else '' }}">
+  <div class="conversation" id="conversation">
+    {% for t in turns %}
+      {% if t.status != 'running' %}
+      <article class="msg msg-user"><div class="who">you · {{ t.started_ms|when }} UTC</div><div class="body plain">{{ t.user }}</div></article>
+      <article class="msg msg-agent{% if t.status == 'failed' %} msg-failed{% endif %}">
+        <div class="who">agent{% if t.model %} · {{ t.model }}{% endif %}{% if t.duration_ms %} · {{ (t.duration_ms / 1000)|dur }}{% endif %}{% if t.tokens and t.tokens.total %} · {{ "{:,}".format(t.tokens.total) }} tokens{% endif %}</div>
+        {% if t.reply %}<div class="body md">{{ t.reply_html|safe }}</div>{% endif %}
+        {% if t.error %}<div class="body error">{{ t.error }}</div>{% endif %}
+        {% set tools = t.events|selectattr("kind", "equalto", "tool")|list %}
+        {% if tools %}
+        <details class="tools"><summary>{{ tools|length }} tool step{{ '' if tools|length == 1 else 's' }}</summary>
+          <ul>{% for e in tools %}<li><code>{{ e.text }}</code></li>{% endfor %}</ul>
+        </details>
+        {% endif %}
+      </article>
+      {% endif %}
+    {% else %}
+      <p class="nodata empty-chat">No messages in “{{ thread }}” yet. Ask the agent anything: how the paper lanes are doing, what a wallet did, why a trade was refused, or to run one of its tools.</p>
+    {% endfor %}
+    {% if running and running.thread == thread %}
+      <article class="msg msg-user"><div class="who">you · {{ running.started_ms|when }} UTC</div><div class="body plain">{{ running.user }}</div></article>
+    {% endif %}
+  </div>
+
+  <form class="composer" id="composer" method="post" action="/control/chat" autocomplete="off">
+    <input type="hidden" name="_csrf" value="{{ csrf }}">
+    <input type="hidden" name="thread" value="{{ thread }}">
+    <textarea name="message" id="message" rows="3" maxlength="{{ max_chars }}"
+              placeholder="Message the agent. Enter sends, Shift+Enter adds a line."
+              {% if not available %}disabled{% endif %}></textarea>
+    <div class="composer-actions">
+      <span class="muted" id="chat-status" aria-live="polite"></span>
+      <button class="button" type="button" id="chat-stop" hidden>stop</button>
+      <button class="button primary" type="submit" id="chat-send" {% if not available %}disabled{% endif %}>send</button>
+    </div>
+  </form>
+</section>
+{% endblock %}

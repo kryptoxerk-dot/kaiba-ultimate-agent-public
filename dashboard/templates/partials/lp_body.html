@@ -1,0 +1,108 @@
+{% macro sign(x) %}{{ 'pos' if x is not none and x > 0 else 'neg' if x is not none and x < 0 }}{% endmacro %}
+{% macro pct(x) %}{% if x is none %}—{% else %}{{ '%+.2f'|format(x) }}%{% endif %}{% endmacro %}
+{% macro share(x) %}{% if x is none %}—{% else %}{{ '%.0f'|format(x * 100) }}%{% endif %}{% endmacro %}
+
+<section class="kx-panel" aria-label="Live execution">
+  <div class="kx-ph"><h3>Live execution</h3>
+    {% if board.live %}<span class="pill {{ 'ok' if board.live.mode == 'live' else 'unk' }}">{{ board.live.mode or 'unknown' }}</span>
+    {% else %}<span class="pill unk">Not connected</span>{% endif %}
+    {% if board.any_passed %}<span class="pill ok">A track has passed</span>{% else %}<span class="pill">No track has passed</span>{% endif %}
+  </div>
+  <div class="lp-live">
+    {% if board.live %}
+    <p>{{ board.live.open or 0 }} open · realised today {{ '%+.4f'|format(board.live.realised_today_sol or 0) }} SOL · wallet {{ '%.4f'|format(board.live.wallet_sol or 0) }} SOL</p>
+    {% else %}
+    <p>Paper only. No key is on the box and no LP order can be sent. Live trading needs a separate funded wallet, which is the owner's decision.</p>
+    {% endif %}
+  </div>
+</section>
+
+{% for t in board.tracks %}
+<section class="kx-panel" aria-label="{{ t.title }}">
+  <div class="kx-ph">
+    <h3>{{ t.title }}</h3>
+    {% if not t.available %}<span class="pill unk">has not reported yet</span>
+    {% else %}
+    <span class="pill {{ 'bad' if t.stale else 'ok' }}" title="the bot's own heartbeat">{{ 'Stopped' if t.stale else 'Running' }} · {{ (t.age_s or 0)|int }}s ago</span>
+    {% if t.passed %}<span class="pill ok">Passed</span>{% else %}<span class="pill">Testing</span>{% endif %}
+    <span class="pill" title="positions being watched now">{{ t.open }} open</span>
+    {% endif %}
+  </div>
+  <p class="lp-blurb">{{ t.blurb }}</p>
+  {% if t.available %}
+  <div class="lp-split">
+    <div class="kx-chart">
+      <div class="ctl"><span class="lbl">Running total <small>/ % of one stake, main setup</small></span></div>
+      {% if t.curve.points|length >= 2 %}
+      <canvas data-series="{{ t.curve|series }}" data-zero="1" aria-label="{{ t.title }} running total"></canvas>
+      {% else %}<div class="nochart">Needs two closed positions to draw a line.</div>{% endif %}
+    </div>
+    <div>
+      <h4 class="lab-h">Pass line <small>{{ t.primary }}, 1 SOL ticket</small></h4>
+      <ul class="lp-checks">
+        {% for row in t.pass_rows %}
+        <li><span class="st {{ 'ok' if row.ok }}">{{ 'Met' if row.ok else 'Not yet' }}</span><span class="lb">{{ row.label }}</span><span class="va">{{ row.value }}</span></li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+  <div class="lp-table">
+    <table class="kx-t">
+      <thead><tr><th>Setup</th><th class="r">Trades</th><th class="r">Missed</th><th class="r">Mean net</th><th class="r">Median</th><th class="r">Win</th><th class="r">Fees</th><th class="r">Inventory</th><th class="r">Exit cost</th><th class="r">Rent paid</th><th class="r">SOL/day at 1 SOL</th></tr></thead>
+      <tbody>
+      {% for a in t.arms %}
+      <tr>
+        <td><b>{{ a.name }}</b>{% if a.primary %} <span class="pill sig">main</span>{% endif %}<span class="sub">{{ a.about }}</span></td>
+        <td class="r mono">{{ a.n }}</td>
+        <td class="r mono">{{ a.missed }}</td>
+        <td class="r mono {{ sign(a.get('mean_net_pct')) }}">{{ pct(a.get('mean_net_pct')) }}</td>
+        <td class="r mono {{ sign(a.get('median_net_pct')) }}">{{ pct(a.get('median_net_pct')) }}</td>
+        <td class="r mono">{% if a.get('win_pct') is not none %}{{ '%.0f'|format(a.get('win_pct')) }}%{% else %}—{% endif %}</td>
+        <td class="r mono">{{ pct(a.get('fee_pct')) }}</td>
+        <td class="r mono">{{ pct(a.get('inventory_pct')) }}</td>
+        <td class="r mono">{{ '%.2f'|format(a.get('exit_cost_pct')) ~ '%' if a.get('exit_cost_pct') is not none else '—' }}</td>
+        <td class="r mono">{{ share(a.get('rent_paid_share')) }}</td>
+        {% set day = (a.get('sol_per_day_by_ticket') or {}).get('1.0') %}
+        <td class="r mono {{ sign(day) }}">{% if day is none %}—{% else %}{{ '%+.3f'|format(day) }}{% endif %}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="11" class="muted">No closed positions yet.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if t.skips %}
+  <div class="lp-skips"><span>Last scan of {{ t.listed }} pools, {{ t.picked }} picked. Passed over:</span>
+    {% for label, n in t.skips %}<span class="pill">{{ label }} {{ n }}</span>{% endfor %}
+  </div>
+  {% endif %}
+  {% endif %}
+</section>
+{% endfor %}
+
+<section class="kx-panel" aria-label="Latest positions">
+  <div class="kx-ph"><h3>Latest positions</h3><span class="pill">main setup of each track</span></div>
+  <div class="lp-table">
+    <table class="kx-t">
+      <thead><tr><th>Closed</th><th>Track</th><th>Pool</th><th class="r">Pool age</th><th class="r">Fees / TVL 30m</th><th class="r">Held</th><th class="r">Fees</th><th class="r">Net</th><th>Exit</th></tr></thead>
+      <tbody>
+      {% for r in board.recent %}
+      <tr>
+        <td class="mono muted">{{ r.at_ms|ago }}</td>
+        <td>{{ r.track }}</td>
+        <td><a href="https://app.meteora.ag/dlmm/{{ r.pool }}" target="_blank" rel="noopener noreferrer">{{ r.name or 'unnamed' }}</a></td>
+        <td class="r mono">{% if r.age_h is none %}—{% else %}{{ '%.1f'|format(r.age_h) }} h{% endif %}</td>
+        <td class="r mono">{% if r.fee_tvl_30m is none %}—{% else %}{{ '%.2f'|format(r.fee_tvl_30m) }}%{% endif %}</td>
+        <td class="r mono">{% if r.hold_s is none %}—{% else %}{{ r.hold_s|int }}s{% endif %}</td>
+        <td class="r mono">{{ pct(r.fee_pct) }}</td>
+        <td class="r mono {{ sign(r.net_pct) }}">{{ pct(r.net_pct) }}</td>
+        <td class="muted">{{ (r.exit_reason or r.status)|replace('_', ' ') }}{% if r.reopened %} · re-opened{% endif %}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="9" class="muted">No closed positions yet.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="lp-note">Paper results on a 1 SOL ticket, after transaction fees, bin-array rent and the cost of selling leftover tokens. Paper cannot show competition for landing.</p>
+</section>

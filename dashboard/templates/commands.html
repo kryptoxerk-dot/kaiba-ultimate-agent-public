@@ -1,0 +1,104 @@
+{% extends "layout.html" %}
+{% block title %}Kaiba · Commands{% endblock %}
+{% block content %}
+<header class="topbar">
+  <div>
+    <p class="eyebrow cyan">RUN ON THE BOX</p>
+    <h1>Commands</h1>
+  </div>
+</header>
+
+<p class="banner flat" role="note">
+  Named actions only, not a shell: this page is on the internet behind one password, on a
+  machine that holds live trading keys. Anything that changes state asks you to type its name
+  first, and a restart is refused while an order is in flight. Every run is recorded and shows
+  up in the agent stream. To add an action, drop a reviewed script into
+  <code>scripts/dashboard/</code> (see the README there).
+</p>
+
+<section class="metric-strip">
+  <div class="metric">
+    <span>Disk</span>
+    {% if health.disk %}<strong class="{% if health.disk.used_pct >= 85 %}neg{% elif health.disk.used_pct >= 80 %}warnv{% endif %}">{{ health.disk.used_pct }}% used</strong><small>{{ health.disk.free_gb }} GB free · the guard prunes at 85%, halts entries at 92%</small>
+    {% else %}<strong class="nodata">—</strong>{% endif %}
+  </div>
+  <div class="metric">
+    <span>Database WAL</span>
+    <strong class="{% if health.wal_gb is not none and health.wal_gb > 1.5 %}neg{% endif %}">{{ health.wal_gb if health.wal_gb is not none else '—' }} GB</strong>
+    <small>long reads pause above 1.5 GB</small>
+  </div>
+  <div class="metric">
+    <span>Orders in flight</span>
+    <strong class="{% if health.orders_in_flight %}warnv{% endif %}">{{ health.orders_in_flight if health.orders_in_flight is not none else '—' }}</strong>
+    <small>restarts are refused while this is non-zero</small>
+  </div>
+  <div class="metric">
+    <span>Core backup</span>
+    {% if health.backup_newest %}<strong>{{ health.backup_newest.mtime_ms|when }}</strong>{% else %}<strong class="nodata">none</strong>{% endif %}
+    <small>last run: {{ (health.backup_last or {}).get('status', 'unknown') }} {{ (health.backup_last or {}).get('ts_utc', '') }}</small>
+  </div>
+</section>
+
+{% if health.failed_units %}
+<p class="banner warn" role="status"><b>Failed units:</b> {{ health.failed_units|join(", ") }}</p>
+{% endif %}
+
+<div class="grid-pages">
+  <section class="panel panel-wide">
+    {% for group, items in groups.items() %}
+    <h4>{{ group }}</h4>
+    <div class="command-grid">
+      {% for c in items %}
+      <form class="command" id="{{ c.name }}" method="post" action="/control/command" autocomplete="off">
+        <input type="hidden" name="_csrf" value="{{ csrf }}">
+        <input type="hidden" name="name" value="{{ c.name }}">
+        <div class="command-head"><b>{{ c.label }}</b>{% if c.confirm %}<small class="chip warnv">changes state</small>{% endif %}</div>
+        <p class="muted">{{ c.about }}</p>
+        {% if c.choices %}
+        <label>{{ c.arg_label or 'option' }}
+          <select name="arg">{% for ch in c.choices %}<option value="{{ ch }}">{{ ch }}</option>{% endfor %}</select>
+        </label>
+        {% endif %}
+        {% if c.confirm %}
+        <label>type {{ 'the ' ~ c.arg_label if c.choices else '“' ~ c.name ~ '”' }} to confirm
+          <input name="confirm" required spellcheck="false">
+        </label>
+        {% endif %}
+        <button class="button{% if c.confirm %} danger-soft{% else %} primary{% endif %}" type="submit">run</button>
+      </form>
+      {% endfor %}
+    </div>
+    {% endfor %}
+  </section>
+
+  <section class="panel panel-wide" id="output-panel">
+    <div class="panel-head">
+      <div><h3 id="output-title">Output</h3><small id="output-meta">run a command, or open a recent run below</small></div>
+      <button class="text-button" type="button" id="output-copy">copy</button>
+    </div>
+    <pre class="run-output" id="run-output" aria-live="polite"></pre>
+  </section>
+
+  <section class="panel panel-wide">
+    <div class="panel-head"><div><h3>Recent runs</h3><small>newest first; kept for the last 200 runs</small></div></div>
+    {% if runs %}
+    <div class="tablewrap"><table class="grid-table" id="runs">
+      <thead><tr><th>Started</th><th>Command</th><th>Status</th><th class="r">Took</th><th></th></tr></thead>
+      <tbody>
+      {% for r in runs %}
+        <tr>
+          <td>{{ r.started_ms|when }}</td>
+          <td><b>{{ r.label }}</b>{% if r.arg %} <small class="chip">{{ r.arg }}</small>{% endif %}</td>
+          <td><span class="verdict v-{{ r.status }}">{{ r.status }}</span></td>
+          <td class="r">{% if r.finished_ms %}{{ ((r.finished_ms - r.started_ms) / 1000)|dur }}{% else %}…{% endif %}</td>
+          <td><button class="text-button" type="button" data-run="{{ r.run_id }}">view</button></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table></div>
+    {% else %}
+    <p class="nodata">Nothing has been run from this page yet.</p>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

@@ -1,0 +1,17 @@
+{
+ "source": "box ~/kaiba/data/kaiba.db ingest_status, read-only (mode=ro), 2026-10-21 05:37 UTC; feed names, states, counts and timestamps only",
+ "read_at_ms": 1792561046850,
+ "rows": [
+  {"feed": "alpha_feeds", "state": "running", "started_ms": 1792552824788, "last_event_ms": 1792561039129, "events_seen": 440870, "restarts": 0, "updated_ms": 1792561039129},
+  {"feed": "flap", "state": "idle", "started_ms": 1792552824761, "last_event_ms": 1791545859002, "events_seen": 52136, "restarts": 2, "updated_ms": 1792552838264},
+  {"feed": "gmgn", "state": "running", "started_ms": 1792552819543, "last_event_ms": 1792561035802, "events_seen": 3706809, "restarts": 0, "updated_ms": 1792561035802},
+  {"feed": "graduation_observer", "state": "running", "started_ms": 1792552824808, "last_event_ms": 1792560977956, "events_seen": 16705, "restarts": 0, "updated_ms": 1792560977956},
+  {"feed": "leader_exit", "state": "idle", "started_ms": 1792552824819, "last_event_ms": null, "events_seen": 0, "restarts": 2, "updated_ms": 1792552838228},
+  {"feed": "pumpportal", "state": "running", "started_ms": 1792552819524, "last_event_ms": 1792561045422, "events_seen": 918465, "restarts": 0, "updated_ms": 1792561045422},
+  {"feed": "rh_wallets", "state": "idle", "started_ms": 1792552824757, "last_event_ms": 1791518581979, "events_seen": 520, "restarts": 2, "updated_ms": 1792552830844},
+  {"feed": "rhscannerr", "state": "running", "started_ms": 1792552824757, "last_event_ms": null, "events_seen": 0, "restarts": 0, "updated_ms": 1792552824757},
+  {"feed": "robinhood", "state": "running", "started_ms": 1792552819755, "last_event_ms": 1792561033816, "events_seen": 5600475, "restarts": 5, "updated_ms": 1792561033816},
+  {"feed": "sol_wallets", "state": "idle", "started_ms": 1792552824760, "last_event_ms": 1791519175074, "events_seen": 113709, "restarts": 2, "updated_ms": 1792552833170},
+  {"feed": "telegram", "state": "idle", "started_ms": 1792552819710, "last_event_ms": null, "events_seen": 0, "restarts": 2, "updated_ms": 1792552830842}
+ ]
+}

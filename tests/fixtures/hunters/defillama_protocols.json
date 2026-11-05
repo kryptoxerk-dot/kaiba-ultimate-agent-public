@@ -1,0 +1,58 @@
+{
+  "source": "https://api.llama.fi/protocols",
+  "kind": "json",
+  "body": [
+    {
+      "name": "Hyperliquid",
+      "symbol": "HYPE",
+      "tvl": 5000000000,
+      "chains": [
+        "Hyperliquid"
+      ],
+      "url": "https://hyperliquid.xyz",
+      "category": "Derivatives"
+    },
+    {
+      "name": "Variational",
+      "symbol": "-",
+      "tvl": 42000000,
+      "chains": [
+        "Arbitrum"
+      ],
+      "url": "https://variational.io",
+      "category": "Derivatives"
+    },
+    {
+      "name": "Polymarket",
+      "symbol": "-",
+      "tvl": 180000000,
+      "chains": [
+        "Polygon"
+      ],
+      "url": "https://polymarket.com",
+      "category": "Prediction Market"
+    },
+    {
+      "name": "Backpack Exchange",
+      "symbol": "-",
+      "tvl": 3000000,
+      "chains": [
+        "Solana"
+      ],
+      "url": "https://backpack.exchange",
+      "category": "CEX"
+    },
+    {
+      "name": "Dust Protocol",
+      "symbol": "-",
+      "tvl": 12000,
+      "chains": [
+        "Base"
+      ],
+      "url": "https://dust.example",
+      "category": "Yield"
+    },
+    "not-a-dict"
+  ],
+  "note": "Hand-built to match the documented/observed layout of the source, NOT a live capture. Shapes follow docs/research/06-hunters-airdrops-nft.md. Regenerate by hand if a provider's real layout is captured later."
+}

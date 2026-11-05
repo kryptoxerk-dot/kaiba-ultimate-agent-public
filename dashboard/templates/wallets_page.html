@@ -1,0 +1,102 @@
+{% extends "layout.html" %}
+{% block title %}Kaiba · Wallets{% endblock %}
+{% block content %}
+<header class="topbar">
+  <div>
+    <p class="eyebrow cyan">WALLETS GATHERED</p>
+    <h1>Wallets</h1>
+  </div>
+  <div class="top-actions">
+    <a class="button" href="/commands#hunt_run">run the wallet hunt now</a>
+  </div>
+</header>
+
+<p class="banner flat" role="note">
+  The wallet hunt looks at recent runner tokens on each chain, keeps the wallets that bought early
+  or sniped several of them and were active in the last 45 days, and writes the GMGN import lists
+  below. The agent's own and the owner's wallets are excluded from every list. A wallet on a list
+  is a lead to watch, not a proven copy target: copied returns have not survived lag and fees so far.
+</p>
+
+<section class="metric-strip">
+  {% for h in hunts %}
+  <div class="metric">
+    <span>{{ h.chain }} hunt · {{ h.at_ms|when }} UTC</span>
+    <strong>{{ h.exported if h.exported is defined else '—' }} exported</strong>
+    <small>{{ h.runners if h.runners is defined else '—' }} runner tokens · {{ h.winning_wallets if h.winning_wallets is defined else '—' }} winning wallets · {{ h.kept if h.kept is defined else '—' }} kept
+      {% if h.snipers is defined %}· {{ h.snipers }} snipers · {{ h.early }} early · {{ h.multi_runner }} multi-runner{% endif %}</small>
+  </div>
+  {% else %}
+  <div class="metric"><span>Wallet hunt</span><strong class="nodata">no run recorded</strong><small>the hunt has not run on this machine</small></div>
+  {% endfor %}
+  <div class="metric">
+    <span>Graded wallets</span>
+    {% if grades.available %}
+      {% set b = grades.by_grade|selectattr("grade", "equalto", "B")|map(attribute="n")|sum %}
+      {% set a = grades.by_grade|selectattr("grade", "equalto", "A")|map(attribute="n")|sum %}
+      <strong>{{ a }} A · {{ b }} B</strong>
+      <small>{% for r in grades.by_grade %}{{ r.grade }} {{ "{:,}".format(r.n) }}{% if not loop.last %} · {% endif %}{% endfor %}</small>
+    {% else %}
+      <strong class="nodata">—</strong><small>{{ grades.reason }}</small>
+    {% endif %}
+  </div>
+</section>
+
+<div class="grid-pages">
+
+<section class="panel panel-wide">
+  <div class="panel-head">
+    <div><h3>Import lists</h3><small>the files the hunt exports for GMGN, newest data first; download a file to import it</small></div>
+    <a class="text-button" href="/api/wallets/gathered" target="_blank" rel="noopener">json</a>
+  </div>
+  {% if exports.available and exports.files %}
+    {% for f in exports.files %}
+    <details class="export"{% if loop.first %} open{% endif %}>
+      <summary>
+        <b>{{ f.name }}</b>
+        <span class="chip">{{ f.chain or 'unknown chain' }}</span>
+        <span class="muted">{{ "{:,}".format(f.count) }} wallets · updated {{ f.mtime_ms|when }} UTC</span>
+        <a class="text-button" href="/api/wallets/export/{{ f.name }}" download>download</a>
+      </summary>
+      {% if f.preview %}
+      <div class="tablewrap"><table class="grid-table">
+        <thead><tr><th>#</th><th>Wallet</th><th>What it did</th><th>Groups</th></tr></thead>
+        <tbody>
+        {% for w in f.preview %}
+          <tr>
+            <td class="r muted">{{ loop.index }}</td>
+            <td><button class="addr" type="button" data-copy="{{ w.address }}" title="{{ w.address }}">{{ w.address_short }}<span class="copy-glyph" aria-hidden="true">⧉</span></button></td>
+            <td>{{ w.emoji }} {{ w.label }}</td>
+            <td><small>{{ w.groups|join(", ") }}</small></td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table></div>
+      {% if f.count > f.preview|length %}<p class="footnote">Showing the first {{ f.preview|length }} of {{ "{:,}".format(f.count) }}. Download the file for the full list.</p>{% endif %}
+      {% elif not f.readable %}
+      <p class="nodata">This file is not in the import format.</p>
+      {% endif %}
+    </details>
+    {% endfor %}
+    <p class="footnote">Label key: <code>SNIPE 8run 59s $6.8k 30d$242k</code> = a sniper (EARLY = mostly early, not first-block) on
+      8 runner tokens, first buy a median 59 s after launch, $6.8k realized on those tokens, and $242k realized on all
+      trades over the last 30 days according to GMGN. Lists are sorted by runner count, then 30-day profit.</p>
+  {% else %}
+  <p class="nodata">{{ exports.reason or "No export files yet." }}</p>
+  {% endif %}
+</section>
+
+<section class="panel panel-wide">
+  <div class="panel-head">
+    <div><h3>Graded wallets in the agent's own registry</h3><small>scored from trades the agent observed itself</small></div>
+    <a class="text-button" href="/api/wallets/top" target="_blank" rel="noopener">json</a>
+  </div>
+  {% if grades.available and grades.top_by_chain %}
+  <p class="muted">B or better by chain:
+    {% for r in grades.top_by_chain %}{{ r.chain }} {{ r.grade }} {{ "{:,}".format(r.n) }}{% if not loop.last %} · {% endif %}{% endfor %}</p>
+  {% endif %}
+  {% include "partials/wallets.html" %}
+</section>
+
+</div>
+{% endblock %}

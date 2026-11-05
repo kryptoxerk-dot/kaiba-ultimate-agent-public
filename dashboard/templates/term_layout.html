@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{# The terminal frame (2026-10-20 redesign): top navigation, ticker strip, one main area, status bar.
+   Every terminal page extends this; the older console pages keep layout.html. #}
+{% block head %}<link rel="stylesheet" href="/static/live.css?v=20261104a">{% endblock %}
+{% block body_attrs %}class="kx" data-page="{{ page }}"{% endblock %}
+{% block body %}
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-buy" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-sell" viewBox="0 0 24 24"><path d="M7 17 17 7M9 7h8v8"/></symbol>
+  <symbol id="i-pass" viewBox="0 0 24 24"><path d="M3 5h18l-7 8v6l-4-2v-4z"/></symbol>
+  <symbol id="i-note" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3 5 6v6c0 4.2 3 7.7 7 9 4-1.3 7-4.8 7-9V6z"/><path d="m9 12 2 2 4-4"/></symbol>
+  <symbol id="i-ext" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a1 1 0 0 1 1-1h9"/></symbol>
+  <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 3 4 14h7l-1 7 9-11h-7z"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></symbol>
+  <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M6 18l2.5-2.5M15.5 8.5 18 6"/></symbol>
+  <symbol id="i-out" viewBox="0 0 24 24"><path d="M15 4h4a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-4M10 17l5-5-5-5M15 12H4"/></symbol>
+  <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 4v12M6 11l6 6 6-6M5 20h14"/></symbol>
+  <symbol id="i-wallet" viewBox="0 0 24 24"><path d="M4 7a2 2 0 0 1 2-2h12v4"/><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M16 13h2"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+</svg>
+<div class="kx-app">
+  <header class="kx-nav">
+    <a class="kx-brand" href="/terminal" aria-label="Kaiba terminal">
+      <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M7 5h5v9.2L20.3 5H27l-9.4 10.2L27.5 27h-6.7l-6.9-8.5-1.9 2V27H7z" fill="#81acff"/></svg>
+      <b>KAIBA</b><small>ULTIMATE<br>AGENT</small>
+    </a>
+    <nav class="kx-tabs" aria-label="Pages">
+      {% for href, label in [('/terminal', 'Terminal'), ('/alpha', 'Alpha'), ('/intel/wallets', 'Wallets'), ('/agent', 'Agent'), ('/autopilot', 'Autopilot'), ('/lp', 'LP'), ('/labs', 'Labs')] %}
+      <a href="{{ href }}" class="{{ 'on' if page == href }}" {% if page == href %}aria-current="page"{% endif %}>{{ label }}</a>
+      {% endfor %}
+      <details class="kx-more">
+        <summary>More <svg class="i s"><use href="#i-chev"/></svg></summary>
+        <div class="kx-more-menu">
+          <a href="/">Command Centre <small>health, risk, feed</small></a>
+          <a href="/trades">Trades <small>every closed trade</small></a>
+          <a href="/wallets">Wallets gathered <small>hunt files</small></a>
+          <a href="/chat">Agent chat <small>full page</small></a>
+          <a href="/commands">Commands <small>named runs</small></a>
+        </div>
+      </details>
+    </nav>
+    <div class="kx-nav-r">
+      {% set tk = ticker or {} %}
+      {% if tk.kill_switch %}<span class="kx-mode halt" title="every lane is off until the kill switch is cleared">KILL SWITCH</span>
+      {% elif tk.live_lanes %}<span class="kx-mode live" title="lanes with real money behind an entry">LIVE · {{ tk.live_lanes|join(', ') }}</span>
+      {% else %}<span class="kx-mode paper" title="no lane is effectively live: every entry is a paper trade">PAPER ONLY</span>{% endif %}
+      <form class="kx-search" action="/go" method="get" role="search">
+        <svg class="i s"><use href="#i-search"/></svg>
+        <input name="q" placeholder="Token or wallet address, or $SYMBOL" autocomplete="off" spellcheck="false" maxlength="120" data-search aria-label="Search">
+        <kbd title="press / to search">/</kbd>
+      </form>
+      {% if not no_dock %}<button class="kx-iconbtn" type="button" data-dock-toggle aria-expanded="false" title="Talk to the agent (a)"><svg class="i"><use href="#i-spark"/></svg></button>{% endif %}
+      {% if auth_on %}<form class="kx-signout" method="post" action="/logout"><button class="kx-iconbtn" type="submit" title="Sign out"><svg class="i"><use href="#i-out"/></svg></button></form>{% endif %}
+    </div>
+  </header>
+
+  <div class="kx-ticker" data-refresh="/terminal/ticker" data-every="5">{% include "partials/t_ticker.html" %}</div>
+
+  <main class="kx-main {% block main_class %}{% endblock %}">{% block main %}{% endblock %}</main>
+
+  <footer class="kx-status" data-refresh="/terminal/status" data-every="5" data-quiet>{% include "partials/t_status.html" %}</footer>
+</div>
+
+{% if not no_dock %}
+<aside class="dock" data-dock hidden aria-label="Agent chat">
+  <header class="dock-h">
+    <svg class="i"><use href="#i-spark"/></svg><b>Kaiba operator agent</b>
+    <a href="/agent">agent page</a>
+    <button type="button" class="kx-iconbtn" data-dock-toggle aria-label="Close">✕</button>
+  </header>
+  {% with thread='terminal' %}{% include "partials/t_agent_chat.html" %}{% endwith %}
+</aside>
+{% endif %}
+<div class="toast" data-toast hidden></div>
+{% endblock %}
+{% block scripts %}<script src="/static/live.js?v=20261020d" defer></script>{% endblock %}

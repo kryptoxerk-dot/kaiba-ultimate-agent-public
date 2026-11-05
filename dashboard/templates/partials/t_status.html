@@ -1,0 +1,16 @@
+{% set p = status_bar %}
+<div class="kx-st">
+  <span title="the panels refresh on their own while this tab is open"><i class="dot ok conn"></i>Live</span>
+  <span title="the newest price protection decided a stop on">
+    <svg class="i s"><use href="#i-shield"/></svg>
+    {% if p.open %}Protection marked {{ p.marked_ms|ago if p.marked_ms else '—' }} ago · {{ p.marked }}/{{ p.open }} priced{% if p.stale %} · <b class="warn-txt">{{ p.stale }} stale</b>{% endif %}
+    {% else %}Protection idle · no open positions{% endif %}
+  </span>
+  {% if p.gateways %}
+  <span title="{% for g in p.gateways %}{{ g.name }}: {{ g.state }}{{ ', ' if not loop.last }}{% endfor %}">
+    <i class="dot {{ 'ok' if p.gateways_up == p.gateways|length else 'warn' if p.gateways_up else 'bad' }}"></i>Agent {{ p.gateways_up }}/{{ p.gateways|length }} gateways
+  </span>
+  {% endif %}
+  <span>{{ 'Paper trading only' if not p.live_lanes else 'LIVE: ' ~ p.live_lanes|join(', ') }}</span>
+  <span class="push faint">no withdrawals by construction · <kbd>/</kbd> search · <kbd>a</kbd> agent</span>
+</div>

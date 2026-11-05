@@ -1,0 +1,35 @@
+{
+  "note": "Hand-built to the documented Solana beta shape. Not a live capture. Every blocking property is on at once: live mint and freeze authorities, a transfer hook, a mutable balance authority, a 5% transfer fee that is itself upgradable, mutable metadata, unburned LP and a concentrated top-10.",
+  "body": {
+    "code": 1,
+    "message": "OK",
+    "result": {
+      "RiskYMint1111111111111111111111111111111111": {
+        "mintable": {"status": "1", "authority": [{"address": "AuTh111111111111111111111111111111111111111"}]},
+        "freezable": {"status": "1", "authority": [{"address": "AuTh111111111111111111111111111111111111111"}]},
+        "balance_mutable_authority": {"status": "1", "authority": [{"address": "AuTh111111111111111111111111111111111111111"}]},
+        "non_transferable": "0",
+        "transfer_hook": [{"address": "Hook11111111111111111111111111111111111111", "programId": "Hook11111111111111111111111111111111111111"}],
+        "transfer_hook_upgradable": {"status": "1", "authority": []},
+        "transfer_fee": {"newer_transfer_fee": {"transfer_fee_basis_points": "500", "maximum_fee": "100000", "epoch": "700"}},
+        "transfer_fee_upgradable": {"status": "1", "authority": []},
+        "metadata_mutable": {"status": "1", "metadata_upgrade_authority": [{"address": "AuTh111111111111111111111111111111111111111"}]},
+        "metadata": {"name": "Risky Coin", "symbol": "RISK", "uri": "https://example.invalid/risk.json"},
+        "holder_count": "42",
+        "total_supply": "1000000000",
+        "creators": [{"address": "RugDev11111111111111111111111111111111111", "malicious_address": 1}],
+        "holders": [
+          {"account": "Wh1111111111111111111111111111111111111111", "balance": "400000000", "percent": "0.40", "is_locked": 0, "tag": ""},
+          {"account": "Wh2222222222222222222222222222222222222222", "balance": "150000000", "percent": "0.15", "is_locked": 0, "tag": ""},
+          {"account": "Wh3333333333333333333333333333333333333333", "balance": "100000000", "percent": "0.10", "is_locked": 0, "tag": ""}
+        ],
+        "lp_holders": [
+          {"account": "Lp1111111111111111111111111111111111111111", "balance": "500000", "percent": "1.0", "is_locked": 0, "tag": ""}
+        ],
+        "dex": [
+          {"dex_name": "raydium", "type": "standard", "liquidity": "4200", "price": "0.0000042"}
+        ]
+      }
+    }
+  }
+}

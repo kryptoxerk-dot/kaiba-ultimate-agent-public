@@ -1,0 +1,12 @@
+[Unit]
+Description=Preserve newly received Kaiba method evidence every 30 minutes
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=30min
+RandomizedDelaySec=30
+Persistent=true
+Unit=kaiba-method-intake.service
+
+[Install]
+WantedBy=timers.target

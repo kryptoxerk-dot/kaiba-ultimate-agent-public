@@ -1,0 +1,14 @@
+[Unit]
+Description=Run the Kaiba disk guard every ten minutes
+
+[Timer]
+OnBootSec=3min
+# OnActiveSec: without it a timer enabled on a running box never fires (the unit has no
+# last activation for OnUnitActiveSec to count from, and boot is long past).
+OnActiveSec=1min
+OnUnitActiveSec=10min
+AccuracySec=30s
+Unit=kaiba-disk-guard.service
+
+[Install]
+WantedBy=timers.target

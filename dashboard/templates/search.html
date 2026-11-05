@@ -1,0 +1,24 @@
+{% extends "term_layout.html" %}
+{% block title %}Search · Kaiba{% endblock %}
+{% block main %}
+<div class="kx-page"><div class="kx-wrap">
+  <header class="kx-hero"><div class="ttl"><p class="eyebrow">Search</p><h1>{{ q or 'Search' }}</h1></div></header>
+  <section class="kx-panel">
+    {% if found.kind == 'symbol' %}
+      {% if found.hits %}
+      <div class="kx-ph"><h3>Tokens named ${{ found.query }}</h3><span class="cnt">{{ found.hits|length }}</span><div class="act"><small>created in the last two days, newest first</small></div></div>
+      <p class="muted" style="padding:0 14px 10px">Names are free to copy: check the creator and the dossier before trusting one.</p>
+      <table class="kx-t"><tbody>{% for h in found.hits %}
+        <tr><td><div class="tok"><span class="med sm c-{{ h.chain }}">{{ (h.symbol or '?')[:1]|upper }}</span><a href="/t/{{ h.chain }}/{{ h.address }}"><b>{{ h.symbol }}</b></a> <span class="muted">{{ h.name or '' }}</span></div></td>
+          <td><span class="chip c-{{ h.chain }}">{{ h.chain }}</span></td>
+          <td class="mono">{{ h.address|short(6, 6) }}</td><td class="muted">{{ h.launchpad or '' }}</td><td class="r mono muted">{{ h.created_ms|ago }}</td></tr>{% endfor %}
+      </tbody></table>
+      {% else %}<p class="empty">No token named ${{ found.query }} in the last two days. Paste the contract address instead.</p>{% endif %}
+    {% elif found.kind == 'unknown' %}
+      <p class="empty">We have no token or wallet at <span class="mono">{{ found.query }}</span> on Solana, Robinhood or BNB.</p>
+    {% else %}
+      <p class="empty">Paste a token or wallet address, or type $SYMBOL.</p>
+    {% endif %}
+  </section>
+</div></div>
+{% endblock %}

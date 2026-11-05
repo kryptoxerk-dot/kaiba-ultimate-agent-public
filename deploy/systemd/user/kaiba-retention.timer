@@ -1,0 +1,13 @@
+[Unit]
+Description=Run Kaiba row retention every fifteen minutes
+
+[Timer]
+OnBootSec=5min
+# OnActiveSec: without it a timer enabled on a running box never fires.
+OnActiveSec=2min
+OnUnitActiveSec=15min
+AccuracySec=30s
+Unit=kaiba-retention.service
+
+[Install]
+WantedBy=timers.target

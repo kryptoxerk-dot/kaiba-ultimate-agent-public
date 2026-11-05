@@ -1,0 +1,31 @@
+{% set c = activity.counts %}{% set cl = activity.counts_live or {} %}
+<div class="act-sum" title="the last {{ activity.window_h }} hours; paper sells counted by the paper scoreboard's own rule (closes it leaves out are not counted), capped at +300% as it does; live sells apart">
+  <div><span>Bought</span><b>{{ c.buys }}</b></div>
+  <div><span>Passed</span><b>{{ c.passes }}</b></div>
+  <div><span>Sold (paper, counted)</span><b>{{ c.sells }}</b></div>
+  <div><span>Avg paper</span><b class="{{ 'pos' if c.mean and c.mean > 0 else 'neg' if c.mean and c.mean < 0 }}">{{ c.mean|ret if c.mean is not none else '—' }}</b></div>
+</div>
+{% if cl.sells or activity.not_counted %}
+<div class="act-note">
+  {% if cl.sells %}live: {{ cl.sells }} sold · {{ cl.wins }} won · avg <span class="{{ 'pos' if cl.mean and cl.mean > 0 else 'neg' if cl.mean and cl.mean < 0 }}">{{ cl.mean|ret if cl.mean is not none else '—' }}</span>{% endif %}
+  {% if cl.sells and activity.not_counted %} · {% endif %}
+  {% if activity.not_counted %}<span title="{% for why, n in activity.not_counted_by.items() %}{{ why }} ×{{ n }}{% if not loop.last %}, {% endif %}{% endfor %}">paper not counted: {{ activity.not_counted }}</span>{% endif %}
+</div>
+{% endif %}
+{% for e in activity.feed %}
+<div class="af t-{{ e.type }}{% if e.type == 'sell' and e.ret is not none and e.ret < 0 %} loss{% endif %}">
+  <time title="{{ e.ts|hms }} UTC">{{ e.ts|hms }}</time>
+  <span class="ic"><svg class="i s"><use href="#i-{{ e.type }}"/></svg></span>
+  <div class="tx">
+    {% if e.token %}<b><a href="/t/{{ e.chain }}/{{ e.token }}" data-load="/terminal/token/{{ e.chain }}/{{ e.token }}" data-push="{{ e.chain }}:{{ e.token }}">{{ e.title }}</a></b>{% else %}<b>{{ e.title }}</b>{% endif %}
+    <span>{{ e.sub }}{% if e.held_s %} · held {{ e.held_s|dur }}{% endif %}</span>
+  </div>
+  <span class="rt">
+    {% if e.type == 'sell' %}<span class="{{ 'pos' if e.ret and e.ret > 0 else 'neg' if e.ret and e.ret < 0 }}">{{ e.ret|ret }}</span>
+    {% elif e.type == 'buy' %}<span class="chip {{ 'live' if e.live else 'paper' }}">{{ 'LIVE' if e.live else 'paper' }}</span>{% endif %}
+  </span>
+  {% if e.type == 'note' and e.body and e.body|length > 90 %}<details><summary>read the note</summary><pre>{{ e.body }}</pre></details>{% endif %}
+</div>
+{% else %}
+<p class="empty">Nothing in the last {{ activity.window_h }} hours: no entries, exits, passes or notes.</p>
+{% endfor %}

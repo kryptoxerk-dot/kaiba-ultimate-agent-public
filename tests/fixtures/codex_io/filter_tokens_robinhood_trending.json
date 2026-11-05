@@ -1,0 +1,83 @@
+{
+ "_recorded": "2026-10-21 graph.codex.io, free plan, via the box; key never in the request body. rankings trendingScore24 DESC, limit 3; usage = half of the two-call share.",
+ "data": {
+  "filterTokens": {
+   "count": 3,
+   "page": 0,
+   "results": [
+    {
+     "token": {
+      "address": "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+      "networkId": 4663,
+      "name": "WETH",
+      "symbol": "WETH",
+      "decimals": 18,
+      "createdAt": 1782846254,
+      "creatorAddress": null
+     },
+     "priceUSD": "2452.3224",
+     "liquidity": "54941689",
+     "volume24": "234549581",
+     "holders": 608062,
+     "marketCap": "95015150",
+     "createdAt": 1783025468,
+     "trendingScore": 0.8770855841867555,
+     "txnCount24": 194819,
+     "buyCount24": 99209,
+     "sellCount24": 95610,
+     "change24": "0.031103827326742405"
+    },
+    {
+     "token": {
+      "address": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
+      "networkId": 4663,
+      "name": "Global Dollar",
+      "symbol": "USDG",
+      "decimals": 6,
+      "createdAt": 1778003991,
+      "creatorAddress": "0xbe498aad9c6fd0e4cd6d1e3fbb395026c5d28215"
+     },
+     "priceUSD": "1.00001090535",
+     "liquidity": "54105804",
+     "volume24": "234549581",
+     "holders": 433614,
+     "marketCap": "686504134",
+     "createdAt": 1783025468,
+     "trendingScore": 0.8755028653643914,
+     "txnCount24": 194819,
+     "buyCount24": 95610,
+     "sellCount24": 99209,
+     "change24": "-0.000013178632601858827"
+    },
+    {
+     "token": {
+      "address": "0x39dbed3a2bd333467115de45665cc57f813c4571",
+      "networkId": 4663,
+      "name": "Pons",
+      "symbol": "PONS",
+      "decimals": 18,
+      "createdAt": 1783975341,
+      "creatorAddress": "0xb9f5f4ea1af1f5d3678470eb98e8fbdcadeb24b0"
+     },
+     "priceUSD": "0.282221552184",
+     "liquidity": "5047300",
+     "volume24": "6391083",
+     "holders": 103605,
+     "marketCap": "282221552",
+     "createdAt": 1786419242,
+     "trendingScore": 0.8543648780328381,
+     "txnCount24": 15370,
+     "buyCount24": 7767,
+     "sellCount24": 7603,
+     "change24": "0.06459074968882965"
+    }
+   ]
+  },
+  "usageData": {
+   "total": {
+    "computeUnits": "5012000",
+    "count": "0"
+   }
+  }
+ }
+}

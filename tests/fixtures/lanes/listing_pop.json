@@ -1,0 +1,19 @@
+{
+  "_note": "An exchange listing announcement. The entire edge is latency: announced 9s ago against a 30s cap.",
+  "chain": "sol",
+  "token": "L1stingTokenAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+  "buys": [],
+  "dossier": {
+    "built_age_s": 4,
+    "grade": "B",
+    "price_usd": "0.82",
+    "liquidity_usd": "450000"
+  },
+  "token_meta": {"symbol": "LIST", "decimals": 6, "created_age_s": 2592000},
+  "listing": {
+    "venue": "upbit",
+    "headline": "KRW market listing",
+    "announced_age_s": 9,
+    "source": "bwenews"
+  }
+}

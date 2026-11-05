@@ -1,0 +1,11 @@
+[Unit]
+Description=Run the Kaiba database guard every five minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+AccuracySec=15s
+Unit=kaiba-db-guard.service
+
+[Install]
+WantedBy=timers.target

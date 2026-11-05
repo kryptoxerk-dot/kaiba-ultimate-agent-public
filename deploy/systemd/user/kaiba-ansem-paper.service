@@ -1,0 +1,16 @@
+[Unit]
+Description=Kaiba direct Solana wallet watch (Ansem paper)
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/kaiba
+ExecStart=%h/kaiba/.venv/bin/python -m kaiba.learning.ansem_paper --wallet CuyLCJVPqJCcyUCNSGgzxWhZAJ7h6Gknn79hu4effVUN --ledger data/learning/ansem-paper/ledger.json
+Restart=on-failure
+RestartSec=30
+UMask=0077
+MemoryMax=128M
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target

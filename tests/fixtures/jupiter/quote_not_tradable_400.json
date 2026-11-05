@@ -1,0 +1,7 @@
+{
+  "status_code": 400,
+  "body": {
+    "error": "The token 9nQvkFbFCHPZ8nGQZK4UvVhvbfLGaCkA8mQ7yFAuDn3D is not tradable",
+    "errorCode": "TOKEN_NOT_TRADABLE"
+  }
+}

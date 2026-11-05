@@ -1,0 +1,7 @@
+# Normalise line endings in the repository. Mutation-testing scripts rewrite source
+# files through Python on Windows, which flips LF to CRLF and makes an unchanged file
+# look like a 1,700-line diff. Store LF, check out LF.
+* text=auto eol=lf
+*.png binary
+*.webp binary
+*.jpg binary

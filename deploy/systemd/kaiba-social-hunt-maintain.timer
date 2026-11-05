@@ -1,0 +1,11 @@
+[Unit]
+Description=Kaiba social hunt maintenance every 15 minutes; live events do not wait for this timer
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=15min
+AccuracySec=10s
+Persistent=true
+
+[Install]
+WantedBy=timers.target

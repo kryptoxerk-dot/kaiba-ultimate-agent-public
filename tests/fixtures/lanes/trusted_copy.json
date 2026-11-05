@@ -1,0 +1,23 @@
+{
+  "_note": "One curated source wallet buys; we are 8s behind it and the price has drifted +6%, inside the 12% band.",
+  "chain": "sol",
+  "token": "So1CopyTokenAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+  "wallets": [
+    {"address": "srcWa11etTrustedAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "cohort": "trusted_copy", "tags": ["smart_money"]},
+    {"address": "rand0mWa11etBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB", "cohort": "tracked", "tags": []}
+  ],
+  "scores": [
+    {"address": "srcWa11etTrustedAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "grade": "A", "score": 91.0, "archetype": "smart_money"}
+  ],
+  "buys": [
+    {"wallet": "srcWa11etTrustedAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "side": "buy", "age_s": 8, "usd_value": "1800", "amount_native": 9000000000, "price_usd": "0.0100", "tx": "tx-source"},
+    {"wallet": "rand0mWa11etBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB", "side": "buy", "age_s": 3, "usd_value": "50", "amount_native": 250000000, "price_usd": "0.0105", "tx": "tx-noise"}
+  ],
+  "dossier": {
+    "built_age_s": 3,
+    "grade": "B",
+    "price_usd": "0.0106",
+    "liquidity_usd": "120000"
+  },
+  "token_meta": {"symbol": "COPY", "decimals": 6, "created_age_s": 3600}
+}

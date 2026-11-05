@@ -1,0 +1,58 @@
+{
+  "note": "Hand-built to GoPlus's documented /api/v1/token_security/{chain_id} shape. Not a live capture. Verified source, not mintable, not pausable, 1% taxes, locked LP.",
+  "body": {
+    "code": 1,
+    "message": "OK",
+    "result": {
+      "0x1111111111111111111111111111111111111111": {
+        "token_name": "Clean EVM",
+        "token_symbol": "CEVM",
+        "is_open_source": "1",
+        "is_proxy": "0",
+        "is_mintable": "0",
+        "can_take_back_ownership": "0",
+        "owner_change_balance": "0",
+        "hidden_owner": "0",
+        "selfdestruct": "0",
+        "external_call": "0",
+        "buy_tax": "0.01",
+        "sell_tax": "0.01",
+        "cannot_buy": "0",
+        "cannot_sell_all": "0",
+        "slippage_modifiable": "0",
+        "personal_slippage_modifiable": "0",
+        "is_honeypot": "0",
+        "transfer_pausable": "0",
+        "is_blacklisted": "0",
+        "is_whitelisted": "0",
+        "is_anti_whale": "0",
+        "trading_cooldown": "0",
+        "is_in_dex": "1",
+        "is_airdrop_scam": "0",
+        "fake_token": "0",
+        "honeypot_with_same_creator": "0",
+        "holder_count": "5000",
+        "total_supply": "1000000000",
+        "owner_address": "",
+        "creator_address": "0x9999999999999999999999999999999999999999",
+        "creator_percent": "0.02",
+        "lp_holders": [
+          {"address": "0x000000000000000000000000000000000000dead", "balance": "1000", "percent": "1.0", "is_locked": 1, "tag": "burn"}
+        ],
+        "holders": [
+          {"address": "0xaaa0000000000000000000000000000000000001", "balance": "50000000", "percent": "0.05", "is_locked": 0, "tag": ""},
+          {"address": "0xaaa0000000000000000000000000000000000002", "balance": "40000000", "percent": "0.04", "is_locked": 0, "tag": ""},
+          {"address": "0xaaa0000000000000000000000000000000000003", "balance": "30000000", "percent": "0.03", "is_locked": 0, "tag": ""},
+          {"address": "0xaaa0000000000000000000000000000000000004", "balance": "30000000", "percent": "0.03", "is_locked": 0, "tag": ""},
+          {"address": "0xaaa0000000000000000000000000000000000005", "balance": "20000000", "percent": "0.02", "is_locked": 0, "tag": ""},
+          {"address": "0xaaa0000000000000000000000000000000000006", "balance": "10000000", "percent": "0.01", "is_locked": 0, "tag": ""},
+          {"address": "0xaaa0000000000000000000000000000000000007", "balance": "10000000", "percent": "0.01", "is_locked": 0, "tag": ""},
+          {"address": "0x000000000000000000000000000000000000dead", "balance": "300000000", "percent": "0.30", "is_locked": 1, "tag": "burn"}
+        ],
+        "dex": [
+          {"name": "UniswapV2", "liquidity": "500000", "pair": "0xpair000000000000000000000000000000000001"}
+        ]
+      }
+    }
+  }
+}

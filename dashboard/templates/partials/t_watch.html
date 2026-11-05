@@ -1,0 +1,38 @@
+{% set klabel = {'confluence': 'confluence', 'entry': 'bought', 'signal': 'signal', 'launch': 'launch', 'graduation': 'graduated', 'trending': 'trending', 'listing': 'listing', 'claim': 'claim', 'governance': 'governance'} %}
+{% for w in watch %}
+{% if w.linkable %}
+{% set m = w.market %}
+<div class="wr" data-load="/terminal/token/{{ w.chain }}/{{ w.token }}" data-href="/t/{{ w.chain }}/{{ w.token }}" data-push="{{ w.chain }}:{{ w.token }}" data-seen="{{ w.ts }}" tabindex="0" role="button"
+  title="{% for e in w.events %}{{ e.ts|hms }} {{ klabel.get(e.kind, e.kind) }} · {{ e.title }}{% if e.detail %} · {{ e.detail|truncate(60, True, '…') }}{% endif %}&#10;{% endfor %}">
+  <span class="med k-{{ w.lead }}">{{ ((w.symbol or w.token)|string)[:1]|upper }}</span>
+  <div style="min-width:0">
+    <div class="nm"><b>{{ w.symbol or (w.token|short) }}</b><span class="chip c-{{ w.chain }}">{{ {'sol': 'SOL', 'robinhood': 'RH', 'bsc': 'BNB'}.get(w.chain, w.chain) }}</span>{% if m and m.grade %}{% if m.grade|length == 1 %}<span class="grade g-{{ m.grade }}" title="dossier grade{% if m.score is not none %} {{ '%.0f'|format(m.score) }}{% endif %}">{{ m.grade }}</span>{% else %}<span class="grade g-x" title="dossier: {{ m.grade|lower }}">!</span>{% endif %}{% endif %}</div>
+    <div class="ln2"><span class="kd">{% for k in w.kinds[:4] %}<i class="k-{{ k }}"></i>{% endfor %}</span><span>
+      {%- if w.lead == 'trending' %}{{ w.title|feed }}{% if w.detail and not w.detail.startswith('rank') %} · {{ w.detail }}{% endif %}
+      {%- elif w.lead == 'confluence' %}{{ w.title }}{% if w.detail %} · {{ w.detail }}{% endif %}
+      {%- elif w.lead in ('signal', 'entry') %}{{ klabel.get(w.lead) }} · {{ w.title }}
+      {%- elif w.lead == 'launch' %}launch · {{ w.title|replace(' promoted', '') }}
+      {%- else %}{{ klabel.get(w.lead, w.lead) }}{% endif %}{% if w.n > 1 %} · {{ w.n }} events{% endif %}</span></div>
+  </div>
+  <div class="num">
+    {% if m and m.mcap_usd %}<span class="mono" title="market cap from the dossier, built {{ m.built_at_ms|ago }} ago">{{ m.mcap_usd|usd }}</span>
+    {% elif m and m.price_usd %}<span class="mono" title="price from the dossier, built {{ m.built_at_ms|ago }} ago">${{ m.price_usd|px }}</span>
+    {% elif w.rank %}<span class="mono" title="its rank when it first appeared on {{ w.title|feed }}">#{{ w.rank }}</span>
+    {% elif w.score is not none %}<span class="mono" title="score the source gave">{{ ('%.0f'|format(w.score)) if w.score > 1 else ('%.2f'|format(w.score)) }}</span>
+    {% else %}<span class="mono faint" title="no dossier yet: the scanner has not graded it">—</span>{% endif %}
+    <time title="{{ w.ts|hms }} UTC">{{ w.ts|ago }}</time>
+  </div>
+</div>
+{% else %}
+<div class="wr" data-seen="{{ w.ts }}" {% if w.url %}data-href="{{ w.url }}" data-external{% endif %} tabindex="0" title="{{ w.title }}{% if w.detail %} · {{ w.detail }}{% endif %}">
+  <span class="med k-{{ w.lead }}"><svg class="i"><use href="#i-bolt"/></svg></span>
+  <div style="min-width:0">
+    <div class="nm"><b>{{ w.title|truncate(48, True, '…') }}</b></div>
+    <div class="ln2"><span class="kd"><i class="k-{{ w.lead }}"></i></span><span>{{ klabel.get(w.lead, w.lead) }}{% if w.chain %} · {{ w.chain }}{% endif %}{% if w.n > 1 %} · {{ w.n }}×{% endif %}</span></div>
+  </div>
+  <div class="num">{% if w.url %}<span class="x">source ↗</span>{% endif %}<time title="{{ w.ts|hms }} UTC">{{ w.ts|ago }}</time></div>
+</div>
+{% endif %}
+{% else %}
+<p class="empty">Nothing in this view yet. The stream fills as triage promotes launches, lanes signal and the feeds report.</p>
+{% endfor %}

@@ -1,0 +1,128 @@
+<div class="panel-head">
+  <div><h3>Risk</h3><small>lane modes, envelope, daily loss and the kill switch</small></div>
+  <a class="text-button" href="/api/risk" target="_blank" rel="noopener">json</a>
+</div>
+
+{% if not risk.available %}
+<p class="nodata">{{ risk.reason }}</p>
+{% else %}
+
+<div class="guardrails">
+  <div class="guard {% if risk.kill_switch %}block{% else %}good{% endif %}">
+    <i></i>kill switch {{ 'ENGAGED' if risk.kill_switch else 'clear' }}
+  </div>
+  <div class="guard {% if risk.entries_paused %}warn{% else %}good{% endif %}">
+    <i></i>entries {{ 'paused' if risk.entries_paused else 'allowed' }}
+  </div>
+  <div class="guard {% if risk.reduce_only %}warn{% else %}good{% endif %}">
+    <i></i>{{ 'reduce-only' if risk.reduce_only else 'entries and exits' }}
+  </div>
+  <div class="guard good"><i></i>global mode {{ risk.global_mode }}</div>
+</div>
+
+<div class="controls">
+  <form method="post" action="/control/pause" hx-post="/control/pause" hx-target="closest .panel">
+    <input type="hidden" name="_csrf" value="{{ csrf }}">
+    <button class="button" type="submit">Pause entries</button>
+  </form>
+  <form method="post" action="/control/reduce-only" hx-post="/control/reduce-only" hx-target="closest .panel">
+    <input type="hidden" name="_csrf" value="{{ csrf }}">
+    <input type="hidden" name="on" value="{{ '0' if risk.reduce_only else '1' }}">
+    <button class="button" type="submit">{{ 'Leave reduce-only' if risk.reduce_only else 'Reduce only' }}</button>
+  </form>
+  <form method="post" action="/control/resume" hx-post="/control/resume" hx-target="closest .panel">
+    <input type="hidden" name="_csrf" value="{{ csrf }}">
+    <button class="button" type="submit">Resume</button>
+  </form>
+  <form method="post" action="/control/kill" hx-post="/control/kill" hx-target="closest .panel"
+        hx-confirm="Engage the kill switch? Every lane's effective mode becomes OFF.">
+    <input type="hidden" name="_csrf" value="{{ csrf }}">
+    <button class="button danger" type="submit">KILL</button>
+  </form>
+  {% if risk.kill_switch %}
+  <form method="post" action="/control/resume" hx-post="/control/resume" hx-target="closest .panel"
+        hx-confirm="Clear the kill switch and let the lanes run again?">
+    <input type="hidden" name="_csrf" value="{{ csrf }}">
+    <input type="hidden" name="clear_kill" value="1">
+    <button class="button danger-soft" type="submit">Clear kill switch</button>
+  </form>
+  {% endif %}
+</div>
+
+<p class="no-withdraw"><b>{{ NO_WITHDRAW_COPY }}</b>
+  There is no withdraw button here because there is no withdraw path: the signer will not
+  sign a transfer to a non-owned address and the GMGN API has no transfer endpoint.</p>
+
+<h4>Daily loss versus stop</h4>
+{% if risk.pnl_today.available %}
+<ul class="kv">
+  {% for row in risk.pnl_today.by_chain %}
+  <li><span>{{ row.chain }} · {{ row.mode }}</span>
+      <b class="{% if row.pnl_base_units < 0 %}neg{% else %}pos{% endif %}">{{ row.pnl_native|num(6) }} {{ row.symbol }}</b></li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="nodata">{{ risk.pnl_today.reason }} — no loss to compare against a stop.</p>
+{% endif %}
+<ul class="kv">
+  {% for c in risk.chains %}
+  <li><span>{{ c.chain }} stop</span>
+    <b>{% if c.daily_loss_stop is not none %}{{ c.daily_loss_stop|num(6) }} {{ c.symbol }}{% else %}<em class="nodata">not set</em>{% endif %}</b></li>
+  {% endfor %}
+</ul>
+{% if risk.today.available %}
+<p class="muted">risk_state {{ risk.today.day_key }}: {{ risk.today.entries }} entries,
+  {{ 'HALTED — ' ~ (risk.today.halt_reason or 'no reason recorded') if risk.today.halted else 'not halted' }}</p>
+{% else %}
+<p class="muted nodata">{{ risk.today.reason }}</p>
+{% endif %}
+
+<h4>Envelope (operator-owned, not writable from here)</h4>
+<ul class="kv">
+  <li><span>max size % bankroll</span><b>{{ risk.bounds.max_size_pct_bankroll }}</b></li>
+  <li><span>max daily loss %</span><b>{{ risk.bounds.max_daily_loss_pct }}</b></li>
+  <li><span>max slippage bps</span><b>{{ risk.bounds.max_slippage_bps }}</b></li>
+  <li><span>max concurrent positions</span><b>{{ risk.bounds.max_concurrent_positions if risk.bounds.max_concurrent_positions is not none else 'no cap' }}</b></li>
+  <li><span>max lane mode</span><b>{{ risk.bounds.max_lane_mode }}</b></li>
+</ul>
+
+<h4>Lanes</h4>
+<div class="table lanes">
+  <div class="table-row header"><span>Lane</span><span>Configured</span><span>Effective</span><span>Size %</span></div>
+  {% for lane in risk.lanes %}
+  <div class="table-row">
+    <span class="lane">{{ lane.lane }}</span>
+    <span><span class="badge badge-{{ lane.mode }}">{{ lane.mode }}</span></span>
+    <span><span class="badge badge-{{ lane.effective_mode }}">{{ lane.effective_mode }}</span></span>
+    <span>{{ lane.size_pct_min }}–{{ lane.size_pct_max }}</span>
+  </div>
+  {% endfor %}
+</div>
+
+<h4>Risk dial</h4>
+<form class="dial" method="post" action="/control/risk-dial"
+      hx-post="/control/risk-dial" hx-target="closest .panel" hx-swap="innerHTML">
+  <input type="hidden" name="_csrf" value="{{ csrf }}">
+  <label for="dial-lane">Lane</label>
+  <select id="dial-lane" name="lane">
+    {% for lane in risk.lanes %}<option value="{{ lane.lane }}">{{ lane.lane }}</option>{% endfor %}
+  </select>
+
+  <label for="dial-size">Max size % of bankroll
+    <output id="dial-size-out">{{ risk.bounds.max_size_pct_bankroll }}</output></label>
+  <input id="dial-size" name="size_pct_max" type="range" min="0" step="0.25"
+         max="{{ risk.bounds.max_size_pct_bankroll }}" value="{{ risk.bounds.max_size_pct_bankroll }}"
+         oninput="document.getElementById('dial-size-out').value = this.value">
+
+  <label for="dial-loss">Daily loss stop % of bankroll
+    <output id="dial-loss-out">{{ risk.daily_loss_pct_dial or risk.bounds.max_daily_loss_pct }}</output></label>
+  <input id="dial-loss" name="daily_loss_pct" type="range" min="0.5" step="0.5"
+         max="{{ risk.bounds.max_daily_loss_pct }}"
+         value="{{ risk.daily_loss_pct_dial or risk.bounds.max_daily_loss_pct }}"
+         oninput="document.getElementById('dial-loss-out').value = this.value">
+
+  <button class="button primary" type="submit">Apply within envelope</button>
+  <small>Values above the envelope are refused with a 400 and the reason, not silently clamped.</small>
+</form>
+
+{% endif %}

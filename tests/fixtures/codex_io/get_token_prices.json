@@ -1,0 +1,49 @@
+{
+ "_recorded": "2026-10-21 graph.codex.io, free plan, via the box; key never in the request body. usageData total = the getTokenPrices share of the real combined request (4 + 0.016 + 0.001 + 0.001 CU).",
+ "data": {
+  "getTokenPrices": [
+   {
+    "address": "0x4200000000000000000000000000000000000006",
+    "networkId": 8453,
+    "priceUsd": 2452.84031461,
+    "liquidityUsd": "87691805",
+    "timestamp": 1792573099,
+    "blockNumber": 52891876,
+    "priceChange24": 0.029453822025791755
+   },
+   {
+    "address": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+    "networkId": 1,
+    "priceUsd": 2452.82148648,
+    "liquidityUsd": "120248345",
+    "timestamp": 1792573091,
+    "blockNumber": 26239925,
+    "priceChange24": 0.02978579232541662
+   },
+   {
+    "address": "0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c",
+    "networkId": 56,
+    "priceUsd": 745.824455228,
+    "liquidityUsd": "41309027",
+    "timestamp": 1792573099,
+    "blockNumber": 128910060,
+    "priceChange24": 0.026533009716327945
+   },
+   {
+    "address": "So11111111111111111111111111111111111111112",
+    "networkId": 1399811149,
+    "priceUsd": 106.608100082,
+    "liquidityUsd": "26553826",
+    "timestamp": 1792573099,
+    "blockNumber": 459570758,
+    "priceChange24": 0.026722093387326173
+   }
+  ],
+  "usageData": {
+   "total": {
+    "computeUnits": "4018000",
+    "count": "0"
+   }
+  }
+ }
+}

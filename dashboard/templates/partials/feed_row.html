@@ -1,0 +1,13 @@
+<article class="feed-row lvl-{{ event.level }}" data-event-id="{{ event.id }}">
+  <div class="feed-meta">
+    <time>{{ event.ts_ms|ts }}</time>
+    <span class="kind kind-{{ event.kind.split('.')[0] }}">{{ event.kind }}</span>
+    {% if event.chain %}<span class="chip">{{ event.chain }}</span>{% endif %}
+  </div>
+  {% if event.subject %}
+  <button class="addr" type="button" data-copy="{{ event.subject }}" title="{{ event.subject }}">
+    {{ event.subject_short }}<span class="copy-glyph" aria-hidden="true">⧉</span>
+  </button>
+  {% endif %}
+  <p class="feed-summary">{{ event.summary or '—' }}</p>
+</article>

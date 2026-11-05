@@ -1,0 +1,13 @@
+{
+  "args": [
+    "token",
+    "security",
+    "--chain",
+    "sol",
+    "--address",
+    "So11111111111111111111111111111111111111112"
+  ],
+  "returncode": 0,
+  "stdout": "{\"address\":\"So11111111111111111111111111111111111111112\",\"is_show_alert\":false,\"top_10_holder_rate\":\"0.0106259\",\"burn_ratio\":\"1\",\"burn_status\":\"burn\",\"dev_token_burn_amount\":\"0\",\"dev_token_burn_ratio\":\"0\",\"is_open_source\":null,\"open_source\":0,\"is_blacklist\":null,\"blacklist\":0,\"is_honeypot\":null,\"honeypot\":0,\"is_renounced\":null,\"renounced\":null,\"renounced_freeze_account\":true,\"renounced_mint\":true,\"can_sell\":0,\"can_not_sell\":0,\"buy_tax\":\"0\",\"sell_tax\":\"0\",\"average_tax\":\"0\",\"high_tax\":\"0\",\"flags\":[],\"lockInfo\":null,\"lock_summary\":{\"is_locked\":false,\"lock_detail\":null,\"lock_tags\":null,\"lock_percent\":\"0\",\"left_lock_percent\":\"0\"},\"hide_risk\":false,\"privileges\":null}\n",
+  "stderr": ""
+}

@@ -1,0 +1,19 @@
+[Unit]
+Description=Kaiba follow graph and official contract announcement receiver
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/kaiba
+ExecStart=%h/kaiba/.venv/bin/python -m kaiba.hunters.social_follow run
+Restart=on-failure
+RestartSec=3
+Nice=19
+IOSchedulingClass=idle
+MemoryMax=256M
+TimeoutStopSec=20
+NoNewPrivileges=true
+UMask=0077
+
+[Install]
+WantedBy=default.target

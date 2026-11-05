@@ -1,0 +1,64 @@
+{% set live_n = book.open|rejectattr('paper')|list|length %}
+<div data-pane="open">
+{% if book.open %}
+<table class="kx-t">
+  <thead><tr><th>Token</th><th>Lane</th><th class="r">Entry</th><th class="r">Mark</th><th class="r">Size</th><th class="r">P&amp;L</th><th>Protection</th><th></th></tr></thead>
+  <tbody>
+  {% for p in book.open %}
+  {% set sym = p.symbol or (p.token|short) %}
+  <tr class="{{ 'is-live' if not p.paper }}">
+    <td>
+      <div class="tok">
+        <span class="med sm c-{{ p.chain }}">{{ sym[:1]|upper }}</span>
+        <div style="min-width:0"><a href="/t/{{ p.chain }}/{{ p.token }}" data-load="/terminal/token/{{ p.chain }}/{{ p.token }}" data-push="{{ p.chain }}:{{ p.token }}"><b>{{ sym }}</b></a>
+          <span class="sub">{{ {'sol': 'Solana', 'robinhood': 'Robinhood', 'bsc': 'BNB'}.get(p.chain, p.chain) }} · {{ p.opened_ms|ago }} ago</span></div>
+      </div>
+    </td>
+    <td>{{ p.lane }}<span class="sub">{% if p.paper %}paper{% else %}<b class="live-txt">LIVE</b>{% endif %}</span></td>
+    <td class="r mono">{{ ('$' ~ (p.entry_price_usd|px)) if p.entry_price_usd else '—' }}</td>
+    <td class="r mono">{% if p.mark %}${{ p.mark.price_usd|px }}<span class="sub" title="{{ p.mark.source }} ({{ p.mark.settlement or 'unsettled' }})">{{ p.mark.observed_ms|ago }} ago</span>{% else %}<span class="faint" title="protection has not priced it yet">—</span>{% endif %}</td>
+    <td class="r mono">{% if p.cost_native is not none %}{{ '%.3f'|format(p.cost_native) }}<span class="sub">{{ p.native }}</span>{% else %}—{% endif %}</td>
+    <td class="r mono {{ 'pos' if p.ret and p.ret > 0 else 'neg' if p.ret and p.ret < 0 }}">{{ p.ret|ret }}{% if p.value_native is not none and p.cost_native is not none %}<span class="sub">{{ '%+.4f'|format(p.value_native - p.cost_native) }} {{ p.native }}</span>{% endif %}</td>
+    <td>
+      {% if p.exit_state == 'failed' %}<span class="pill warn" title="{{ p.exit_reason }}">exit retrying ×{{ p.exit_attempts }}</span>
+      {% elif p.tp_done %}<span class="pill ok" title="take-profit rungs done">TP {{ p.tp_done|join(', ') }}</span>
+      {% elif p.mark %}<span class="pill">stop armed</span>
+      {% else %}<span class="pill unk">no mark yet</span>{% endif %}
+    </td>
+    <td class="r">
+      <div class="acts">
+        <button class="kb xs ghost" type="button" data-exit="{{ p.position_id }}" data-pct="50" data-label="{{ sym }}" title="sell half">½</button>
+        <button class="kb xs danger" type="button" data-exit="{{ p.position_id }}" data-pct="100" data-label="{{ sym }}" title="sell all{% if not p.paper %}: LIVE{% endif %}">Sell</button>
+      </div>
+    </td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="empty">No open positions. Entries appear here the moment a lane or you buy.</p>
+{% endif %}
+</div>
+<div data-pane="closed" hidden>
+{% if book.recent %}
+<table class="kx-t">
+  <thead><tr><th>Token</th><th>Lane</th><th class="r">Result</th><th>Why it closed</th><th class="r">Held</th><th class="r">Closed</th></tr></thead>
+  <tbody>
+  {% for c in book.recent %}
+  {% set sym = c.symbol or (c.token|short) %}
+  <tr class="{{ 'is-live' if not c.paper }}">
+    <td><div class="tok"><span class="med sm c-{{ c.chain }}">{{ sym[:1]|upper }}</span><a href="/t/{{ c.chain }}/{{ c.token }}" data-load="/terminal/token/{{ c.chain }}/{{ c.token }}" data-push="{{ c.chain }}:{{ c.token }}"><b>{{ sym }}</b></a>{% if not c.paper %}<span class="chip live">LIVE</span>{% endif %}</div></td>
+    <td>{{ c.lane }}</td>
+    <td class="r mono {{ 'pos' if c.ret and c.ret > 0 else 'neg' if c.ret and c.ret < 0 }}">{{ c.ret|ret }}</td>
+    <td class="muted">{{ (c.exit_reason or '')|replace('_', ' ')|truncate(34, True, '…') }}</td>
+    <td class="r mono">{{ c.hold_s|dur }}</td>
+    <td class="r mono">{{ c.closed_ms|ago }} ago</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="empty">Nothing closed in the last 24 hours.</p>
+{% endif %}
+</div>
+<div class="bk-foot"><span>{{ book.open|length }} open · {{ book.open|length - live_n }} paper{% if live_n %} · <b class="live-txt">{{ live_n }} live</b>{% endif %}</span><span>marks are the prices protection decided on · {{ book.at_ms|hms }} UTC</span></div>

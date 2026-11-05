@@ -1,0 +1,18 @@
+<div class="tablewrap"><table class="grid-table">
+  <thead><tr><th>Closed</th><th>Token</th><th>Lane / chain</th><th class="r">Return</th><th class="r">PnL</th><th class="r">Held</th><th>Exit</th><th class="r">Best / worst</th></tr></thead>
+  <tbody>
+  {% for t in rows %}
+    <tr{% if t.flags %} class="flagged"{% endif %}>
+      <td>{{ t.closed_ms|when }}</td>
+      <td><b>{{ t.symbol or '' }}</b> <button class="addr" type="button" data-copy="{{ t.token }}" title="{{ t.token }}">{{ t.token_short }}<span class="copy-glyph" aria-hidden="true">⧉</span></button>
+        {% for f in t.flags %}<small class="flag">{{ f }}</small>{% endfor %}</td>
+      <td>{{ t.lane }} <small class="chip">{{ t.chain }}</small></td>
+      <td class="r {% if t.return is not none and t.return < 0 %}neg{% elif t.return %}pos{% endif %}"><b>{{ t.return|pct }}</b></td>
+      <td class="r">{{ t.realized_native|num(5) }} {{ t.symbol_native }}</td>
+      <td class="r">{{ t.hold_s|dur }}</td>
+      <td><small>{{ t.exit_reason or '' }}</small></td>
+      <td class="r"><small>{% if t.mfe_pct is not none %}{{ "%+.0f"|format(t.mfe_pct) }}%{% else %}—{% endif %} / {% if t.mae_pct is not none %}{{ "%+.0f"|format(t.mae_pct) }}%{% else %}—{% endif %}</small></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table></div>

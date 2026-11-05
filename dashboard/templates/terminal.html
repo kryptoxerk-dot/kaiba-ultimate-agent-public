@@ -1,0 +1,120 @@
+{# Codex-owned visual preview. Lead production template is live_terminal.html. #}
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="color-scheme" content="dark"><meta name="robots" content="noindex,nofollow">
+  <title>KAIBA · Trading terminal</title><link rel="icon" href="/static/kaiba-mark.svg" type="image/svg+xml"><link rel="stylesheet" href="/static/terminal.css">
+  <script id="terminal-data" type="application/json">{{ snapshot|tojson }}</script><script src="/static/terminal.js" defer></script><script src="/static/terminal_connections.js" defer></script>
+</head>
+<body>
+<svg class="icon-definitions" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs>
+<symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></symbol>
+<symbol id="i-chart" viewBox="0 0 24 24"><path d="M3 3v17h18M7 13l4-5 4 4 6-7"/></symbol>
+<symbol id="i-wallet" viewBox="0 0 24 24"><path d="M20 8V5a2 2 0 0 0-2-2H5a3 3 0 0 0 0 6h15v11H5a3 3 0 0 1-3-3V6m18 7h-6v4h6"/></symbol>
+<symbol id="i-bot" viewBox="0 0 24 24"><rect x="4" y="7" width="16" height="14" rx="4"/><path d="M12 3v4M1 12v5m22-5v5M8 12v2m8-2v2m-8 3h8"/></symbol>
+<symbol id="i-terminal" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="3"/><path d="m6 9 4 3-4 3m7 0h5"/></symbol>
+<symbol id="i-settings" viewBox="0 0 24 24"><path d="m9 3-1 3-3 1 1 3-2 2 2 2-1 3 3 1 1 3h6l1-3 3-1-1-3 2-2-2-2 1-3-3-1-1-3Z"/><circle cx="12" cy="12" r="3"/></symbol>
+<symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></symbol>
+<symbol id="i-star" viewBox="0 0 24 24"><path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9Z"/></symbol>
+<symbol id="i-chevron" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+<symbol id="i-expand" viewBox="0 0 24 24"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/></symbol>
+<symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6m0-10v1"/></symbol>
+<symbol id="i-shield" viewBox="0 0 24 24"><path d="m12 2 9 4v6c0 6-9 10-9 10S3 18 3 12V6Z"/><path d="m8 12 3 3 5-6"/></symbol>
+<symbol id="i-file" viewBox="0 0 24 24"><path d="M14 2H5v20h14V7Zm0 0v6h5M8 12h8m-8 4h8"/></symbol>
+<symbol id="i-bolt" viewBox="0 0 24 24"><path d="m13 2-9 12h7l-1 8 10-12h-7Z"/></symbol>
+<symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"/></symbol>
+<symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5"/></symbol>
+<symbol id="i-arrow" viewBox="0 0 24 24"><path d="M4 12h16m-6-6 6 6-6 6"/></symbol>
+<symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 6v6l4 2"/></symbol>
+<symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 7a9 9 0 1 0 1 9M20 2v6h-6"/></symbol>
+</defs></svg>
+<a class="skip-link" href="#chart-panel">Skip to trading workspace</a>
+<header class="topbar">
+  <a class="brand" href="/terminal" aria-label="Kaiba trading terminal"><img src="/static/kaiba-mark.svg" width="31" height="31" alt=""><span>KAIBA</span><small>ULTIMATE AGENT</small></a>
+  <nav class="primary-nav" aria-label="Workspace"><button class="nav-tab active" data-view="terminal" aria-current="page">Terminal</button><button class="nav-tab" data-view="portfolio">Portfolio</button><button class="nav-tab" data-view="intelligence">Intelligence</button><button class="nav-tab" data-view="activity">Activity</button></nav>
+  <div class="header-tools"><span class="workspace-mode"><i class="dot amber"></i><span id="workspace-label">{{ 'Demo workspace' if snapshot.demo else 'Stored workspace' }}</span></span><button class="connection-trigger" id="connections-open" aria-label="Connections" aria-haspopup="dialog"><svg class="icon"><use href="#i-wallet"/></svg><span>Connections</span></button><button class="command-search" id="command-open" aria-label="Open command palette"><svg class="icon"><use href="#i-search"/></svg><span>Search or run a command…</span><kbd>Ctrl K</kbd></button></div>
+</header>
+<div class="market-strip" id="market-strip" aria-label="Market overview"></div>
+<div class="workspace">
+<aside class="icon-rail" aria-label="Operator tools">
+  <a href="/" class="rail-button" title="Command centre" aria-label="Command centre"><svg class="icon"><use href="#i-grid"/></svg></a>
+  <button class="rail-button selected" data-view="terminal" title="Trading terminal" aria-label="Trading terminal"><svg class="icon"><use href="#i-chart"/></svg></button>
+  <a href="/wallets" class="rail-button" title="Wallet intelligence" aria-label="Wallet intelligence"><svg class="icon"><use href="#i-wallet"/></svg></a>
+  <a href="/chat" class="rail-button" title="Chat with agent" aria-label="Chat with agent"><svg class="icon"><use href="#i-bot"/></svg></a>
+  <button class="rail-button" id="terminal-toggle" title="Open command terminal" aria-label="Open command terminal"><svg class="icon"><use href="#i-terminal"/></svg></button>
+  <div class="rail-spacer"></div>
+  <a href="/#risk" class="rail-button" title="Risk controls" aria-label="Risk controls"><svg class="icon"><use href="#i-shield"/></svg></a>
+  <a href="/commands" class="rail-button" title="Service commands" aria-label="Service commands"><svg class="icon"><use href="#i-settings"/></svg></a>
+</aside>
+<aside class="watchlist panel" id="watchlist" aria-label="Watchlist">
+  <div class="panel-heading"><h2>Watchlist <span class="count" id="watch-count"></span></h2><div><button class="icon-button" id="favorites-toggle" title="Show favorites" aria-label="Show favorites" aria-pressed="false"><svg class="icon"><use href="#i-star"/></svg></button><button class="icon-button mobile-close" id="watch-close" aria-label="Close watchlist"><svg class="icon"><use href="#i-close"/></svg></button></div></div>
+  <label class="search-field"><svg class="icon"><use href="#i-search"/></svg><input id="watch-search" placeholder="Search token or address…" aria-label="Search watchlist" autocomplete="off" spellcheck="false"><kbd>/</kbd></label>
+  <div class="chain-filters" role="group" aria-label="Filter watchlist by chain"><button class="active" data-chain="all" aria-pressed="true">All</button><button data-chain="sol" aria-pressed="false">Solana</button><button data-chain="evm" aria-pressed="false">EVM</button></div>
+  <div id="watch-rows" class="watch-rows"></div>
+  <div class="allocation"><div class="panel-heading"><h2>Portfolio allocation</h2><svg class="icon muted"><use href="#i-wallet"/></svg></div><div id="allocation-content"></div></div>
+</aside>
+<main class="main-column">
+  <section class="chart-panel panel" id="chart-panel" tabindex="-1" aria-label="Token price chart">
+    <header class="token-header" id="token-header"></header>
+    <div class="chart-toolbar"><button class="subtle-button mobile-watch" id="watch-open"><svg class="icon"><use href="#i-grid"/></svg>Watchlist</button><span class="chart-label">Price <span class="muted">/ USD</span></span><div class="timeframes" role="group" aria-label="Chart timeframe"><button data-time="15m" class="active" aria-pressed="true">15m</button><button data-time="1h" aria-pressed="false">1h</button><button data-time="4h" aria-pressed="false">4h</button><button data-time="1D" aria-pressed="false">1D</button></div><div class="chart-tools"><label class="chart-kind"><svg class="icon"><use href="#i-chart"/></svg><select id="chart-type" aria-label="Chart type"><option value="candles">Candles</option><option value="line">Line</option></select></label><button id="chart-expand" class="icon-button boxed" title="Expand chart" aria-label="Expand chart" aria-pressed="false"><svg class="icon"><use href="#i-expand"/></svg></button></div></div>
+    <div class="chart-stage"><div class="chart-legend" id="chart-legend"></div><canvas id="price-chart" role="img" tabindex="0" aria-describedby="chart-keyboard-help chart-reading" aria-label="Illustrative candlestick price chart"></canvas><div id="chart-empty" class="empty-state" hidden></div><div class="chart-provenance" id="chart-provenance">ILLUSTRATIVE MARKET DATA</div></div>
+    <div class="chart-access"><span id="chart-keyboard-help">Focus chart · ← → inspect · Home / End</span><button id="gmgn-charts-open" class="chart-external" aria-haspopup="dialog">GMGN charts<svg class="icon"><use href="#i-arrow"/></svg></button></div><p id="chart-reading" class="screen-reader-only" aria-live="polite"></p>
+  </section>
+  <section class="workspace-view panel" id="workspace-view" hidden aria-live="polite"></section>
+  <section class="positions-panel panel" aria-label="Positions and orders">
+    <header class="data-tabs"><div role="group" aria-label="Position views"><button class="active" data-table="positions">Positions <span class="count" id="positions-count">0</span></button><button data-table="orders">Orders <span class="count" id="orders-count">0</span></button><button data-table="history">Trade history</button><button data-table="console"><svg class="icon"><use href="#i-terminal"/></svg>Terminal</button></div><button class="icon-button" id="export-data" title="Export current table as CSV" aria-label="Export current table as CSV"><svg class="icon"><use href="#i-download"/></svg></button></header>
+    <div id="table-content" class="table-scroll"></div>
+    <section class="console" id="console" hidden aria-label="Command terminal"><div id="console-output" class="console-output" role="log" aria-live="polite"></div><form id="console-form" class="console-prompt"><span>kaiba <b>›</b></span><input id="console-input" aria-label="Terminal command" placeholder="Type help for commands…" autocomplete="off" spellcheck="false"><button type="submit" class="icon-button" aria-label="Run local command"><svg class="icon"><use href="#i-arrow"/></svg></button></form></section>
+    <div class="table-foot"><span id="table-scope">Browser session · demo positions</span><span id="pnl-total"></span></div>
+  </section>
+</main>
+<aside class="inspector" aria-label="Agent activity and order ticket">
+  <section class="activity-panel panel"><div class="panel-heading"><h2>Agent activity</h2><span class="activity-source"><i class="dot mint"></i>{{ 'Illustrative feed' if snapshot.demo else 'Stored events' }}</span></div><div id="activity-feed"></div><button class="activity-link" data-view="activity">View all activity<svg class="icon"><use href="#i-arrow"/></svg></button></section>
+  <section class="order-panel panel"><div class="panel-heading"><h2>Order ticket</h2><span class="tag amber-text">{{ 'Paper' if snapshot.demo else 'Read only' }}</span><button class="icon-button" id="order-info" aria-label="Order ticket information"><svg class="icon"><use href="#i-info"/></svg></button></div>
+    <form id="order-form"><fieldset id="order-fields" {% if not snapshot.demo %}disabled{% endif %}>
+      <div class="side-switch" role="group" aria-label="Order side"><button type="button" class="active" data-side="buy" aria-pressed="true">Buy</button><button type="button" data-side="sell" aria-pressed="false">Sell</button></div>
+      <div class="order-types" role="group" aria-label="Order type"><button type="button" data-order-type="market" class="active" aria-pressed="true">Market</button><button type="button" data-order-type="limit" aria-pressed="false">Limit draft</button></div>
+      <label class="field-label" for="order-amount"><span>Amount</span><span class="muted" id="available-balance">Balance unavailable</span></label><div class="amount-field"><input type="number" id="order-amount" value="0.10" min="0.000001" step="any" required inputmode="decimal"><span id="amount-unit">SOL</span></div>
+      <div class="amount-shortcuts" role="group" aria-label="Balance percentage"><button type="button" data-amount=".25">25%</button><button type="button" data-amount=".5">50%</button><button type="button" data-amount=".75">75%</button><button type="button" data-amount="1">Max</button></div>
+      <div class="limit-field" id="limit-field" hidden><label for="limit-price" class="field-label">Limit price <span class="muted">USD</span></label><input type="number" step="any" min="0.000000001" id="limit-price" inputmode="decimal"></div>
+      <div class="protection-fields"><label for="take-profit">Take profit <span class="muted">optional</span><div class="input-suffix"><input id="take-profit" type="number" value="25" min="0.01" max="10000" step="any"><span>%</span></div></label><label for="stop-loss">Stop loss <span class="muted">optional</span><div class="input-suffix"><input id="stop-loss" type="number" value="15" min="0.01" max="99.99" step="any"><span>%</span></div></label></div>
+      <div class="ticket-line"><label for="slippage">Slippage tolerance <svg class="icon muted"><use href="#i-info"/></svg></label><div class="slippage-field"><input id="slippage" type="number" value="1" min="0.01" max="5" step=".01" aria-label="Slippage tolerance percent"><span>%</span></div></div>
+      <div class="ticket-line estimate"><span>Estimated receive</span><span id="receive-estimate">—</span></div><div class="ticket-line"><span>Fees & actual slippage</span><span class="muted">Unavailable</span></div><p class="form-error" id="order-error" role="alert" hidden></p>
+      <button class="primary-button review-button" id="review-order" type="submit">Review paper order<svg class="icon"><use href="#i-arrow"/></svg></button>
+    </fieldset></form>
+    <p class="order-disclaimer"><svg class="icon"><use href="#i-info"/></svg><span>{{ 'Simulated execution · no funds move' if snapshot.demo else 'Execution is available through existing agent controls.' }}</span></p>
+    {% if not snapshot.demo %}<a class="subtle-button" href="/commands">Open operator controls<svg class="icon"><use href="#i-arrow"/></svg></a>{% endif %}
+  </section>
+  <div class="evidence-note"><svg class="icon"><use href="#i-shield"/></svg><p>Evidence before conviction.<span>{{ 'Sample returns exclude fees. TP / SL is illustrative.' if snapshot.demo else 'No inferred fees, prices or calibrated win probabilities.' }}</span></p></div>
+</aside>
+</div>
+<footer class="statusbar"><div><span id="connection-status"><i class="dot amber"></i>{{ 'Demo session' if snapshot.demo else 'Stored snapshot' }}</span><span id="snapshot-clock"></span><span id="freshness-label">API: {{ 'Demo' if snapshot.demo else 'read only' }}</span><span class="status-protection">Protection: {{ 'simulated' if snapshot.demo else 'freshness unverified' }}</span></div><div><button id="footer-command"><kbd>Ctrl K</kbd> Commands</button><button id="help-open"><svg class="icon"><use href="#i-info"/></svg>Help</button><button id="refresh-snapshot" title="Refresh snapshot"><svg class="icon"><use href="#i-refresh"/></svg><span>Refresh</span></button></div></footer>
+<dialog id="connections-dialog" class="connections-dialog" aria-labelledby="connections-title" aria-describedby="connections-subtitle">
+  <div class="dialog-top"><div><h2 id="connections-title">Connections</h2><p id="connections-subtitle">Account access and external charts</p></div><button class="icon-button" data-close-dialog aria-label="Close connections"><svg class="icon"><use href="#i-close"/></svg></button></div>
+  <div class="connection-tabs" role="tablist" aria-label="Connection views"><button id="connection-tab-account" role="tab" aria-selected="true" aria-controls="connection-account-panel">GMGN account</button><button id="connection-tab-charts" role="tab" aria-selected="false" aria-controls="connection-charts-panel" tabindex="-1">GMGN charts</button></div>
+  <section id="connection-account-panel" role="tabpanel" aria-labelledby="connection-tab-account">
+    <div class="account-identity"><div class="gmgn-monogram" aria-hidden="true">G</div><div><h3>GMGN</h3><p>Server account</p></div><span class="account-status" id="account-status" role="status">Not checked</span></div>
+    <p class="connection-description" id="account-description">{{ 'This preview does not access your GMGN account.' if snapshot.demo else 'Check the account already configured on the Kaiba server.' }}</p>
+    <button class="primary-button" id="account-check">{{ 'Preview account check' if snapshot.demo else 'Check GMGN account' }}</button><p class="form-error" id="account-error" role="alert" hidden></p>
+    <dl class="connection-facts"><div><dt>Account wallets</dt><dd id="account-wallet-count">Unavailable</dd></div><div><dt>Last check</dt><dd id="account-checked">Never</dd></div><div><dt>Observed data</dt><dd id="account-refresh">Unavailable</dd></div></dl>
+    <div id="account-wallets" class="account-wallets" aria-label="Account wallets"></div>
+    <h3 class="connection-section-title">What appears here</h3>
+    <ul class="connection-features"><li><span class="feature-icon"><svg class="icon"><use href="#i-wallet"/></svg></span><div><strong>Linked wallets</strong><p>Wallets returned by your GMGN account.</p></div></li><li><span class="feature-icon"><svg class="icon"><use href="#i-file"/></svg></span><div><strong>Reported native balances</strong><p>Shown only when amount and units are verified.</p></div></li><li><span class="feature-icon"><svg class="icon"><use href="#i-clock"/></svg></span><div><strong>Observation time and source</strong><p>Original check time, with stale data labeled.</p></div></li></ul>
+    <p class="connection-footnote">Missing balances stay unavailable. An account read does not establish trade permissions or current protection.</p>
+    <a class="connection-settings" href="https://gmgn.ai/ai" target="_blank" rel="noopener noreferrer">Open GMGN settings<svg class="icon"><use href="#i-arrow"/></svg></a>
+    <p class="connection-preview"><svg class="icon"><use href="#i-info"/></svg><span>{{ 'Preview only. No account is connected in this design workspace.' if snapshot.demo else 'Credentials remain on the Kaiba server. This panel never accepts API keys.' }}</span></p>
+  </section>
+  <section id="connection-charts-panel" role="tabpanel" aria-labelledby="connection-tab-charts" hidden>
+    <h3 class="connection-chart-title">Open a token chart</h3><p class="connection-description">Paste a public token address. GMGN supplies the external chart; no account connection is required.</p>
+    <form id="gmgn-chart-form" class="connection-chart-form"><div class="chart-input-row"><label>Chain<select id="gmgn-chain"><option value="sol">Solana</option><option value="eth">Ethereum</option><option value="bsc">BNB Chain</option></select></label><label>Interval<select id="gmgn-interval"><option value="1">1 minute</option><option value="5">5 minutes</option><option value="15" selected>15 minutes</option><option value="60">1 hour</option><option value="240">4 hours</option><option value="1D">1 day</option></select></label></div><label for="gmgn-address">Token contract address</label><input id="gmgn-address" type="text" autocomplete="off" spellcheck="false" maxlength="64" placeholder="Paste a public token address" required aria-describedby="gmgn-chart-error"><p id="gmgn-chart-error" class="form-error" role="alert" hidden></p><button class="primary-button" type="submit">Load GMGN chart<svg class="icon"><use href="#i-arrow"/></svg></button></form>
+    <div id="gmgn-chart-empty" class="connection-chart-empty"><svg class="icon"><use href="#i-chart"/></svg><h4>Your chart, one address away</h4><p>Supports Solana, Ethereum and BNB Chain.<br>External content loads after you press Load.</p></div>
+    <div class="connection-chart-actions"><a id="gmgn-chart-link" target="_blank" rel="noopener noreferrer" hidden>Open chart in new tab<svg class="icon"><use href="#i-arrow"/></svg></a><button id="gmgn-chart-clear" class="subtle-button" type="button" hidden>Unload chart</button></div><p id="gmgn-chart-caption" class="connection-footnote">Charts are third-party content. If embedding is unavailable, open the chart in a new tab.</p>
+    <iframe id="gmgn-chart-frame" title="GMGN public token chart" sandbox="allow-scripts allow-same-origin allow-popups" referrerpolicy="no-referrer" hidden></iframe>
+  </section>
+</dialog>
+<dialog id="command-dialog" class="command-dialog" aria-labelledby="command-title"><div class="dialog-top"><h2 id="command-title">Command palette</h2><button class="icon-button" data-close-dialog aria-label="Close command palette"><svg class="icon"><use href="#i-close"/></svg></button></div><label class="palette-search"><svg class="icon"><use href="#i-search"/></svg><input id="command-input" placeholder="Search views, tokens, or commands…" aria-label="Search commands" autocomplete="off"></label><div id="command-results" role="list"></div><div class="palette-footer"><span>↑ ↓ Navigate</span><span>↵ Select</span><span>Esc Close</span></div></dialog>
+<dialog id="detail-dialog" class="detail-dialog" aria-labelledby="detail-title"><div class="dialog-top"><h2 id="detail-title">Details</h2><button class="icon-button" data-close-dialog aria-label="Close details"><svg class="icon"><use href="#i-close"/></svg></button></div><div id="detail-body"></div></dialog>
+<dialog id="review-dialog" class="review-dialog" aria-labelledby="review-title"><div class="dialog-top"><h2 id="review-title">Review paper order</h2><button class="icon-button" data-close-dialog aria-label="Close order review"><svg class="icon"><use href="#i-close"/></svg></button></div><div id="review-body"></div><p class="review-note">Browser simulation only. Fees and realized slippage are unavailable. TP / SL settings are illustrative and do not run an exit engine.</p><button id="confirm-order" class="primary-button">Confirm paper order</button><button class="subtle-button cancel-review" data-close-dialog>Back to ticket</button></dialog>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+<noscript><p class="noscript">This interactive terminal requires JavaScript. <a href="/">Open the server-rendered command centre</a> for positions and operator controls.</p></noscript>
+</body></html>

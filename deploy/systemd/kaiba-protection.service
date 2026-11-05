@@ -1,0 +1,98 @@
+[Unit]
+# The exit watchdog. Stop-losses, the take-profit ladder, trailing stops, the rug check
+# and the emergency exit live here and nowhere else.
+#
+# This is the most important unit on the box. It is the only thing standing between an
+# open position and a total loss while everything else is broken, so it is deliberately
+# the smallest, the most aggressively restarted, and the one with the fewest dependencies:
+# no network provider is required for it to start, and it does not wait for the engine.
+#
+# A cron prompt is never the stop-loss (PLAN §3).
+Description=Kaiba position protection watchdog (stop-loss, TP ladder, trailing, rug exit)
+Documentation=file:///opt/kaiba/current/docs/runbooks/incident-position-unprotected.md
+Wants=network-online.target
+After=network-online.target
+PartOf=kaiba.target
+# Restart forever. A burst limit that stops this service is worse than a restart loop:
+# a stopped watchdog is an unprotected position.
+StartLimitIntervalSec=0
+
+[Service]
+Type=exec
+User=kaiba-core
+Group=kaiba-core
+SupplementaryGroups=kaiba kaiba-state kaiba-signer-ipc
+WorkingDirectory=/opt/kaiba/current
+
+EnvironmentFile=/etc/kaiba/core.env
+Environment=HOME=/var/lib/kaiba
+Environment=KAIBA_CONFIG_DIR=/etc/kaiba
+Environment=KAIBA_DATA_DIR=/var/lib/kaiba
+Environment=KAIBA_DB_PATH=/var/lib/kaiba/db/kaiba.db
+Environment=KAIBA_RISK_PATH=/etc/kaiba/config/risk.yaml
+Environment=KAIBA_SIGNER_SOCKET=/run/kaiba/signer/signer.sock
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PYTHONUNBUFFERED=1
+
+UnsetEnvironment=KAIBA_SIGNER_PASSPHRASE KAIBA_SIGNER_KEYSTORE SOLANA_PRIVATE_KEY EVM_PRIVATE_KEY
+UnsetEnvironment=KAIBA_DASHBOARD_PASSWORD AGE_IDENTITY_FILE RCLONE_CONFIG_PASS
+UnsetEnvironment=ANTHROPIC_API_KEY OPENROUTER_API_KEY TELEGRAM_BOT_TOKEN TG_API_HASH TG_API_ID
+UnsetEnvironment=PYTHONHOME PYTHONPATH PYTHONSTARTUP PYTHONINSPECT PYTHONOPTIMIZE
+
+ExecStart=/opt/kaiba/venv/bin/python -I -B -m kaiba.cli.main protection run
+# Tightest restart on the box: 1 second, always, no burst ceiling.
+Restart=always
+RestartSec=1
+# Stop fast. A watchdog that lingers for 90s on a restart is 90s of no protection.
+TimeoutStopSec=10
+KillMode=mixed
+# Hardware-style liveness: uncomment BOTH lines once the protection loop calls
+# sd_notify("WATCHDOG=1") every cycle. Enabling WatchdogSec against a process that does
+# not ping makes systemd kill it every 60s, which is the opposite of what we want, so it
+# stays off until the loop implements the ping.
+#Type=notify
+#WatchdogSec=60
+
+# ---- hardening baseline (identical across every kaiba unit) -------------------------
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+PrivateMounts=yes
+ProtectHostname=yes
+ProtectClock=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectProc=invisible
+ProcSubset=pid
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RemoveIPC=yes
+KeyringMode=private
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+CapabilityBoundingSet=
+AmbientCapabilities=
+UMask=0077
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+# ---- explicit write surface ---------------------------------------------------------
+ReadWritePaths=/var/lib/kaiba/db /var/lib/kaiba/logs /var/lib/kaiba/reports /run/kaiba/signer
+ReadOnlyPaths=/opt/kaiba/current /opt/kaiba/venv /etc/kaiba/policy /etc/kaiba/config
+InaccessiblePaths=/etc/kaiba/signer /var/lib/kaiba/signer /var/lib/kaiba/backups /var/lib/kaiba/hermes /var/lib/kaiba/cache
+
+# The watchdog does not retune anything, so risk.yaml is read-only here: a bug in the
+# protection loop cannot widen its own stop-loss.
+MemoryMax=256M
+CPUQuota=100%
+TasksMax=32
+
+[Install]
+WantedBy=multi-user.target

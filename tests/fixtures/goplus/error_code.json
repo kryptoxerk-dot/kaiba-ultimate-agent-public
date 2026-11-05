@@ -1,0 +1,8 @@
+{
+  "note": "GoPlus signals most failures with HTTP 200 and a non-1 code. Hand-built from the documented error codes (4029 = rate limited). The point of this fixture is that a body like this must never be cached or read as 'no risks found'.",
+  "body": {
+    "code": 4029,
+    "message": "request rate limit, please try again later",
+    "result": {}
+  }
+}

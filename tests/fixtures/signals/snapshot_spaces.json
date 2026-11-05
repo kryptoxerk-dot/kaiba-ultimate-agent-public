@@ -1,0 +1,231 @@
+{
+ "data": {
+  "spaces": [
+   {
+    "id": "pepe.vote4shi.eth",
+    "name": "PEPE Burn bank",
+    "created": 1789846975,
+    "followersCount": 1,
+    "network": "1",
+    "symbol": null,
+    "about": "Won a Battle? Let's select a charity to benefit!"
+   },
+   {
+    "id": "shib.vote4shi.eth",
+    "name": "SHIB Burn Bank",
+    "created": 1789846867,
+    "followersCount": 1,
+    "network": "1",
+    "symbol": null,
+    "about": "Won a Battle? Let's select a charity!"
+   },
+   {
+    "id": "worldpeaceledger.eth",
+    "name": "World Peace Ledger",
+    "created": 1789806716,
+    "followersCount": 1,
+    "network": "10",
+    "symbol": "WPC",
+    "about": "We are a blockchain initiative called world peace ledger. Our goal is to create a citizen accord for world peace."
+   },
+   {
+    "id": "clearpoolfinance.eth",
+    "name": "Clearpool",
+    "created": 1789613425,
+    "followersCount": 2,
+    "network": "1",
+    "symbol": "CP",
+    "about": "The Tokenization Engine for the Onchain Economy | \nNow building the institutional lending platform for the XRP Ledger"
+   },
+   {
+    "id": "enso.eth",
+    "name": "Enso",
+    "created": 1789422320,
+    "followersCount": 0,
+    "network": "1",
+    "symbol": null,
+    "about": "Governance for Enso"
+   },
+   {
+    "id": "rize.eth",
+    "name": "RIZE",
+    "created": 1789397766,
+    "followersCount": 0,
+    "network": "8453",
+    "symbol": "",
+    "about": ""
+   },
+   {
+    "id": "share-x.eth",
+    "name": "ShareX",
+    "created": 1789146442,
+    "followersCount": 1,
+    "network": "1",
+    "symbol": null,
+    "about": "ShareX Ecosystem Voting Space"
+   },
+   {
+    "id": "jointracer.eth",
+    "name": "Tracer",
+    "created": 1789111845,
+    "followersCount": 1,
+    "network": "42161",
+    "symbol": "TRCR",
+    "about": "Unlocking trillion-dollar upside by tokenizing real carbon removals 🌍\n"
+   },
+   {
+    "id": "bitlayer.eth",
+    "name": "Bitlayer",
+    "created": 1788953326,
+    "followersCount": 5,
+    "network": "1",
+    "symbol": "BTR",
+    "about": "Bitlayer: Bitcoin & AI Infra project"
+   },
+   {
+    "id": "corpus.takens.eth",
+    "name": "CORPUS by Takens Theorem",
+    "created": 1788758488,
+    "followersCount": 3,
+    "network": "1",
+    "symbol": null,
+    "about": "A little exploratory space to put CORPUS to work. A creative project, CORPUS is a Liquid Edition on SuperRare, and this snapshot is for CORPUS holders."
+   },
+   {
+    "id": "testing-new-d-ignore-xyz-a.eth",
+    "name": "test token space moon",
+    "created": 1788689496,
+    "followersCount": 0,
+    "network": "1",
+    "symbol": "vpSpaceMoon",
+    "about": "the best space"
+   },
+   {
+    "id": "genesisconductor.eth",
+    "name": "Genesis Conductor",
+    "created": 1788594118,
+    "followersCount": 1,
+    "network": "1",
+    "symbol": "GC",
+    "about": "Agent-operated DAO for Genesis Conductor. x402 payTo HOT on Base. Voting: HOT whitelist."
+   },
+   {
+    "id": "bawsaqexchange.eth",
+    "name": "Bawsaq Exchange",
+    "created": 1788554369,
+    "followersCount": 0,
+    "network": "1",
+    "symbol": "BAWSAQ",
+    "about": "Flip Nasdaq, Board Sit, BAWSAQ. \n\nCA: 0x9baf5f0ba48ecdfcb9e30a937708da8c3cca1d0d"
+   },
+   {
+    "id": "hydrexgov.eth",
+    "name": "Hydrex (Temp Checks)",
+    "created": 1788466316,
+    "followersCount": 4,
+    "network": "8453",
+    "symbol": "Earning Power",
+    "about": "This space is used for non-binding temp checks on Hydrex governance."
+   },
+   {
+    "id": "capyfi-protocol.eth",
+    "name": "Official CAPYFI DAO",
+    "created": 1788374115,
+    "followersCount": 0,
+    "network": "1",
+    "symbol": "CAPYFI",
+    "about": "DAO of CapyFi.com"
+   },
+   {
+    "id": "bluogcouncil.eth",
+    "name": "BLU OG Council",
+    "created": 1788285778,
+    "followersCount": 1,
+    "network": "8453",
+    "symbol": "OG",
+    "about": "Where BLU OGs come together to propose ideas, discuss and vote on the future of the Reef. $BLU + Episode 0 required."
+   },
+   {
+    "id": "blucouncil.base.eth",
+    "name": "BLU OG Council",
+    "created": 1788284058,
+    "followersCount": 0,
+    "network": "8453",
+    "symbol": "OG",
+    "about": "Where BLU OGs come together to propose ideas, discuss and vote on the future of the Reef. $BLU + Episode 0 required."
+   },
+   {
+    "id": "bluogcouncil.base.eth",
+    "name": "BLU OG Council",
+    "created": 1788277722,
+    "followersCount": 2,
+    "network": "8453",
+    "symbol": "OG",
+    "about": "BLU community council. OGs propose ideas, shape the Reef and vote on its future. $BLU + Episode 0 required."
+   },
+   {
+    "id": "currents.takens.eth",
+    "name": "CORPUS Future",
+    "created": 1788229091,
+    "followersCount": 0,
+    "network": "1",
+    "symbol": "CORPUS",
+    "about": ""
+   },
+   {
+    "id": "bonabuild.eth",
+    "name": "BonaBuild",
+    "created": 1788014264,
+    "followersCount": 0,
+    "network": "8453",
+    "symbol": "BONA",
+    "about": "A commons of business software. Members download production-ready applications for free and back the requests that decide what gets built next."
+   },
+   {
+    "id": "contest.societyprotocol.eth",
+    "name": "Society Protocol Content Contest",
+    "created": 1787920739,
+    "followersCount": 4,
+    "network": "1",
+    "symbol": "VP",
+    "about": "This spaces handles voting each month to resolve the content contest winners via the core team."
+   },
+   {
+    "id": "usdai.eth",
+    "name": "CHIP DAO",
+    "created": 1787846238,
+    "followersCount": 0,
+    "network": "42161",
+    "symbol": "",
+    "about": "CHIP DAO is a decentralized, community of CHIP token holders who are collectively responsible for the integrity and direction of the CHIP ecosystem."
+   },
+   {
+    "id": "villagefarmer.eth",
+    "name": "Pro Governance",
+    "created": 1787756684,
+    "followersCount": 0,
+    "network": "8453",
+    "symbol": "vePro",
+    "about": ""
+   },
+   {
+    "id": "helloworld123.eth",
+    "name": "Human Rights 4 All",
+    "created": 1787575261,
+    "followersCount": 3,
+    "network": "1",
+    "symbol": null,
+    "about": ""
+   },
+   {
+    "id": "earlgreyai.eth",
+    "name": "EarlGrey AI",
+    "created": 1787407238,
+    "followersCount": 2,
+    "network": "1",
+    "symbol": "pNouns",
+    "about": "アールグレイと AI の共同テスト用スペース(pNouns Voter リハーサルほか)"
+   }
+  ]
+ }
+}

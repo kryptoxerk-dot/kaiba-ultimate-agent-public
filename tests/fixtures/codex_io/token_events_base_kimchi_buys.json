@@ -1,0 +1,112 @@
+{
+ "_recorded": "2026-10-21 graph.codex.io, free plan, via the box; key never in the request body. KIMCHI, eventDisplayType [Buy], direction ASC, limit 3.",
+ "data": {
+  "getTokenEvents": {
+   "cursor": "eyJkeW5hbW9DdXJzb3IiOnsiaWQiOnsiUyI6IjB4ZDQ5ZmE2OWMzMTFkNDYzYzBmMmRkMzliNGVjMTEwOTUyMGU2YTI2ZDRiNTJmMjFiZTgyMDVkODBlNDVmYjRmYjo4NDUzIn0sInNvcnRLZXkiOnsiUyI6IjAwMDAwMDAwNTI4OTE1NTgjMDAwMDAwNDgjMDAwMDAyNTgifX0sIndhcm1PZmZzZXQiOjAsInNvdXJjZSI6ImR5bmFtbyJ9",
+   "items": [
+    {
+     "address": "0xd49fa69c311d463c0f2dd39b4ec1109520e6a26d4b52f21be8205d80e45fb4fb",
+     "networkId": 8453,
+     "blockNumber": 52891510,
+     "timestamp": 1792572367,
+     "transactionHash": "0x6f9c3408c0b710c37fe104987b06d2c0303085107f31bdba8d0e530657bc641c",
+     "logIndex": 424,
+     "maker": "0xea53e7f0f8ba771a64eacaea145ee41aa8fa4eb9",
+     "eventType": "Swap",
+     "eventDisplayType": "Buy",
+     "quoteToken": "token1",
+     "token0Address": "0x4200000000000000000000000000000000000006",
+     "token1Address": "0xdb9264a5a1f9fd98a6dce9a01fa123bce3b3802f",
+     "token0SwapValueUsd": "2449.3797329032994278",
+     "token1SwapValueUsd": "3.3105084972093869685e-5",
+     "walletAge": 6112,
+     "walletLabels": null,
+     "labels": {
+      "sandwich": null,
+      "washtrade": null
+     },
+     "data": {
+      "type": "Swap",
+      "amount0": "14351218840807476",
+      "amount1": "-1061818285642638896999511",
+      "amountNonLiquidityToken": "1061818.285642638896999511",
+      "priceUsd": "3.3105084972093869685e-5",
+      "priceUsdTotal": "35.151584571122600859481682033278783542724035",
+      "priceBaseToken": "1.3515701353849999999823893721253e-8",
+      "priceBaseTokenTotal": "0.014351218840807476"
+     }
+    },
+    {
+     "address": "0xd49fa69c311d463c0f2dd39b4ec1109520e6a26d4b52f21be8205d80e45fb4fb",
+     "networkId": 8453,
+     "blockNumber": 52891536,
+     "timestamp": 1792572419,
+     "transactionHash": "0x9cac2be6b05dfbecb4ecc47cb216aad24a2eefaaaddd82b4d3474ccdbe18eef0",
+     "logIndex": 658,
+     "maker": "0xf0798f0ced5a4e484407f64bd04f7b0ce8c1fba4",
+     "eventType": "Swap",
+     "eventDisplayType": "Buy",
+     "quoteToken": "token1",
+     "token0Address": "0x4200000000000000000000000000000000000006",
+     "token1Address": "0xdb9264a5a1f9fd98a6dce9a01fa123bce3b3802f",
+     "token0SwapValueUsd": "2449.4903630617416528",
+     "token1SwapValueUsd": "3.3098746756113445002e-5",
+     "walletAge": 6102,
+     "walletLabels": null,
+     "labels": {
+      "sandwich": null,
+      "washtrade": null
+     },
+     "data": {
+      "type": "Swap",
+      "amount0": "11150354544232074",
+      "amount1": "-825187920318371534161508",
+      "amountNonLiquidityToken": "825187.920318371534161508",
+      "priceUsd": "3.3098746756113445002e-5",
+      "priceUsdTotal": "27.312686000821699748801849594397743343383016",
+      "priceBaseToken": "1.35125033579399999999826194294772e-8",
+      "priceBaseTokenTotal": "0.011150354544232074"
+     }
+    },
+    {
+     "address": "0xd49fa69c311d463c0f2dd39b4ec1109520e6a26d4b52f21be8205d80e45fb4fb",
+     "networkId": 8453,
+     "blockNumber": 52891558,
+     "timestamp": 1792572463,
+     "transactionHash": "0x51d803a0acf19c3804f96af2f939f0dae6ed33487d7d88a20e6625430c2f779c",
+     "logIndex": 258,
+     "maker": "0x8c2ef33dbc084cb391331d33a936a2bf270a072f",
+     "eventType": "Swap",
+     "eventDisplayType": "Buy",
+     "quoteToken": "token1",
+     "token0Address": "0x4200000000000000000000000000000000000006",
+     "token1Address": "0xdb9264a5a1f9fd98a6dce9a01fa123bce3b3802f",
+     "token0SwapValueUsd": "2449.3948232880646521",
+     "token1SwapValueUsd": "3.3080748674401860375e-5",
+     "walletAge": 7260,
+     "walletLabels": null,
+     "labels": {
+      "sandwich": null,
+      "washtrade": null
+     },
+     "data": {
+      "type": "Swap",
+      "amount0": "4089369672508786",
+      "amount1": "-302788821527103210250511",
+      "amountNonLiquidityToken": "302788.821527103210250511",
+      "priceUsd": "3.3080748674401860375e-5",
+      "priceUsdTotal": "10.016480906356421006920424739807388194401625",
+      "priceBaseToken": "1.35056824485300000001119482851e-8",
+      "priceBaseTokenTotal": "4.089369672508786e-3"
+     }
+    }
+   ]
+  },
+  "usageData": {
+   "total": {
+    "computeUnits": "5000000",
+    "count": "0"
+   }
+  }
+ }
+}

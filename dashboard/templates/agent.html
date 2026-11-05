@@ -1,0 +1,62 @@
+{% extends "term_layout.html" %}
+{% block title %}Agent · Kaiba{% endblock %}
+{% block main %}
+<div class="kx-page"><div class="kx-wrap">
+  <header class="kx-hero">
+    <div class="ttl">
+      <p class="eyebrow">Hermes operator agent</p>
+      <h1>Talk to the agent, watch what it does</h1>
+      <p>The same agent you message on Telegram (@your_kaiba_bot): same profile, memory, rules and Kaiba tools. Messages here run on a console thread of their own. Your Telegram conversation and the agent's background jobs are shown read-only, exported by Hermes with secrets redacted.</p>
+    </div>
+    <div class="act">
+      <button class="kb" type="button" data-agent-pause="1" data-msg="Pause the agent? Its scheduled jobs stop and it will not answer new Telegram messages until you resume. Trading protection is separate and keeps running.">Pause agent</button>
+      <button class="kb mint" type="button" data-agent-pause="0" data-msg="Resume the agent's jobs and Telegram replies?">Resume agent</button>
+    </div>
+  </header>
+  <div data-refresh="/agent/status" data-every="60">{% include "partials/a_status.html" %}</div>
+  {% if not available %}<p class="note">{{ why }}</p>{% endif %}
+
+  <div class="ag-grid">
+    <section class="kx-panel">
+      <div class="kx-ph"><h3>Console conversation</h3><div class="act"><small>thread "main", kept between messages</small></div></div>
+      {% with thread='main' %}{% include "partials/t_agent_chat.html" %}{% endwith %}
+    </section>
+    <section class="kx-panel">
+      <div class="kx-ph"><h3>Telegram</h3><div class="act"><span class="live" title="refreshes every 30 s">read-only</span></div></div>
+      <div class="kx-scroll" data-refresh="/agent/telegram" data-every="30">{% include "partials/a_telegram.html" %}</div>
+      <form class="ag-send" data-tg-send>
+        <textarea name="text" rows="2" maxlength="3500" placeholder="Post a message to the Telegram chat (as the bot)…" aria-label="Message to Telegram"></textarea>
+        <button class="kb sm" type="submit">Post</button>
+      </form>
+    </section>
+  </div>
+
+  <section class="kx-panel">
+    <div class="kx-ph"><h3>Background work</h3><div class="act"><small>the agent's own scheduled jobs, last 24 h; open one to read what it found</small></div></div>
+    <div data-refresh="/agent/background" data-every="120">{% include "partials/a_background.html" %}</div>
+  </section>
+
+  <div class="kx-grid2 even">
+    <section class="kx-panel">
+      <div class="kx-ph"><h3>What it changed or noted</h3><div class="act"><small>journal entries written through the Kaiba tools</small></div></div>
+      {% if journal %}
+      <div class="kx-scroll" style="max-height:520px">
+        {% for j in journal %}
+        <div class="af t-note">
+          <time title="{{ j.ts_ms|hms }} UTC">{{ j.ts_ms|ago }}</time>
+          <span class="ic"><svg class="i s"><use href="#i-note"/></svg></span>
+          <div class="tx"><b>{{ ((j.body or '').strip().splitlines() or [j.kind])[0]|truncate(90, True, '…') }}</b><span>{{ j.kind }}{% if j.subject %} · {{ j.subject|truncate(40, True, '…') }}{% endif %}</span></div>
+          <span class="rt"></span>
+          {% if j.body and j.body|length > 90 %}<details><summary>read the note</summary><pre>{{ j.body }}</pre></details>{% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}<p class="empty">Nothing in the journal yet.</p>{% endif %}
+    </section>
+    <section class="kx-panel">
+      <div class="kx-ph"><h3>Scheduled jobs</h3><div class="act"><small>hermes cron list</small></div></div>
+      <pre class="ag-pre">{{ cron_text }}</pre>
+    </section>
+  </div>
+</div></div>
+{% endblock %}

@@ -1,0 +1,19 @@
+{# One chat with the Hermes operator agent: same profile and memory as the Telegram bot.
+   data-thread picks the console thread; live.js loads its history and streams new turns. #}
+<div class="ag-chat" data-chat data-thread="{{ thread or 'terminal' }}">
+  <div class="ag-msgs" data-chat-msgs aria-live="polite"><p class="nodata pad">Loading the conversation…</p></div>
+  <div class="ag-quick">
+    <button type="button" class="ag-q" data-prompt="What have you been doing in the last 6 hours? Summarize your background jobs, anything you changed, and anything that needs my attention.">What are you doing?</button>
+    <button type="button" class="ag-q" data-prompt="How is paper trading doing since the honest cutoff (paper_report.PAPER_HONEST_MS)? Per lane and chain: n, mean, verdict. Is any lane close to the pass line?">Paper results</button>
+    <button type="button" class="ag-q" data-prompt="Look at the open book right now. Is any position at risk, stuck, or mispriced? Say which and why.">Check the book</button>
+    <button type="button" class="ag-q" data-prompt="Anything in the last hour's early-alpha stream (listings, claim domains, graduations, smart-money flow) worth a closer look? Rank the top 3 with evidence.">Early alpha</button>
+  </div>
+  <form class="ag-form" data-chat-form>
+    <textarea name="message" rows="2" maxlength="8000" placeholder="Ask the agent anything… (Enter sends, Shift+Enter for a new line)" aria-label="Message to the agent"></textarea>
+    <div class="ag-form-row">
+      <small class="muted">kaiba-operator · same agent as Telegram · it never auto-approves a command</small>
+      <button type="button" class="kb xs ghost" data-chat-stop hidden>Stop</button>
+      <button type="submit" class="kb sm primary">Send</button>
+    </div>
+  </form>
+</div>

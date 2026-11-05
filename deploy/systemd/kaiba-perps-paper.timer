@@ -1,0 +1,11 @@
+[Unit]
+Description=Re-derive the perps paper book once a day, after the UTC daily close
+
+[Timer]
+OnCalendar=*-*-* 00:15:00 UTC
+Persistent=true
+AccuracySec=1min
+Unit=kaiba-perps-paper.service
+
+[Install]
+WantedBy=timers.target

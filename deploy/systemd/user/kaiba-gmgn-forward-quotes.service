@@ -1,0 +1,25 @@
+[Unit]
+Description=Kaiba GMGN exact-input quote-only forward research
+ConditionPathExists=%h/kaiba/data/kaiba.db
+
+[Service]
+Type=simple
+WorkingDirectory=%h/kaiba
+Environment=KAIBA_DATA_DIR=%h/kaiba/data
+Environment=KAIBA_DB_PATH=%h/kaiba/data/kaiba.db
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/usr/bin/timeout -k 5 1190 /usr/bin/nice -n 19 /usr/bin/ionice -c3 %h/kaiba/.venv/bin/python -m kaiba.learning.gmgn_forward_quotes --follow --db %h/kaiba/data/kaiba.db --root %h/kaiba/data/learning/gmgn-forward-quotes
+Restart=on-failure
+RestartSec=15
+RestartPreventExitStatus=1
+MemoryMax=140M
+CPUQuota=20%
+UMask=0077
+Nice=19
+IOSchedulingClass=idle
+NoNewPrivileges=true
+PrivateTmp=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=default.target

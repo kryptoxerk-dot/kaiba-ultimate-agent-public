@@ -1,0 +1,182 @@
+{% extends "term_layout.html" %}
+{% block title %}Labs · Kaiba{% endblock %}
+{% block main %}
+{% set lp = lab.lp %}{% set wl = lab.wallet %}
+{% macro sign(x) %}{{ 'pos' if x is not none and x > 0 else 'neg' if x is not none and x < 0 }}{% endmacro %}
+<div class="kx-page"><div class="kx-wrap">
+  <header class="kx-hero">
+    <div class="ttl">
+      <p class="eyebrow">Research labs</p>
+      <h1>What real positions and real wallets show</h1>
+      <p>Two studies that run every day on the box and trade nothing. The <b>LP lab</b> follows a frozen panel of Meteora DLMM pools and the LPs in them, and measures what their positions earned against simply holding. The <b>wallet lab</b> profiles how each tracked Solana S/A/B wallet trades. A profile describes a wallet; it is not evidence that following it pays. That question has its own pre-registered test, shown below.</p>
+    </div>
+  </header>
+
+  <!-- ============================================================ LP lab -->
+  <section class="kx-panel">
+    <div class="kx-ph lab-ph">
+      <span class="med sm" style="--ring: var(--k-mint)">LP</span>
+      <h3>DLMM LP lab · Meteora</h3>
+      {% if lp.available %}
+      <span class="pill {{ 'warn' if lp.stale else 'ok' }}" title="the timer runs daily">updated {{ (lp.at * 1000)|ago if lp.at else '—' }} ago</span>
+      <span class="pill">{{ lp.positions|n0 }} positions · {{ lp.lps|n0 }} LPs · {{ lp.pools|n0 }} pools</span>
+      {% else %}<span class="pill unk">not run yet</span>{% endif %}
+    </div>
+    {% if not lp.available %}
+    <p class="empty">{{ lp.reason }}.</p>
+    {% else %}
+    <div class="tpane">
+      <div class="ev">
+        <div title="pnlSol / SOL deposited, per position, 30 days"><span>LP vs holding SOL</span><b class="{{ sign(lp.vs_sol.mean) }}">{{ lp.vs_sol.mean|ret2 }}</b><small>median {{ lp.vs_sol.median|ret2 }} · {{ lp.vs_sol.pos_share|pctx }} positive</small></div>
+        <div title="SOL-quoted pools: the position vs keeping the tokens it deposited"><span>LP vs holding the deposit</span><b class="{{ sign(lp.vs_holding_token.mean) }}">{{ lp.vs_holding_token.mean|ret2 }}</b><small>better in {{ lp.vs_holding_token.pos_share|pctx }} of positions</small></div>
+        <div title="sum of pnl / sum of deposit x days held"><span>Per SOL per day</span><b class="{{ sign(lp.per_sol_day) }}">{{ lp.per_sol_day|ret2 }}</b><small>{{ ('%+.0f SOL across the panel'|format(lp.pnl_sol)) if lp.pnl_sol is not none else '' }}</small></div>
+        <div title="fees earned exceeded the inventory loss"><span>Fees covered the inventory move</span><b>{{ lp.fees_cover_share|pctx }}</b><small>fees {{ lp.fees_mean|ret2 }} · inventory {{ lp.inventory_mean|ret2 }}</small></div>
+        <div><span>LPs net positive</span><b>{{ lp.per_lp.share_positive|pctx }}</b><small>median LP {{ lp.per_lp.median_total_return|ret2 }} of deposits</small></div>
+        <div title="positions opened after the panel was frozen: free of the pick-by-today bias">
+          <span>Forward, since the freeze</span>
+          {% if lp.forward and lp.forward.n %}<b class="{{ sign(lp.forward.mean) }}">{{ lp.forward.mean|ret2 }}</b><small>n {{ lp.forward.n }} · {{ lp.forward.per_sol_day|ret2 }}/SOL-day</small>
+          {% else %}<b class="faint">—</b><small>accumulating from {{ (lp.forward.since * 1000)|when if lp.forward and lp.forward.since else 'the first daily run' }}</small>{% endif %}
+        </div>
+      </div>
+    </div>
+
+    <div class="kx-grid2 even" style="padding: 0 16px 16px">
+      <div>
+        <h4 class="lab-h">What decides the outcome <small>terciles, LP vs SOL per position</small></h4>
+        <table class="kx-t">
+          <thead><tr><th>Split</th><th class="r">Low</th><th class="r">Mid</th><th class="r">High</th><th>Cuts</th></tr></thead>
+          <tbody>
+          {% for sp in lp.splits %}
+          <tr>
+            <td><b>{{ sp.label }}</b></td>
+            {% for t in ('low', 'mid', 'high') %}{% set c = sp.cells[t] %}
+            <td class="r mono"><span class="{{ sign(c.all) }}">{{ c.all|ret2 }}</span><span class="sub" title="older half / newer half">{{ c.older|ret2 }} / {{ c.newer|ret2 }}</span></td>
+            {% endfor %}
+            <td class="mono muted">{% if sp.unit == 's' %}{{ sp.cuts[0]|dur }} · {{ sp.cuts[1]|dur }}{% else %}{{ sp.cuts[0]|pctx }} · {{ sp.cuts[1]|pctx }}{% endif %}</td>
+          </tr>
+          {% endfor %}
+          <tr><td><b>Frequent LP</b><span class="sub">≥ 10 positions, median ≤ 6 h</span></td><td class="r mono" colspan="3"><span class="{{ sign(lp.frequent.yes) }}">{{ lp.frequent.yes|ret2 }}</span> vs {{ lp.frequent.no|ret2 }} <span class="sub">per SOL-day, others</span></td><td></td></tr>
+          </tbody>
+        </table>
+        <p class="muted lab-note">A split counts as a finding only when it has the same sign in both halves and holds in at least 10 pools. Time in range and duration do; width and the prior move do not.</p>
+      </div>
+
+      <div>
+        <h4 class="lab-h">Check a position <small>keep, re-center or close, from the measured splits</small></h4>
+        <form class="lab-form" method="get" action="/labs#check">
+          <label>Time in range <span><input name="ir" type="number" min="0" max="100" step="1" value="{{ form.ir if form.ir is not none else '' }}" required> %</span></label>
+          <label>Hours open <span><input name="h" type="number" min="0" step="0.5" value="{{ form.h if form.h is not none else '' }}" required></span></label>
+          <label class="chk"><input name="oor" type="checkbox" value="true" {{ 'checked' if form.oor }}> Out of range right now</label>
+          <label>Pool <span><select name="pool"><option value="">any pool</option>{% for p in lp.pools_table %}<option value="{{ p.address }}" {{ 'selected' if p.address == form.pool }}>{{ p.name }}</option>{% endfor %}</select></span></label>
+          <button class="kb" type="submit">Check</button>
+        </form>
+        {% if check %}
+        <div id="check" class="lab-verdict d-{{ check.decision or 'none' }}">
+          <b>{{ (check.decision or 'no answer')|upper }}</b>
+          <ul>{% for e in check.evidence or [check.reason] %}<li>{{ e }}</li>{% endfor %}</ul>
+          <small class="muted">{{ check.note }}</small>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <h4 class="lab-h" style="padding: 0 16px">Pools in the panel <small>best LP outcome first</small></h4>
+    <div style="overflow-x:auto">
+    <table class="kx-t">
+      <thead><tr><th>Pool</th><th class="r">Positions</th><th class="r">LP vs SOL</th><th class="r">vs holding</th><th class="r">Time in range</th><th class="r">Open in range</th><th class="r">Per SOL-day</th><th class="r">TVL</th><th class="r">Fees 24 h / TVL</th></tr></thead>
+      <tbody>
+      {% for p in lp.pools_table %}
+      <tr>
+        <td><a href="https://app.meteora.ag/dlmm/{{ p.address }}" target="_blank" rel="noopener noreferrer"><b>{{ p.name }}</b></a> <span class="chip">{{ p.quote }}</span>{% if p.gone %} <span class="pill bad">gone</span>{% endif %}{% if p.blacklisted %} <span class="pill bad">blacklisted</span>{% endif %}<span class="sub mono">{{ p.address|short(4, 4) }} · {{ p.lps }} LPs</span></td>
+        <td class="r mono">{{ p.positions }}<span class="sub">{{ p.open }} open</span></td>
+        <td class="r mono"><span class="{{ sign(p.lp_sol.mean) }}">{{ p.lp_sol.mean|ret2 }}</span><span class="sub">{{ p.lp_sol.pos_share|pctx }} positive</span></td>
+        <td class="r mono {{ sign(p.lp_minus_hodl) }}">{{ p.lp_minus_hodl|ret2 }}</td>
+        <td class="r mono">{{ p.in_range|pctx }}</td>
+        <td class="r mono">{{ p.open_in_range|pctx }}</td>
+        <td class="r mono">{{ p.per_sol_day|ret2 }}</td>
+        <td class="r mono">{{ p.tvl|usd }}</td>
+        <td class="r mono">{{ p.fee_tvl_24h|pctx }}</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    <div class="note" style="margin: 14px 16px 16px">
+      <b>How far to trust it.</b>
+      <ul>{% for c in lp.caveats %}<li>{{ c }}</li>{% endfor %}</ul>
+      Full method and numbers: <code>docs/research/claude-lp-lab-20261028.md</code>. Kaiba holds no LP position; nothing on this page opens one.
+    </div>
+    {% endif %}
+  </section>
+
+  <!-- ============================================================ wallet lab -->
+  <section class="kx-panel" style="margin-top:16px">
+    <div class="kx-ph lab-ph">
+      <span class="med sm" style="--ring: var(--k-blue)">W</span>
+      <h3>Wallet behavior lab · Solana S/A/B</h3>
+      {% if wl.available %}
+      <span class="pill {{ 'warn' if wl.stale else 'ok' }}">updated {{ (wl.at * 1000)|ago if wl.at else '—' }} ago</span>
+      <span class="pill">{{ wl.summary.profiled|n0 }} of {{ wl.summary.tracked|n0 }} profiled · {{ wl.summary.classed|n0 }} classed · {{ wl.summary.episodes|n0 }} tokens</span>
+      {% else %}<span class="pill unk">not run yet</span>{% endif %}
+    </div>
+    {% if not wl.available %}
+    <p class="empty">{{ wl.reason }}.</p>
+    {% else %}
+    {% set v = wl.verdict %}
+    <div class="tpane">
+      <h4 class="lab-h">Does following a behavior pay? <small>pre-registered test, newer 7 days, 60 s late, 5.5% round trip</small></h4>
+      {% if not v.available %}
+      <p class="muted">{{ v.reason }}.</p>
+      {% else %}
+      <p>{% if v.passing %}<span class="verdict v-pass">{{ v.passing|length }} cell{{ 's' if v.passing|length > 1 }} pass</span> — a hypothesis for a forward paper test, not a lane.{% else %}<span class="verdict v-fail">No cell passes</span> — no behavior class of these wallets made money for a follower.{% endif %} <span class="muted">Pass line: {{ v.pass_line }}.</span></p>
+      <div style="overflow-x:auto">
+      <table class="kx-t">
+        <thead><tr><th>Class</th><th>Exit</th><th class="r">Episodes</th><th class="r">Wallets</th><th class="r">Mean</th><th class="r">Win</th><th class="r">95% lower bound</th><th>Beats control</th></tr></thead>
+        <tbody>
+        {% for c in v.cells[:12] %}
+        <tr>
+          <td><b>{{ c.class|replace('_', ' ') }}</b></td><td class="mono">{{ c.exit }}</td>
+          <td class="r mono">{{ c.n }}</td><td class="r mono">{{ c.wallets }}</td>
+          <td class="r mono {{ sign(c.mean) }}">{{ c.mean|ret }}</td>
+          <td class="r mono">{{ c.win|pctx }}</td>
+          <td class="r mono {{ sign(c.lb95) }}">{{ c.lb95|ret }}</td>
+          <td>{{ 'yes' if c.beats_control else 'no' }}{% if c.PASS %} <span class="pill ok">PASS</span>{% endif %}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      </div>
+      {% endif %}
+
+      <h4 class="lab-h" style="margin-top:16px">Behavior classes <small>a wallet can be in several; needs at least 5 tokens</small></h4>
+      <div class="pills">
+        {% for c, n in wl.summary.class_counts.items() %}<span class="pill" title="{{ wl.class_notes[c] }}">{{ c|replace('_', ' ') }} <b class="mono">{{ n }}</b></span>{% endfor %}
+      </div>
+    </div>
+
+    <div style="overflow-x:auto">
+    <table class="kx-t">
+      <thead><tr><th>Wallet</th><th class="r">Tokens</th><th>Classes</th><th class="r" title="median seconds from token creation to the first buy">Entry age</th><th class="r" title="median entry price / highest price in the 6 h before">vs prior high</th><th class="r">First buy</th><th class="r" title="median time from first buy to first sell">First sell</th><th class="r" title="median share of the bag the first sell takes">Sells</th><th class="r">Re-enters</th><th class="r" title="sells minus buys on tokens it fully exited, 14 days, GMGN prices">Closed net</th></tr></thead>
+      <tbody>
+      {% for w in wl.wallets %}
+      <tr>
+        <td><a href="/w/sol/{{ w.address }}"><b class="mono">{{ w.address|short(4, 4) }}</b></a> <span class="grade g-{{ w.tier }}">{{ w.tier }}</span><span class="sub">{{ w.name|truncate(34, True, '…') }}</span></td>
+        <td class="r mono">{{ w.episodes }}</td>
+        <td><div class="pills">{% for c in w.classes %}<span class="chip" title="{{ wl.class_notes[c] }}">{{ c|replace('_', ' ') }}</span>{% else %}<span class="faint">{{ 'unclassed' if w.episodes >= 5 else 'too few tokens' }}</span>{% endfor %}</div></td>
+        <td class="r mono">{{ w.F1_entry_age_s|dur if w.F1_entry_age_s is not none else '—' }}</td>
+        <td class="r mono">{{ ('%.2f×'|format(w.F2_entry_vs_prior_high)) if w.F2_entry_vs_prior_high is not none else '—' }}</td>
+        <td class="r mono">{{ w.F5_usd|usd }}</td>
+        <td class="r mono">{{ w.F6_first_sell_s|dur if w.F6_first_sell_s is not none else '—' }}</td>
+        <td class="r mono">{{ w.F6_first_sell_frac|pctx }}</td>
+        <td class="r mono">{{ w.share_multi_entry|pctx }}</td>
+        <td class="r mono {{ sign(w.closed_net_usd) }}">{{ w.closed_net_usd|usd }}<span class="sub">{{ w.closed_won or 0 }}/{{ w.closed or 0 }} won</span></td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    <p class="muted lab-note" style="padding: 0 16px 16px">Profiles cover the last 14 days of each wallet's GMGN activity, up to 25 tokens per wallet. Method: <code>docs/research/claude-wallet-lab-prereg-20261028.md</code>.</p>
+    {% endif %}
+  </section>
+</div></div>
+{% endblock %}
